@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   importModFile: (fileName: string, buffer: ArrayBuffer, instanceId?: string) => ipcRenderer.invoke('import-mod-file', fileName, buffer, instanceId),
   searchMods: (query: string, loader: string, version: string, offset?: number, projectType?: string, sort?: string) => ipcRenderer.invoke('search-mods', query, loader, version, offset || 0, projectType || 'mod', sort || 'relevance'),
   getPopularMods: (loader: string, version: string, offset?: number) => ipcRenderer.invoke('get-popular-mods', loader, version, offset || 0),
+  onUpdateStatus: (callback: (msg: string) => void) => ipcRenderer.on('update-status', (_event, value) => callback(value))
   searchCurseforgeMods: (query: string, loader: string, version: string, offset?: number) => ipcRenderer.invoke('search-curseforge-mods', query, loader, version, offset || 0),
   getPopularModpacks: (loader: string, version: string, offset?: number) => ipcRenderer.invoke('get-popular-modpacks', loader, version, offset || 0),
   searchModpacks: (query: string, version?: string, offset?: number) => ipcRenderer.invoke('search-modpacks', query, version, offset || 0),
