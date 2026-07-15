@@ -5,6 +5,7 @@ import ModsMenu from './ModsMenu'
 import ModpacksMenu from './ModpacksMenu'
 import { ServersMenu } from './ServersMenu'
 import { McSelect } from './McSelect'
+import pkg from '../package.json'
 
 interface Modpack {
   name: string
@@ -1251,6 +1252,19 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <div style={{
+        position: 'absolute',
+        bottom: '10px',
+        right: '15px',
+        color: '#666',
+        fontSize: '12px',
+        fontFamily: 'monospace',
+        pointerEvents: 'none',
+        zIndex: 100
+      }}>
+        v{pkg.version}
+      </div>
     </div>
   )
 }
