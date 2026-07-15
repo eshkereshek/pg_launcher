@@ -300,10 +300,6 @@ export default function App() {
     if (window.electronAPI && window.electronAPI.checkUpdates) {
       // @ts-ignore
       window.electronAPI.checkUpdates().then(setUpdateInfo)
-      // @ts-ignore
-      window.electronAPI.onUpdateProgress((prog: number) => {
-        setUpdateProgress(prog)
-      })
     }
 
     const fetchVersions = async () => {
