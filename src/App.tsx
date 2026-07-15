@@ -124,7 +124,7 @@ export default function App() {
   const [activeDownloads, setActiveDownloads] = useState<{ id: string, name: string, text: string, progress: number }[]>([])
   const [showDownloadsDropdown, setShowDownloadsDropdown] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<{hasUpdate: boolean, version?: string, downloadUrl?: string}>({hasUpdate: false})
-  const [updateProgress, setUpdateProgress] = useState<number | null>(null)
+  const [isUpdating, setIsUpdating] = useState(false)
   const [progress, setProgress] = useState('')
   const translatedProgress = useMemo(() => {
     if (!progress) return '';
