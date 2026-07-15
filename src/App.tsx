@@ -254,14 +254,6 @@ export default function App() {
     })
 
     // @ts-ignore
-    if (window.electronAPI.onUpdateStatus) {
-      // @ts-ignore
-      window.electronAPI.onUpdateStatus((msg: string) => {
-        setProgress(msg)
-      })
-    }
-
-    // @ts-ignore
     window.electronAPI.onDownloadUpdate((data: any) => {
       setActiveDownloads(prev => {
         const idx = prev.findIndex(d => d.id === data.id)

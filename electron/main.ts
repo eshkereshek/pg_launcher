@@ -12,7 +12,6 @@ import { Auth } from 'msmc'
 // @ts-ignore
 import DiscordRPC from 'discord-rpc'
 import * as cheerio from 'cheerio'
-import { autoUpdater } from 'electron-updater'
 
 const require = createRequire(import.meta.url)
 
@@ -80,17 +79,6 @@ function createWindow() {
     frame: false
   })
 
-  autoUpdater.on('update-available', () => {
-    win?.webContents.send('update-status', 'Доступно обновление! Загружаем...');
-  });
-
-  autoUpdater.on('update-downloaded', () => {
-    win?.webContents.send('update-status', 'Обновление загружено. Перезапуск...');
-    setTimeout(() => {
-      autoUpdater.quitAndInstall(true, true);
-    }, 2000);
-  });
-
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
   } else {
@@ -108,9 +96,6 @@ app.on('window-all-closed', () => {
 app.whenReady().then(() => {
   setupDiscordRPC()
   createWindow()
-  autoUpdater.checkForUpdatesAndNotify().catch(err => {
-    console.log('Update check failed:', err);
-  });
 })
 
 ipcMain.on('window-minimize', () => win?.minimize())

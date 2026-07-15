@@ -15,7 +15,6 @@
   "dependencies": {
     "cheerio": "^1.2.0",
     "discord-rpc": "^4.0.1",
-    "electron-updater": "^6.8.9",
     "extract-zip": "^2.0.1",
     "lucide-react": "^1.24.0",
     "minecraft-launcher-core": "^3.18.2",
@@ -42,13 +41,12 @@
   "build": {
     "appId": "com.pagrysha-launcher.app",
     "productName": "Pagrysha Launcher",
-    "publish": ["github"],
     "directories": {
       "output": "dist-build"
     },
     "win": {
       "target": [
-        "nsis"
+        "portable"
       ],
       "icon": "build/icon.png"
     },
