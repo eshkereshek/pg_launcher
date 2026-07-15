@@ -530,31 +530,34 @@ export default function App() {
           <img src="./icon.png" alt="icon" width={16} />
           <span>Pagrysha Launcher</span>
         </div>
-        <div className="titlebar-right">
+        <div className="titlebar-right" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          {updateInfo.hasUpdate && (
+            <div 
+              className="update-banner"
+              onClick={(e) => { e.stopPropagation(); handleUpdate(); }}
+              style={{
+                background: 'var(--pg-primary)',
+                color: 'white',
+                padding: '4px 12px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                animation: 'pulse 2s infinite',
+                boxShadow: '0 0 10px rgba(255, 122, 0, 0.5)',
+                cursor: isUpdating ? 'default' : 'pointer',
+                opacity: isUpdating ? 0.7 : 1
+              }}
+            >
+              {isUpdating ? 'Загрузка...' : `Доступно обновление: v${updateInfo.version}`}
+            </div>
+          )}
+          
           <div 
             className="titlebar-downloads" 
-            style={{ position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '15px' }}
+            style={{ position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            onClick={() => setShowDownloadsDropdown(!showDownloadsDropdown)}
           >
-            {updateInfo.hasUpdate && (
-              <div 
-                className="update-banner"
-                onClick={(e) => { e.stopPropagation(); handleUpdate(); }}
-                style={{
-                  background: 'var(--pg-primary)',
-                  color: 'white',
-                  padding: '2px 10px',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  animation: 'pulse 2s infinite',
-                  boxShadow: '0 0 10px rgba(255, 122, 0, 0.5)'
-                }}
-              >
-                {updateProgress !== null ? `Обновление: ${updateProgress}%` : `Доступно обновление: v${updateInfo.version}`}
-              </div>
-            )}
-            
-            <div onClick={() => setShowDownloadsDropdown(!showDownloadsDropdown)}>
+            <div>
               <span style={{ fontSize: 10, color: activeDownloads.length > 0 ? 'var(--pg-yellow)' : 'inherit' }}>■</span> {t("app.downloads")} {activeDownloads.length > 0 && `(${activeDownloads.length})`}
             </div>
             

@@ -1401,29 +1401,34 @@ ipcMain.handle('download-and-run-update', async (event, url: string) => {
     
     const totalSize = parseInt(res.headers.get('content-length') || '0', 10);
     let downloadedSize = 0;
-    
-    if (res.body) {
-      const fileStream = fs.createWriteStream(tempExePath);
+        if (res.body) {
+        event.sender.send('download-update', { id: 'app_update', name: 'Обновление лаунчера', text: 'Загрузка...', progress: 0 });
+        const fileStream = fs.createWriteStream(tempExePath);
       // @ts-ignore
       for await (const chunk of res.body) {
         fileStream.write(chunk);
         downloadedSize += chunk.length;
-        if (totalSize > 0) {
-          const progress = Math.round((downloadedSize / totalSize) * 100);
-          event.sender.send('update-progress', progress);
+          if (totalSize > 0) {
+            const progress = Math.round((downloadedSize / totalSize) * 100);
+            event.sender.send('download-update', { id: 'app_update', name: 'Обновление лаунчера', text: `Загружено ${progress}%`, progress });
+          }
         }
-      }
-      fileStream.end();
-    } else {
+        fileStream.end();
+        await new Promise<void>((resolve) => fileStream.on('close', () => resolve()));
+        event.sender.send('download-finish', 'app_update');
+      } else {
       throw new Error("No body in response");
     }
 
-    // Run the downloaded exe
-    spawn(tempExePath, [], { detached: true, stdio: 'ignore' }).unref();
-    app.quit();
-    return true;
-  } catch (e: any) {
-    console.error('Download update failed:', e);
+      // Run the downloaded exe
+      const env = { ...process.env };
+      delete env.PORTABLE_EXECUTABLE_DIR;
+      spawn(tempExePath, [], { detached: true, stdio: 'ignore', env }).unref();
+      setTimeout(() => app.quit(), 500);
+      return true;
+    } catch (e: any) {
+      console.error('Download update failed:', e);
+      event.sender.send('download-finish', 'app_update');
     throw new Error('Ошибка скачивания: ' + e.message);
   }
 });
