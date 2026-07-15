@@ -527,7 +527,8 @@ export default function App() {
           <img src="./icon.png" alt="icon" width={16} />
           <span>Pagrysha Launcher</span>
         </div>
-        <div className="titlebar-right" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div className="titlebar-right">
+          <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
           {updateInfo.hasUpdate && (
             <div 
               className="update-banner"
@@ -599,6 +600,7 @@ export default function App() {
                 )}
               </div>
             )}
+          </div>
           </div>
           <div className="win-btn" onClick={() => (window as any).electronAPI.windowMinimize()} style={{ fontFamily: '"Blocks", sans-serif' }}>-</div>
           <div className="win-btn" onClick={() => (window as any).electronAPI.windowMaximize()} style={{ fontFamily: '"Blocks", sans-serif', fontSize: '14px' }}>[ ]</div>
