@@ -125,7 +125,6 @@ export default function App() {
   const [showDownloadsDropdown, setShowDownloadsDropdown] = useState(false)
   const [updateInfo, setUpdateInfo] = useState<{hasUpdate: boolean, version?: string, downloadUrl?: string}>({hasUpdate: false})
   const [isUpdating, setIsUpdating] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState<number | null>(null)
   const [progress, setProgress] = useState('')
   const translatedProgress = useMemo(() => {
     if (!progress) return '';
@@ -515,8 +514,9 @@ export default function App() {
   const openFolder = () => window.electronAPI.openFolder()
 
   const handleUpdate = () => {
+    if (isUpdating) return;
     if (updateInfo.downloadUrl) {
-      setUpdateProgress(0)
+      setIsUpdating(true);
       // @ts-ignore
       window.electronAPI.downloadAndRunUpdate(updateInfo.downloadUrl)
     }
