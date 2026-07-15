@@ -1,0 +1,103 @@
+.mc-custom-select {
+  position: relative;
+  font-family: 'Minecraftia', 'Minecraft', sans-serif;
+  font-size: 14px;
+  user-select: none;
+  min-width: 150px;
+}
+
+.mc-custom-select.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mc-custom-select-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--pg-black);
+  border: 2px solid #111;
+  padding: 10px 14px;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: inset 0 2px 0 0 #444, inset 2px 0 0 0 #333, inset 0 -4px 0 0 #000, inset -2px 0 0 0 #222;
+}
+
+.mc-custom-select:not(.disabled) .mc-custom-select-trigger:hover {
+  background: #1a1a1a;
+  border-color: #222;
+}
+
+.mc-custom-select.open .mc-custom-select-trigger {
+  border-color: #333;
+}
+
+.mc-custom-select-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mc-select-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.mc-select-icon-wrapper img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.mc-custom-select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--pg-black);
+  border: 2px solid #111;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: inset 0 2px 0 0 #444, inset 2px 0 0 0 #333, inset 0 -4px 0 0 #000, inset -2px 0 0 0 #222, 0 4px 10px rgba(0,0,0,0.5);
+  padding: 4px;
+}
+
+.mc-custom-select-dropdown::-webkit-scrollbar {
+  width: 8px;
+}
+.mc-custom-select-dropdown::-webkit-scrollbar-track {
+  background: var(--pg-black);
+  border-left: 1px solid var(--pg-dark3);
+}
+.mc-custom-select-dropdown::-webkit-scrollbar-thumb {
+  background: var(--pg-dark3);
+}
+
+.mc-custom-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: #ddd;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.mc-custom-select-option:hover {
+  background: #222;
+}
+
+.mc-custom-select-option.selected {
+  background: var(--pg-dark2);
+  color: var(--pg-yellow);
+}
+
+.mc-custom-select-option.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: transparent;
+}

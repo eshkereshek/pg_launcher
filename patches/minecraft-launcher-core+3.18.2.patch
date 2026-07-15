@@ -1,0 +1,112 @@
+diff --git a/node_modules/minecraft-launcher-core/components/handler.js b/node_modules/minecraft-launcher-core/components/handler.js
+index 111a797..42b1c64 100644
+--- a/node_modules/minecraft-launcher-core/components/handler.js
++++ b/node_modules/minecraft-launcher-core/components/handler.js
+@@ -18,7 +18,7 @@ class Handler {
+ 
+   checkJava (java) {
+     return new Promise(resolve => {
+-      child.exec(`"${java}" -version`, (error, stdout, stderr) => {
++      child.execFile(java, ['-version'], (error, stdout, stderr) => {
+         if (error) {
+           resolve({
+             run: false,
+@@ -177,7 +177,7 @@ class Handler {
+       const subhash = hash.substring(0, 2)
+       const subAsset = path.join(assetDirectory, 'objects', subhash)
+ 
+-      if (!fs.existsSync(path.join(subAsset, hash)) || !await this.checkSum(hash, path.join(subAsset, hash))) {
++      if (!fs.existsSync(path.join(subAsset, hash)) || (await require("fs").promises.stat(path.join(subAsset, hash)).then(s => s.size === 0).catch(() => true))) {
+         await this.downloadAsync(`${this.options.overrides.url.resource}/${subhash}/${hash}`, subAsset, hash, true, 'assets')
+       }
+       counter++
+@@ -252,7 +252,7 @@ class Handler {
+   async getNatives () {
+     const nativeDirectory = path.resolve(this.options.overrides.natives || path.join(this.options.root, 'natives', this.version.id))
+ 
+-    if (parseInt(this.version.id.split('.')[1]) >= 19) return this.options.overrides.cwd || this.options.root
++    if (parseInt(this.version.id.split('.')[0]) > 1 || parseInt(this.version.id.split('.')[1]) >= 19) return this.options.overrides.cwd || this.options.root
+ 
+     if (!fs.existsSync(nativeDirectory) || !fs.readdirSync(nativeDirectory).length) {
+       fs.mkdirSync(nativeDirectory, { recursive: true })
+@@ -323,7 +323,7 @@ class Handler {
+   }
+ 
+   isModernForge (json) {
+-    return json.inheritsFrom && json.inheritsFrom.split('.')[1] >= 12 && !(json.inheritsFrom === '1.12.2' && (json.id.split('.')[json.id.split('.').length - 1]) === '2847')
++    return json.inheritsFrom && (parseInt(json.inheritsFrom.split('.')[0]) > 1 || parseInt(json.inheritsFrom.split('.')[1]) >= 12) && !(json.inheritsFrom === '1.12.2' && (json.id.split('.')[json.id.split('.').length - 1]) === '2847')
+   }
+ 
+   async getForgedWrapped () {
+diff --git a/node_modules/minecraft-launcher-core/components/launcher.js b/node_modules/minecraft-launcher-core/components/launcher.js
+index c7063a7..1e3f0db 100644
+--- a/node_modules/minecraft-launcher-core/components/launcher.js
++++ b/node_modules/minecraft-launcher-core/components/launcher.js
+@@ -4,6 +4,17 @@ const Handler = require('./handler')
+ const fs = require('fs')
+ const EventEmitter = require('events').EventEmitter
+ 
++// Helper: get effective minor version for both 1.x.y and 26.x formats
++function mcMinor(id) {
++  if (!id) return 0
++  const parts = id.split('.')
++  const major = parseInt(parts[0])
++  // New-style versions (26.x) — treat the major itself as "minor" for comparison
++  // since they are all >= 1.19 equivalent
++  if (major > 1) return 99
++  return parseInt(parts[1]) || 0
++}
++
+ class MCLCore extends EventEmitter {
+   async launch (options) {
+     try {
+@@ -78,7 +89,7 @@ class MCLCore extends EventEmitter {
+         `-Xms${this.handler.getMemory()[1]}`
+       ]
+       if (this.handler.getOS() === 'osx') {
+-        if (parseInt(versionFile.id.split('.')[1]) > 12) jvm.push(await this.handler.getJVM())
++        if (mcMinor(versionFile.id) > 12) jvm.push(await this.handler.getJVM())
+       } else jvm.push(await this.handler.getJVM())
+ 
+       if (this.options.customArgs) jvm = jvm.concat(this.options.customArgs)
+@@ -86,17 +97,17 @@ class MCLCore extends EventEmitter {
+         jvm.push(`-Dlog4j.configurationFile=${path.resolve(this.options.overrides.logj4ConfigurationFile)}`)
+       }
+       // https://help.minecraft.net/hc/en-us/articles/4416199399693-Security-Vulnerability-in-Minecraft-Java-Edition
+-      if (parseInt(versionFile.id.split('.')[1]) === 18 && !parseInt(versionFile.id.split('.')[2])) jvm.push('-Dlog4j2.formatMsgNoLookups=true')
+-      if (parseInt(versionFile.id.split('.')[1]) === 17) jvm.push('-Dlog4j2.formatMsgNoLookups=true')
+-      if (parseInt(versionFile.id.split('.')[1]) < 17) {
++      const _mcMinor = mcMinor(versionFile.id)
++      if (_mcMinor === 18 && !parseInt(versionFile.id.split('.')[2])) jvm.push('-Dlog4j2.formatMsgNoLookups=true')
++      if (_mcMinor === 17) jvm.push('-Dlog4j2.formatMsgNoLookups=true')
++      if (_mcMinor < 17) {
+         if (!jvm.find(arg => arg.includes('Dlog4j.configurationFile'))) {
+           const configPath = path.resolve(this.options.overrides.cwd || this.options.root)
+-          const intVersion = parseInt(versionFile.id.split('.')[1])
+-          if (intVersion >= 12) {
++          if (_mcMinor >= 12) {
+             await this.handler.downloadAsync('https://launcher.mojang.com/v1/objects/02937d122c86ce73319ef9975b58896fc1b491d1/log4j2_112-116.xml',
+               configPath, 'log4j2_112-116.xml', true, 'log4j')
+             jvm.push('-Dlog4j.configurationFile=log4j2_112-116.xml')
+-          } else if (intVersion >= 7) {
++          } else if (_mcMinor >= 7) {
+             await this.handler.downloadAsync('https://launcher.mojang.com/v1/objects/dd2b723346a8dcd48e7f4d245f6bf09e98db9696/log4j2_17-111.xml',
+               configPath, 'log4j2_17-111.xml', true, 'log4j')
+             jvm.push('-Dlog4j.configurationFile=log4j2_17-111.xml')
+@@ -180,8 +191,14 @@ class MCLCore extends EventEmitter {
+   }
+ 
+   startMinecraft (launchArguments) {
+-    const minecraft = child.spawn(this.options.javaPath ? this.options.javaPath : 'java', launchArguments,
+-      { cwd: this.options.overrides.cwd || this.options.root, detached: this.options.overrides.detached })
++    const spawnOpts = {
++      cwd: this.options.overrides.cwd || this.options.root,
++      detached: this.options.overrides.detached
++    }
++    if (this.options.overrides.env) {
++      spawnOpts.env = this.options.overrides.env
++    }
++    const minecraft = child.spawn(this.options.javaPath ? this.options.javaPath : 'java', launchArguments, spawnOpts)
+     minecraft.stdout.on('data', (data) => this.emit('data', data.toString('utf-8')))
+     minecraft.stderr.on('data', (data) => this.emit('data', data.toString('utf-8')))
+     minecraft.on('close', (code) => this.emit('close', code))

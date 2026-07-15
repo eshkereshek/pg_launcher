@@ -1,0 +1,442 @@
+/* JustLauncher Style Layout */
+.app-container.just-style {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  background-color: var(--pg-black);
+  color: var(--pg-text);
+  overflow: hidden;
+}
+
+.custom-titlebar {
+  height: 32px;
+  background-color: #2b2b2b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+  padding-left: 15px;
+  font-size: 13px;
+  color: #ccc;
+  flex-shrink: 0;
+}
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+.titlebar-downloads {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 15px;
+  height: 100%;
+  cursor: pointer;
+  border-right: 3px solid #111;
+  border-left: 3px solid #111;
+  box-shadow: inset 3px 0 0 0 #555, inset -3px 0 0 0 #222;
+  transition: background 0.2s;
+}
+.titlebar-downloads:hover {
+  background-color: #383838;
+  color: #fff;
+}
+
+.win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-left: 3px solid #111;
+  color: #ccc;
+  font-family: 'Blocks', sans-serif;
+  font-size: 16px;
+  box-shadow: inset 3px 0 0 0 #555;
+  -webkit-app-region: no-drag;
+}
+.win-btn:hover {
+  background: #444;
+  color: white;
+}
+.win-btn.close:hover {
+  background: #e81123;
+  color: white;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.jl-sidebar {
+  width: 250px;
+  background-color: #1b1b1b;
+  display: flex;
+  flex-direction: column;
+  border-right: 3px solid #111;
+  box-shadow: 
+    inset -3px 0 0 0 #000;
+}
+
+.jl-profile {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border-bottom: 1px solid var(--pg-dark3);
+  cursor: pointer;
+}
+.jl-profile img {
+  width: 40px;
+  height: 40px;
+  border-radius: 0;
+}
+.jl-profile-info {
+  display: flex;
+  flex-direction: column;
+}
+.jl-profile-name {
+  font-weight: bold;
+  font-size: 14px;
+}
+.jl-profile-status {
+  font-size: 11px;
+  color: var(--pg-text-muted);
+}
+
+.jl-nav {
+  flex: 1;
+  padding: 15px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.jl-nav-item {
+  padding: 10px 15px;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: #aaa;
+  cursor: pointer;
+  font-weight: 500;
+  background-color: transparent;
+  border: none;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+.jl-nav-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.jl-nav-item.active {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-left: 3px solid var(--pg-yellow);
+}
+
+.jl-bottom {
+  padding: 15px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.jl-bottom-btn {
+  padding: 10px 15px;
+  margin: 2px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: #aaa;
+  cursor: pointer;
+  font-weight: 500;
+  background-color: transparent;
+  border: none;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+.jl-bottom-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.jl-bottom-btn.outlined {
+  margin: 15px 15px 0 15px;
+  border: 2px solid #111;
+  border-radius: 0;
+  justify-content: center;
+  background: #333;
+  box-shadow: none;
+  font-family: 'Blocks', sans-serif;
+  color: white;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  transition: transform 0.1s;
+}
+.jl-bottom-btn.outlined:active {
+  background: #2a2a2a;
+  transform: translateY(2px);
+}
+.jl-bottom-btn.outlined:hover {
+  background: #444;
+}
+
+/* Main Content Area */
+.jl-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--pg-dark);
+}
+
+/* Top Tabs */
+.jl-topbar {
+  height: 50px;
+  background: rgba(17, 17, 17, 0.8);
+  display: flex;
+  align-items: center;
+  padding: 0 30px;
+}
+.jl-top-tab {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  color: var(--pg-text);
+  font-weight: bold;
+  border-bottom: 2px solid var(--pg-yellow);
+  text-transform: uppercase;
+  font-size: 14px;
+}
+
+/* Play Area */
+.jl-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.jl-play-bar {
+  /* Inherited inline styles in App.tsx */
+}
+
+.jl-version-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.jl-version-selector label {
+  font-size: 12px;
+  color: var(--pg-text-muted);
+}
+.jl-dropdown {
+  background-color: var(--pg-dark3);
+  color: white;
+  border: 1px solid #444;
+  padding: 8px 12px;
+  border-radius: 0;
+  font-size: 14px;
+  outline: none;
+  width: 250px;
+  cursor: pointer;
+}
+
+.jl-play-btn-wrapper {
+  justify-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.jl-play-img {
+  height: 80px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.jl-play-img:hover {
+  transform: scale(1.02);
+}
+.jl-play-img:active {
+  transform: scale(0.98);
+}
+.hover-scale-btn {
+  transition: transform 0.1s;
+}
+.hover-scale-btn:hover {
+  transform: scale(1.03);
+}
+.hover-scale-btn:active {
+  transform: scale(0.97);
+}
+.jl-progress {
+  font-size: 12px;
+  color: var(--pg-yellow);
+  margin-top: 5px;
+}
+
+.jl-tools {
+  display: flex;
+  gap: 10px;
+  justify-self: end;
+}
+.jl-tool-btn {
+  width: 44px;
+  height: 44px;
+  background: #2a2a2a;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+.jl-tool-btn:hover {
+  background: #333;
+  transform: translateY(-1px);
+}
+.jl-tool-btn:active {
+  transform: translateY(1px);
+}
+
+/* Modpacks Page Styles */
+.modpacks-menu {
+  flex: 1;
+  background: var(--pg-black);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modpacks-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  align-content: start;
+}
+.modpack-card {
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--pg-dark3);
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modpack-cover {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  background: #333;
+}
+.modpack-info {
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.modpack-title {
+  font-weight: bold;
+  font-size: 16px;
+}
+.modpack-desc {
+  font-size: 13px;
+  color: var(--pg-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.modpack-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--pg-text-muted);
+  margin-top: auto;
+}
+.modpack-action {
+  padding: 10px 15px;
+  border-top: 1px solid var(--pg-dark3);
+}
+
+/* Accounts Modal */
+.accounts-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.account-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  background: var(--pg-black);
+  border: 1px solid var(--pg-dark3);
+  border-radius: 0;
+}
+.account-item.active {
+  border-color: var(--pg-yellow);
+}
+.account-item-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.account-add-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+@keyframes dropdown-slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes dropdown-slide-down {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(10px); }
+}
+.dropdown-menu {
+  animation: dropdown-slide-up 0.2s ease-out forwards;
+}
+.dropdown-menu.closing {
+  animation: dropdown-slide-down 0.2s ease-in forwards;
+}
+
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mods-menu, .modpacks-menu {
+  animation: pageFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

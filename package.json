@@ -1,0 +1,63 @@
+{
+  "name": "pagrysha-launcher",
+  "private": true,
+  "version": "6.9.0",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "repository": "https://github.com/eshkereshek/pg_launcher",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && electron-builder",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "postinstall": "patch-package"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "discord-rpc": "^4.0.1",
+    "extract-zip": "^2.0.1",
+    "lucide-react": "^1.24.0",
+    "minecraft-launcher-core": "^3.18.2",
+    "msmc": "^5.0.5",
+    "patch-package": "^8.0.1",
+    "postinstall-postinstall": "^2.1.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "skinview3d": "^3.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1",
+    "vite-plugin-electron": "^1.1.0",
+    "vite-plugin-electron-renderer": "^1.0.0"
+  },
+  "build": {
+    "appId": "com.pagrysha-launcher.app",
+    "productName": "Pagrysha Launcher",
+    "directories": {
+      "output": "dist-build"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Pagrysha Launcher"
+    }
+  }
+}
