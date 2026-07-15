@@ -87,7 +87,7 @@ function createWindow() {
   autoUpdater.on('update-downloaded', () => {
     win?.webContents.send('update-status', 'Обновление загружено. Перезапуск...');
     setTimeout(() => {
-      autoUpdater.quitAndInstall();
+      autoUpdater.quitAndInstall(true, true);
     }, 2000);
   });
 
