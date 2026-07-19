@@ -1,7 +1,7 @@
 .mc-custom-select {
   position: relative;
-  font-family: 'Minecraftia', 'Minecraft', sans-serif;
-  font-size: 14px;
+  font-family: 'Blocks', sans-serif;
+  font-size: 13px;
   user-select: none;
   min-width: 150px;
 }
@@ -15,22 +15,31 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--pg-black);
-  border: 2px solid #111;
+  background: var(--pg-dark);
+  border: 2px solid var(--pg-black);
   padding: 10px 14px;
-  color: #ddd;
+  color: var(--pg-text);
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: inset 0 2px 0 0 #444, inset 2px 0 0 0 #333, inset 0 -4px 0 0 #000, inset -2px 0 0 0 #222;
+  transition: background 0.1s, box-shadow 0.1s, transform 0.1s;
+  box-shadow: 
+    inset 0 3px 0 0 rgba(255, 255, 255, 0.15), 
+    inset 3px 0 0 0 rgba(255, 255, 255, 0.08), 
+    inset 0 -3px 0 0 rgba(0, 0, 0, 0.4), 
+    inset -3px 0 0 0 rgba(0, 0, 0, 0.2);
 }
 
 .mc-custom-select:not(.disabled) .mc-custom-select-trigger:hover {
-  background: #1a1a1a;
-  border-color: #222;
+  background: var(--pg-dark2);
 }
 
 .mc-custom-select.open .mc-custom-select-trigger {
-  border-color: #333;
+  background: var(--pg-dark2);
+  transform: translateY(1px);
+  box-shadow: 
+    inset 0 3px 0 0 rgba(0, 0, 0, 0.5), 
+    inset 3px 0 0 0 rgba(0, 0, 0, 0.25), 
+    inset 0 -3px 0 0 rgba(255, 255, 255, 0.12), 
+    inset -3px 0 0 0 rgba(255, 255, 255, 0.06);
 }
 
 .mc-custom-select-value {
@@ -57,24 +66,30 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--pg-black);
-  border: 2px solid #111;
+  background: var(--pg-dark);
+  border: 2px solid var(--pg-black);
   max-height: 200px;
   overflow-y: auto;
   z-index: 1000;
-  box-shadow: inset 0 2px 0 0 #444, inset 2px 0 0 0 #333, inset 0 -4px 0 0 #000, inset -2px 0 0 0 #222, 0 4px 10px rgba(0,0,0,0.5);
   padding: 4px;
+  box-shadow: 
+    inset 0 2px 0 0 rgba(255, 255, 255, 0.12), 
+    inset 2px 0 0 0 rgba(255, 255, 255, 0.06), 
+    inset 0 -2px 0 0 rgba(0, 0, 0, 0.4), 
+    inset -2px 0 0 0 rgba(0, 0, 0, 0.25),
+    0 10px 20px rgba(0,0,0,0.5);
 }
 
 .mc-custom-select-dropdown::-webkit-scrollbar {
   width: 8px;
 }
 .mc-custom-select-dropdown::-webkit-scrollbar-track {
-  background: var(--pg-black);
-  border-left: 1px solid var(--pg-dark3);
+  background: var(--pg-dark);
+  border-left: 1px solid var(--pg-dark2);
 }
 .mc-custom-select-dropdown::-webkit-scrollbar-thumb {
   background: var(--pg-dark3);
+  border: 1px solid var(--pg-black);
 }
 
 .mc-custom-select-option {
@@ -82,18 +97,22 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  color: #ddd;
+  color: var(--pg-text-muted);
   cursor: pointer;
-  transition: background 0.1s;
+  transition: all 0.05s;
+  text-shadow: 1px 1px 0px rgba(0,0,0,0.4);
 }
 
 .mc-custom-select-option:hover {
-  background: #222;
+  background: var(--pg-dark2);
+  color: var(--pg-yellow);
 }
 
 .mc-custom-select-option.selected {
-  background: var(--pg-dark2);
+  background: var(--pg-dark3);
   color: var(--pg-yellow);
+  border: 1px solid var(--pg-yellow-dark);
+  padding: 7px 11px; /* adjust padding for border */
 }
 
 .mc-custom-select-option.disabled {

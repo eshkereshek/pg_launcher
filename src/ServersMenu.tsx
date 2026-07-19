@@ -4,7 +4,7 @@ import { Copy, Users, Tag, Network } from 'lucide-react'
 
 import { McSelect } from './McSelect'
 
-export function ServersMenu({ opacity = 95, blur = true }: { opacity?: number, blur?: boolean }) {
+export function ServersMenu({ opacity = 95 }: { opacity?: number }) {
   const { t } = useTranslation();
   const [servers, setServers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -18,7 +18,7 @@ export function ServersMenu({ opacity = 95, blur = true }: { opacity?: number, b
   useEffect(() => {
     if (!localStorage.getItem('mc_sec_bg_data')) {
       // @ts-ignore
-      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\servbcg.jpg')
+      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\bg-minecraft.png')
         .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
         .catch(console.error)
     }
@@ -64,37 +64,40 @@ export function ServersMenu({ opacity = 95, blur = true }: { opacity?: number, b
     flex: 1, 
     display: 'flex', 
     flexDirection: 'column', 
-    backgroundColor: 'var(--pg-black)', 
+    backgroundColor: 'transparent', 
     backgroundImage: bgImage ? `url("${bgImage}")` : 'none', 
     backgroundSize: 'cover', 
     backgroundPosition: 'center', 
     backgroundRepeat: 'no-repeat', 
-    overflow: 'hidden'
+    overflow: 'hidden',
+    position: 'relative'
   };
 
   return (
     <div className="mods-menu" style={bgStyle}>
-      <div style={{ flex: 1, padding: '20px', overflowY: 'auto' }} onScroll={handleScroll} ref={scrollRef}>
-        <div className="mc-menu-header" style={{ marginBottom: '1rem', borderBottom: '2px solid rgba(255,255,255,0.1)', paddingBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Network size={28} />
-            {t('app.servers') || 'Servers'}
-          </h2>
-          <McSelect 
-            value={region} 
-            onChange={(val) => {
-              setRegion(val);
-              setPage(1);
-              setServers([]);
-            }}
-            options={[
-              { value: 'russia', label: 'Русские сервера' },
-              { value: 'global', label: 'Мировой топ' }
-            ]}
-            style={{ width: '200px' }}
-          />
-        </div>
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
+      
+      <div className="mods-top-bar" style={{ position: 'sticky', top: 0, zIndex: 10, padding: '20px 30px', background: 'var(--pg-dark)', borderBottom: '1px solid var(--pg-dark3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', margin: 0, color: 'var(--pg-text)' }}>
+          <Network size={28} color="var(--pg-yellow)" />
+          {t('app.servers') || 'Servers'}
+        </h2>
+        <McSelect 
+          value={region} 
+          onChange={(val) => {
+            setRegion(val);
+            setPage(1);
+            setServers([]);
+          }}
+          options={[
+            { value: 'russia', label: 'Русские сервера' },
+            { value: 'global', label: 'Мировой топ' }
+          ]}
+          style={{ width: '200px' }}
+        />
+      </div>
 
+      <div style={{ flex: 1, padding: '20px', overflowY: 'auto', position: 'relative', zIndex: 1 }} onScroll={handleScroll} ref={scrollRef}>
         <div className="mc-menu-content" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {servers.length === 0 && !loading ? (
             <div style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
@@ -103,7 +106,7 @@ export function ServersMenu({ opacity = 95, blur = true }: { opacity?: number, b
           ) : (
             <div className="mc-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
               {servers.map((s, idx) => (
-                <div key={idx} className="mc-card" style={{ display: 'flex', flexDirection: 'column', background: `rgba(20, 20, 20, ${opacity / 100})`, backdropFilter: blur ? 'blur(10px)' : 'none', WebkitBackdropFilter: blur ? 'blur(10px)' : 'none' }}>
+                <div key={idx} className="mc-card" style={{ display: 'flex', flexDirection: 'column', background: `rgba(20, 20, 20, ${opacity / 100})` }}>
                   {s.banner && s.banner.endsWith('.mp4') ? (
                     <video 
                       src={s.banner} 

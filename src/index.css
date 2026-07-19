@@ -8,10 +8,10 @@
 }
 
 :root {
-  --pg-black: #111111;
-  --pg-dark: #1a1a1a;
+  --pg-black: #151515;
+  --pg-dark: #1b1b1b;
   --pg-dark2: #222222;
-  --pg-dark3: #2a2a2a;
+  --pg-dark3: #2d2d2d;
   --pg-yellow: #f1c40f;
   --pg-yellow-hover: #f39c12;
   --pg-yellow-dark: #d4a90a;
@@ -814,11 +814,11 @@ body {
   transition: background 0.15s;
 }
 .account-dropdown-item:hover {
-  background-color: #243454 !important;
+  background-color: #2a2a2a !important;
 }
 .account-dropdown-item.active {
-  background-color: #2a3a5a;
+  background-color: #4b3d12;
 }
 .account-dropdown-item.active:hover {
-  background-color: #344464 !important;
+  background-color: #5c4b16 !important;
 }

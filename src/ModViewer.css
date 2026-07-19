@@ -1,0 +1,62 @@
+.markdown-body {
+  color: #ddd;
+  line-height: 1.6;
+  font-size: 15px;
+  max-width: 100%;
+  text-align: center;
+}
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0;
+  display: inline-block;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto 20px auto;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  border: 1px solid var(--pg-dark3);
+  padding: 8px 12px;
+  text-align: center;
+}
+
+.markdown-body table th {
+  background-color: rgba(255, 255, 255, 0.05);
+  font-weight: bold;
+}
+
+.markdown-body table tr:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.markdown-body a {
+  color: var(--pg-yellow);
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  border-bottom: 1px solid var(--pg-dark3);
+  padding-bottom: 5px;
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  display: inline-block;
+  text-align: left;
+}

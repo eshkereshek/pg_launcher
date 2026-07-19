@@ -4,6 +4,7 @@ import path from 'path'
 import { createRequire } from 'module'
 import fs from 'node:fs'
 import os from 'node:os'
+import crypto from 'node:crypto'
 import https from 'node:https'
 import extract from 'extract-zip'
 // @ts-ignore
@@ -42,6 +43,7 @@ try {
 
 process.noDeprecation = true;
 app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('limit-fps', '60');
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -169,10 +171,14 @@ ipcMain.handle('auth-elyby', async (_, email, password) => {
       throw new Error('Неверный логин или пароль')
     }
     const data: any = await response.json()
+    let rawUuid = data.selectedProfile.id;
+    if (rawUuid && rawUuid.length === 32 && !rawUuid.includes('-')) {
+      rawUuid = `${rawUuid.slice(0,8)}-${rawUuid.slice(8,12)}-${rawUuid.slice(12,16)}-${rawUuid.slice(16,20)}-${rawUuid.slice(20)}`;
+    }
     return {
       type: 'elyby',
       username: data.selectedProfile.name,
-      uuid: data.selectedProfile.id,
+      uuid: rawUuid,
       token: data.accessToken,
       clientToken: data.clientToken,
       skinUrl: `https://ely.by/services/skins-renderer?url=https://skinsystem.ely.by/skins/${data.selectedProfile.name}.png&scale=5&renderFace=1`
@@ -846,6 +852,16 @@ ipcMain.handle('get-versions', async () => {
             if (fs.existsSync(versionsDir)) {
               installed = fs.readdirSync(versionsDir)
             }
+            // Add modern Forge installations (MCLC puts them in rootPath/forge/<version>/version.json)
+            const forgeDir = path.join(rootPath, 'forge')
+            if (fs.existsSync(forgeDir)) {
+              const forgeVersions = fs.readdirSync(forgeDir)
+              for (const fv of forgeVersions) {
+                if (fs.existsSync(path.join(forgeDir, fv, 'version.json'))) {
+                  installed.push(`${fv}-forge-modern`)
+                }
+              }
+            }
           } catch(e) {}
           resolve({ releases: json.versions, installed })
         } catch (e) {
@@ -945,11 +961,27 @@ async function ensureForge(gameVersion: string, sendStatus: (msg: string) => voi
   fs.mkdirSync(forgeDir, { recursive: true })
   const installerPath = path.join(forgeDir, `forge-${fullForgeVersion}-installer.jar`)
   
+  const isModernForge = () => {
+    const parts = gameVersion.split('.').map(Number);
+    // Minecraft 26.x+ (dropped the 1. prefix) is always modern
+    if (parts[0] > 1) return true;
+    if (parts[0] === 1 && parts[1] > 20) return true;
+    if (parts[0] === 1 && parts[1] === 20 && (parts[2] || 0) >= 6) return true;
+    return false;
+  }
+  const expectedProfileName = `${gameVersion}-forge-${forgeVersion}`;
+
   // Check if forge is already installed in versions
   const forgeVersionDir = path.join(rootPath, 'versions', fullForgeVersion)
-  if (fs.existsSync(forgeVersionDir)) {
+  const newForgeVersionDir = path.join(rootPath, 'versions', expectedProfileName)
+  
+  if (fs.existsSync(forgeVersionDir) && !isModernForge()) {
     sendStatus('Forge already installed!')
     return installerPath
+  }
+  if (fs.existsSync(newForgeVersionDir) && isModernForge()) {
+    sendStatus('Forge already installed!')
+    return expectedProfileName
   }
   
   // Download installer
@@ -958,6 +990,22 @@ async function ensureForge(gameVersion: string, sendStatus: (msg: string) => voi
   if (!dlRes.ok) throw new Error(`Failed to download Forge installer: ${dlRes.statusText}`)
   const buffer = await dlRes.arrayBuffer()
   fs.writeFileSync(installerPath, Buffer.from(buffer))
+  
+  if (isModernForge()) {
+    sendStatus(`Installing Forge ${forgeVersion} locally (this will take a minute)...`)
+    const javaPath = await ensureJava(gameVersion, sendStatus)
+    const profilesPath = path.join(rootPath, 'launcher_profiles.json')
+    if (!fs.existsSync(profilesPath)) {
+      fs.writeFileSync(profilesPath, JSON.stringify({profiles: {}}))
+    }
+    const { execSync } = require('child_process')
+    try {
+      execSync(`"${javaPath}" -jar "${installerPath}" --installClient "${rootPath}"`, { stdio: 'ignore' })
+    } catch (e: any) {
+      throw new Error(`Forge installation failed: ${e.message}`)
+    }
+    return expectedProfileName
+  }
   
   sendStatus('Forge downloaded! Installing...')
   return installerPath
@@ -1085,12 +1133,45 @@ ipcMain.handle('launch-game', async (_event, options) => {
     if (maxRam < 1024) maxRam = 1024
     if (maxRam > totalSystemMem) maxRam = totalSystemMem
     
+    let finalUuid = options.uuid || '00000000-0000-0000-0000-000000000000';
+    if (finalUuid && finalUuid.length === 32 && !finalUuid.includes('-')) {
+      finalUuid = `${finalUuid.slice(0,8)}-${finalUuid.slice(8,12)}-${finalUuid.slice(12,16)}-${finalUuid.slice(16,20)}-${finalUuid.slice(20)}`;
+    }
+    let finalAccessToken = options.token || '0';
+    let finalClientToken = options.clientToken || '0';
+
+    if (!options.uuid || options.uuid === '') {
+      const hash = crypto.createHash('md5').update('OfflinePlayer:' + (options.username || 'Player')).digest('hex');
+      finalUuid = `${hash.slice(0,8)}-${hash.slice(8,12)}-${hash.slice(12,16)}-${hash.slice(16,20)}-${hash.slice(20)}`;
+    }
+
+    if (options.authType === 'elyby' && options.token && options.clientToken) {
+      try {
+        const refreshRes = await fetch('https://authserver.ely.by/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: options.token,
+            clientToken: options.clientToken,
+            requestUser: true
+          })
+        });
+        if (refreshRes.ok) {
+          const refData: any = await refreshRes.json();
+          finalAccessToken = refData.accessToken;
+          finalClientToken = refData.clientToken;
+        }
+      } catch (e) {
+        console.error('Failed to refresh Ely.by token:', e);
+      }
+    }
+
     const opts: any = {
       clientPackage: undefined,
       authorization: {
-        access_token: options.token || '0',
-        client_token: options.clientToken || '0',
-        uuid: options.uuid || '00000000-0000-0000-0000-000000000000',
+        access_token: finalAccessToken,
+        client_token: finalClientToken,
+        uuid: finalUuid,
         name: options.username || 'Player',
         user_properties: {},
         meta: {
@@ -1109,13 +1190,12 @@ ipcMain.handle('launch-game', async (_event, options) => {
       },
       javaPath: javaPath,
       overrides: {
-        maxSockets: 32,
         detached: false,
         env: {
           ...process.env,
           ...(javaPath !== 'java' ? { JAVA_HOME: path.dirname(path.dirname(javaPath)) } : {})
         },
-        gameDirectory: path.join(rootPath, 'versions', options.instanceId || options.version)
+        gameDirectory: options.modpackName ? path.join(rootPath, 'versions', options.instanceId) : rootPath
       }
     }
 
@@ -1164,7 +1244,20 @@ ipcMain.handle('launch-game', async (_event, options) => {
       opts.version.custom = customId
     } else if (options.loader === 'forge') {
       const forgePath = await ensureForge(options.version, sendStatus)
-      opts.forge = forgePath
+      if (forgePath.endsWith('.jar')) {
+        opts.forge = forgePath
+        // Disable Forge's EarlyDisplay window - causes EXCEPTION_ACCESS_VIOLATION crash
+        // on AMD Radeon GPUs (atio6axx.dll) with glMapBuffer calls
+        opts.customArgs = [
+          '-Dfml.earlyprogresswindow=false',
+          '-Dforge.enableRenderQueue=false',
+          ...(opts.customArgs || [])
+        ]
+      } else {
+        // Modern forge (returned as custom version profile name)
+        opts.version.custom = forgePath
+        opts.forge = undefined
+      }
     } else if (options.loader === 'neoforge') {
       throw new Error("NeoForge пока не поддерживается ядром лаунчера (MCLC). Пожалуйста, выберите Forge, Fabric или Quilt.");
     }
@@ -1218,11 +1311,48 @@ ipcMain.handle('launch-game', async (_event, options) => {
     })
     
     sendStatus('Preparing game files... (This may take a while)')
-    await launcher.launch(opts)
+    const gameProcess: any = await launcher.launch(opts)
     
     gameStarted = true;
     win?.webContents.send('download-finish', 'game_launch')
     sendStatus('Игра запущена')
+
+    const behavior = options.onPlayBehavior || 'close'
+    const isPackaged = app.isPackaged
+
+    if (behavior === 'close' && isPackaged && gameProcess && gameProcess.pid) {
+      const { spawn } = require('child_process');
+      const monitorScript = `
+const { spawn } = require('child_process');
+const gamePid = ${gameProcess.pid};
+const launcherPath = ${JSON.stringify(process.execPath)};
+
+function checkProcess() {
+  try {
+    process.kill(gamePid, 0);
+    setTimeout(checkProcess, 1000);
+  } catch (e) {
+    spawn(launcherPath, [], { detached: true, stdio: 'ignore' });
+    process.exit(0);
+  }
+}
+setTimeout(checkProcess, 1000);
+      `;
+      const monitorPath = path.join(app.getPath('userData'), 'monitor.js');
+      fs.writeFileSync(monitorPath, monitorScript, 'utf8');
+
+      spawn(process.execPath, [monitorPath], {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+      }).unref();
+
+      setTimeout(() => {
+        app.quit();
+      }, 1000);
+    } else if (behavior === 'hide' || (behavior === 'close' && !isPackaged)) {
+      win?.hide();
+    }
 
     setTimeout(() => {
       sendStatus('')
@@ -1370,6 +1500,18 @@ app.on('before-quit', () => {
 });
 
 // --- AUTO UPDATER ---
+function isNewerVersion(latest: string, current: string): boolean {
+  const latestParts = latest.split('.').map(Number);
+  const currentParts = current.split('.').map(Number);
+  for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
+    const latestPart = latestParts[i] || 0;
+    const currentPart = currentParts[i] || 0;
+    if (latestPart > currentPart) return true;
+    if (latestPart < currentPart) return false;
+  }
+  return false;
+}
+
 ipcMain.handle('check-updates', async () => {
   try {
     const res = await fetch('https://api.github.com/repos/eshkereshek/pg_launcher/releases/latest');
@@ -1379,7 +1521,7 @@ ipcMain.handle('check-updates', async () => {
     const latestVersion = data.tag_name.replace('v', '');
     const currentVersion = app.getVersion();
     
-    if (latestVersion !== currentVersion) {
+    if (isNewerVersion(latestVersion, currentVersion)) {
       const downloadUrl = data.assets?.find((a: any) => a.name.endsWith('.exe'))?.browser_download_url;
       if (downloadUrl) {
         return { hasUpdate: true, version: latestVersion, downloadUrl };

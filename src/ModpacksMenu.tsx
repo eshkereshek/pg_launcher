@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from './i18n'
 import { Star } from 'lucide-react'
 
-export default function ModpacksMenu({ currentVersion, opacity = 95, blur = true }: { currentVersion: string, opacity?: number, blur?: boolean }) {
+export default function ModpacksMenu({ currentVersion, opacity = 95 }: { currentVersion: string, opacity?: number }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<any[]>([])
@@ -17,7 +17,7 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, blur = true
   useEffect(() => {
     if (!localStorage.getItem('mc_sec_bg_data')) {
       // @ts-ignore
-      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\servbcg.jpg')
+      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\bg-minecraft.png')
         .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
         .catch(console.error)
     }
@@ -108,8 +108,10 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, blur = true
   }
 
   return (
-    <div className="modpacks-menu" style={{ backgroundImage: bgImage ? `url("${bgImage}")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
-      <div className="mods-top-bar" style={{ padding: '20px 30px', background: 'rgba(0,0,0,0.8)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+    <div className="modpacks-menu" style={{ backgroundImage: bgImage ? `url("${bgImage}")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', position: 'relative' }}>
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
+      
+      <div className="mods-top-bar" style={{ position: 'sticky', top: 0, zIndex: 10, padding: '20px 30px', background: 'var(--pg-dark)', borderBottom: '1px solid var(--pg-dark3)' }}>
         <span className="mods-top-title">{t("modpacks.modrinthModpacks")}</span>
         <div className="mods-search-container" style={{ marginLeft: 'auto', width: '300px' }}>
           <input 
@@ -128,13 +130,13 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, blur = true
         </div>
       </div>
 
-      <div className="modpacks-content" onScroll={handleScroll}>
+      <div className="modpacks-content" style={{ position: 'relative', zIndex: 1 }} onScroll={handleScroll}>
         {loading ? (
           <div className="mods-loading">{t("modpacks.loading")}</div>
         ) : (
           <>
             {results.map((pack: any) => (
-              <div key={pack.project_id} className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})`, backdropFilter: blur ? 'blur(10px)' : 'none', WebkitBackdropFilter: blur ? 'blur(10px)' : 'none' }}>
+              <div key={pack.project_id} className="mc-card" style={{ background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)` }}>
                 <div className="mc-card-header">
                   <img src={pack.icon_url || pack.gallery?.[0] || 'https://via.placeholder.com/64'} alt="cover" className="mc-card-icon" />
                   <div className="mc-card-title-area">

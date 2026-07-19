@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from './i18n'
-import { Plus, X, Package, Check, Settings, Trash, Power, PowerOff } from 'lucide-react'
+import { Plus, X, Package, Check, Settings } from 'lucide-react'
 import { McSelect } from './McSelect'
+import ModViewer from './ModViewer'
 
 interface Modpack {
   name: string
   loader: string
   version: string
+  loaderVersion?: string
   installedMods: { id: string; title: string; type?: string; isEnabled?: boolean }[]
   icon?: string
 }
@@ -66,7 +68,21 @@ const getCategoryIcon = (cat: string) => {
   return map[cat.toLowerCase()] || base + "diamond_pickaxe.png";
 }
 
-export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: { currentVersion: string, opacity?: number, blur?: boolean }) {
+export default function ModsMenu({
+  currentVersion,
+  opacity = 95,
+  autoOpenSettings = false,
+  onCloseAutoOpenSettings,
+  autoOpenCreate = false,
+  onCloseAutoOpenCreate
+}: {
+  currentVersion: string,
+  opacity?: number,
+  autoOpenSettings?: boolean,
+  onCloseAutoOpenSettings?: () => void,
+  autoOpenCreate?: boolean,
+  onCloseAutoOpenCreate?: () => void
+}) {
   const { t } = useTranslation();
   const [modpacks, setModpacks] = useState<Modpack[]>([])
   const [activeModpack, setActiveModpack] = useState<Modpack | null>(null)
@@ -78,10 +94,12 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [installOptifine, setInstallOptifine] = useState(false)
   const [installElybySkins, setInstallElybySkins] = useState(false)
+  const [selectedModForViewer, setSelectedModForViewer] = useState<any>(null)
 
   const [newName, setNewName] = useState('')
   const [newLoader, setNewLoader] = useState('forge')
   const [newVersion, setNewVersion] = useState((currentVersion && !currentVersion.startsWith('mp:')) ? currentVersion : '1.20.1')
+
   const [newIcon, setNewIcon] = useState(PRESET_ICONS[0])
 
   const [query, setQuery] = useState('')
@@ -99,9 +117,18 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
   const listRef = useRef<HTMLDivElement>(null)
 
   const gameVersions = [
-    '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
-    '1.20.6', '1.20.4', '1.20.2', '1.20.1',
-    '1.19.4', '1.19.2', '1.18.2', '1.16.5', '1.12.2', '1.7.10'
+    '26.2', '26.1.2', '26.1.1', '26.1',
+    '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1',
+    '1.16.5', '1.16.4',
+    '1.15.2',
+    '1.14.4',
+    '1.12.2',
+    '1.8.9',
+    '1.7.10'
   ]
 
   // Load modpacks
@@ -112,7 +139,10 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
         const saved = await window.electronAPI.getModpacks()
         setModpacks(saved || [])
         if (saved && saved.length > 0) {
-          selectModpack(saved[0])
+          const matched = currentVersion && currentVersion.startsWith('mp:')
+            ? saved.find((m: any) => m.name === currentVersion.replace('mp:', ''))
+            : null;
+          selectModpack(matched || saved[0])
         }
       } catch (e) { console.error(e) }
     }
@@ -120,11 +150,30 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
 
     if (!localStorage.getItem('mc_sec_bg_data')) {
       // @ts-ignore
-      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\servbcg.jpg')
+      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\bg-minecraft.png')
         .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
         .catch(console.error)
     }
   }, [])
+
+  useEffect(() => {
+    if (autoOpenSettings && activeModpack) {
+      setEditModpackName(activeModpack.name);
+      setEditModpackIcon(activeModpack.icon || PRESET_ICONS[0]);
+      setConfirmDelete(false);
+      setShowModpackSettingsModal(true);
+      if (onCloseAutoOpenSettings) onCloseAutoOpenSettings();
+    }
+  }, [autoOpenSettings, activeModpack]);
+
+  useEffect(() => {
+    if (autoOpenCreate) {
+      const cleanVer = currentVersion.replace(' Forge', '');
+      setNewVersion(cleanVer);
+      setShowCreateModal(true);
+      if (onCloseAutoOpenCreate) onCloseAutoOpenCreate();
+    }
+  }, [autoOpenCreate, currentVersion]);
 
   // Refetch when projectType or sort changes
   useEffect(() => {
@@ -145,11 +194,11 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
     else setIsFetchingMore(true)
 
     try {
-        // @ts-ignore
-        const data = await window.electronAPI.searchMods('', mp.loader, mp.version, currentOffset, projectType, sort)
-        const newResults = data?.hits || []
-        setResults(prev => append ? [...prev, ...newResults] : newResults)
-        setHasMore(newResults.length === 20)
+      // @ts-ignore
+      const data = await window.electronAPI.searchMods('', mp.loader, mp.version, currentOffset, projectType, sort)
+      const newResults = data?.hits || []
+      setResults(prev => append ? [...prev, ...newResults] : newResults)
+      setHasMore(newResults.length === 20)
     } catch (e) {
       console.error(e)
     }
@@ -176,7 +225,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
           })
         }
       }
-    } catch(e) { console.error(e) }
+    } catch (e) { console.error(e) }
 
     setActiveModpack(mp)
     setQuery('')
@@ -187,15 +236,15 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
   const createModpack = async () => {
     if (!newName.trim()) return
     const safeName = newName.replace(/[<>:"/\\|?*]/g, '-')
-    const mp: Modpack = { name: safeName, loader: newLoader, version: newVersion, installedMods: [], icon: newIcon }
-    
+    const mp: Modpack = { name: safeName, loader: newLoader, version: newVersion, loaderVersion: undefined, installedMods: [], icon: newIcon }
+
     setModpacks(prev => {
       const updated = [...prev, mp]
       // @ts-ignore
       window.electronAPI.saveModpacks(updated)
       return updated
     })
-    
+
     setShowCreateModal(false)
     const shouldInstallOptifine = installOptifine
     const createdName = safeName
@@ -251,7 +300,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
   const saveModpackSettings = async () => {
     if (!activeModpack || !editModpackName.trim()) return
     const safeEditName = editModpackName.replace(/[<>:"/\\|?*]/g, '-')
-    
+
     if (safeEditName !== activeModpack.name) {
       try {
         // @ts-ignore
@@ -287,7 +336,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
     try {
       // @ts-ignore
       await window.electronAPI.deleteModpackFolder(activeModpack.name)
-    } catch(e) {
+    } catch (e) {
       console.error(e)
     }
 
@@ -295,7 +344,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
       const updated = prev.filter(mp => mp.name !== activeModpack.name)
       // @ts-ignore
       window.electronAPI.saveModpacks(updated)
-      
+
       // Auto-select another modpack if list is not empty
       if (updated.length > 0) {
         selectModpack(updated[0])
@@ -312,7 +361,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
 
   const searchMods = async (currentOffset = 0, append = false) => {
     if (!activeModpack) return
-    
+
     if (currentOffset === 0) setLoading(true)
     else setIsFetchingMore(true)
 
@@ -345,27 +394,27 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
 
   const installMod = async (mod: any) => {
     if (!activeModpack) return
-    
+
     // Normalize IDs for state
     const modId = mod.project_id
-    
+
     setDownloading(prev => ({ ...prev, [modId]: true }))
     try {
-        const loader = activeModpack.loader
-        // @ts-ignore
-        const result = await window.electronAPI.downloadMod(mod.project_id, activeModpack.version, loader, activeModpack.name, projectType)
-        const newMods = result.filenames.map((name: string, i: number) => ({
-          id: i === 0 ? modId : `dep-${modId}-${i}`,
-          title: name,
-          type: projectType
-        }))
-        const updatedMp = { 
-          ...activeModpack, 
-          installedMods: [...activeModpack.installedMods, ...newMods] 
-        }
-        setActiveModpack(updatedMp)
-        const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
-        persistModpacks(updatedAll)
+      const loader = activeModpack.loader
+      // @ts-ignore
+      const result = await window.electronAPI.downloadMod(mod.project_id, activeModpack.version, loader, activeModpack.name, projectType)
+      const newMods = result.filenames.map((name: string, i: number) => ({
+        id: i === 0 ? modId : `dep-${modId}-${i}`,
+        title: name,
+        type: projectType
+      }))
+      const updatedMp = {
+        ...activeModpack,
+        installedMods: [...activeModpack.installedMods, ...newMods]
+      }
+      setActiveModpack(updatedMp)
+      const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
+      persistModpacks(updatedAll)
 
     } catch (e: any) {
       alert(t("mods.failedToInstall") + " " + e.message)
@@ -402,9 +451,9 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
           title: name,
           type: 'mod'
         }))
-        const updatedMp = { 
-          ...activeModpack, 
-          installedMods: [...activeModpack.installedMods, ...newMods] 
+        const updatedMp = {
+          ...activeModpack,
+          installedMods: [...activeModpack.installedMods, ...newMods]
         }
         setActiveModpack(updatedMp)
         const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
@@ -412,7 +461,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
       } else if (result.status === 'error') {
         alert(t('mods.failedOptifine') + ' ' + result.error)
       }
-    } catch(e: any) {
+    } catch (e: any) {
       alert(t('mods.failedOptifine') + ' ' + e.message)
     }
     setDownloading(prev => ({ ...prev, ['optifine']: false }))
@@ -433,17 +482,18 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
     const d = mod.date_modified
     if (!d) return '01.01.2023'
     const date = new Date(d)
-    return `${date.getDate().toString().padStart(2,'0')}.${(date.getMonth()+1).toString().padStart(2,'0')}.${date.getFullYear()}`
+    return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`
   }
 
   return (
-    <div className="mods-menu" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--pg-black)', backgroundImage: bgImage ? `url("${bgImage}")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden' }}>
-      
+    <div className="mods-menu" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: `rgba(23, 21, 19, ${opacity / 100})`, backgroundImage: bgImage ? `url("${bgImage}")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
+
       {/* Settings row for modpacks (Custom wrapper for previous top bar logic) */}
-      <div style={{ display: 'flex', padding: '15px 20px', background: '#111', alignItems: 'center', gap: '15px', borderBottom: '1px solid #222', flexWrap: 'wrap' }}>
-        <span style={{ fontWeight: 'bold', flexShrink: 0, color: 'white' }}>{t("mods.modpack")}</span>
-        <McSelect 
-          value={activeModpack?.name || ''} 
+      <div style={{ position: 'sticky', top: 0, zIndex: 999, display: 'flex', padding: '15px 20px', background: 'var(--pg-dark)', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--pg-dark3)', flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: 'bold', flexShrink: 0, color: 'var(--pg-text)' }}>{t("mods.modpack")}</span>
+        <McSelect
+          value={activeModpack?.name || ''}
           onChange={(val) => {
             const mp = modpacks.find(m => m.name === val)
             if (mp) selectModpack(mp)
@@ -454,11 +504,11 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
           ]}
           style={{ minWidth: '200px' }}
         />
-        
+
         {activeModpack && (
-          <button 
+          <button
             className="mc-btn-primary"
-            style={{ padding: '6px', background: '#222', borderColor: '#333', color: '#aaa', display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+            style={{ padding: '6px', background: 'var(--pg-dark)', borderColor: 'var(--pg-dark3)', color: 'var(--pg-text-muted)', display: 'flex', alignItems: 'center', cursor: 'pointer' }}
             onClick={() => {
               setEditModpackName(activeModpack.name)
               setEditModpackIcon(activeModpack.icon || PRESET_ICONS[0])
@@ -471,7 +521,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
-          <button 
+          <button
             className="mc-btn-primary mc-btn-yellow"
             onClick={() => setShowCreateModal(true)}
           >
@@ -484,12 +534,12 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
       <div className="mods-top-bar">
         <div style={{ position: 'relative', flex: 1 }}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="#aaa" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}>
-            <path d="M22 22h-2v-2h2zm-2-2h-2v-2h2zm-6-2H6v-2h8zm4 0h-2v-2h2zM6 16H4v-2h2zm10 0h-2v-2h2zM4 14H2V6h2zm14 0h-2V6h2zM6 6H4V4h2zm10 0h-2V4h2zm-2-2H6V2h8z"/>
+            <path d="M22 22h-2v-2h2zm-2-2h-2v-2h2zm-6-2H6v-2h8zm4 0h-2v-2h2zM6 16H4v-2h2zm10 0h-2v-2h2zM4 14H2V6h2zm14 0h-2V6h2zM6 6H4V4h2zm10 0h-2V4h2zm-2-2H6V2h8z" />
           </svg>
-          <input 
-            type="text" 
-            className="mc-input" 
-            placeholder={t("mods.search")} 
+          <input
+            type="text"
+            className="mc-input"
+            placeholder={t("mods.search")}
             style={{ paddingLeft: '35px', width: '100%' }}
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -497,10 +547,10 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
             disabled={!activeModpack}
           />
         </div>
-        
-        <McSelect 
-          value={projectType} 
-          onChange={(v) => setProjectType(v)} 
+
+        <McSelect
+          value={projectType}
+          onChange={(v) => setProjectType(v)}
           disabled={!activeModpack}
           options={[
             { value: 'mod', label: t("mods.mods") },
@@ -509,9 +559,9 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
           ]}
         />
 
-        <McSelect 
-          value={sort} 
-          onChange={(v) => setSort(v)} 
+        <McSelect
+          value={sort}
+          onChange={(v) => setSort(v)}
           disabled={!activeModpack}
           options={[
             { value: 'relevance', label: t("mods.relevance") },
@@ -523,11 +573,11 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
       </div>
 
       {/* Main Grid Content */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+
         {/* Installed Mods Left Panel */}
         {activeModpack && (
-          <div 
+          <div
             style={{ width: '220px', background: 'rgba(26,26,26,0.95)', borderRight: '2px solid #333', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
             onDragOver={(e) => {
               e.preventDefault()
@@ -537,11 +587,11 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
             onDrop={async (e) => {
               e.preventDefault()
               e.stopPropagation()
-              
+
               if (!activeModpack) return
               const files = Array.from(e.dataTransfer.files)
               let added = false
-              
+
               for (const file of files) {
                 if (file.name.endsWith('.jar') || file.name.endsWith('.zip')) {
                   try {
@@ -556,12 +606,12 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                   }
                 }
               }
-              
+
               if (added) {
                 // Refresh installed mods
                 // @ts-ignore
                 const installed = await window.electronAPI.getInstalledMods(activeModpack.name)
-                
+
                 setModpacks(prev => {
                   const updated = prev.map(mp => {
                     if (mp.name === activeModpack.name) {
@@ -573,13 +623,13 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                   window.electronAPI.saveModpacks(updated)
                   return updated
                 })
-                
+
                 setActiveModpack({ ...activeModpack, installedMods: installed })
               }
             }}
           >
             <div style={{ padding: '15px', fontWeight: 'bold', borderBottom: '1px solid var(--pg-dark3)', display: 'flex', justifyContent: 'space-between', color: 'white', fontSize: '14px' }}>
-               <span>{t('mods.installed')} {projectType === 'resourcepack' ? t('mods.typeResourcepacks') : projectType === 'shader' ? t('mods.typeShaders') : t('mods.typeMods')} ({activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length})</span>
+              <span>{t('mods.installed')} {projectType === 'resourcepack' ? t('mods.typeResourcepacks') : projectType === 'shader' ? t('mods.typeShaders') : t('mods.typeMods')} ({activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length})</span>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '10px', gap: '5px' }}>
               {activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length === 0 ? (
@@ -589,26 +639,30 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--pg-dark3)', borderRadius: '0', opacity: m.isEnabled === false ? 0.5 : 1 }}>
                     <Check size={16} color={m.isEnabled === false ? "#777" : "#2ecc71"} style={{ flexShrink: 0 }} />
                     <span style={{ color: 'white', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textDecoration: m.isEnabled === false ? 'line-through' : 'none' }}>{m.title}</span>
-                    <button 
+                    <button
                       onClick={async () => {
                         try {
                           // @ts-ignore
                           await window.electronAPI.toggleMod(m.title, activeModpack.name, !(m.isEnabled !== false));
-                          const updatedMp = { 
-                            ...activeModpack, 
-                            installedMods: activeModpack.installedMods.map(mod => mod.id === m.id ? { ...mod, isEnabled: (m.isEnabled === false) } : mod) 
+                          const updatedMp = {
+                            ...activeModpack,
+                            installedMods: activeModpack.installedMods.map(mod => mod.id === m.id ? { ...mod, isEnabled: (m.isEnabled === false) } : mod)
                           };
                           setActiveModpack(updatedMp);
                           const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
                           persistModpacks(updatedAll);
-                        } catch(e) { console.error(e) }
-                      }} 
+                        } catch (e) { console.error(e) }
+                      }}
                       title={m.isEnabled === false ? "Enable" : "Disable"}
                       style={{ background: 'transparent', border: 'none', color: m.isEnabled === false ? '#aaa' : '#f39c12', cursor: 'pointer', padding: '2px', display: 'flex' }}
                     >
-                      {m.isEnabled === false ? <PowerOff size={14} /> : <Power size={14} />}
+                      {m.isEnabled === false ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="14" height="14" style={{ opacity: 0.6 }}><path d="M18 22H6v-2h12v2ZM6 20H4v-2h2v2Zm14 0h-2v-2h2v2ZM4 18H2V8h2v10Zm18 0h-2V8h2v10Zm-9-7h-2V2h2v9ZM6 8H4V6h2v2Zm14 0h-2V6h2v2ZM8 6H6V4h2v2Zm10 0h-2V4h2v2Z"/></svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="14" height="14"><path d="M18 22H6v-2h12v2ZM6 20H4v-2h2v2Zm14 0h-2v-2h2v2ZM4 18H2V8h2v10Zm18 0h-2V8h2v10Zm-9-7h-2V2h2v9ZM6 8H4V6h2v2Zm14 0h-2V6h2v2ZM8 6H6V4h2v2Zm10 0h-2V4h2v2Z"/></svg>
+                      )}
                     </button>
-                    <button 
+                    <button
                       onClick={async () => {
                         try {
                           // @ts-ignore
@@ -617,11 +671,11 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                           setActiveModpack(updatedMp);
                           const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
                           persistModpacks(updatedAll);
-                        } catch(e) { console.error(e) }
-                      }} 
+                        } catch (e) { console.error(e) }
+                      }}
                       style={{ background: 'transparent', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '2px', display: 'flex' }}
                     >
-                      <Trash size={14} />
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="14" height="14"><path d="M7 19H5v-2h2v2Zm12 0h-2v-2h2v2ZM9 15v2H7v-2h2Zm8 2h-2v-2h2v2Zm-6-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-2-2h-2v-2h2v2Zm-2-2H9V9h2v2Zm4 0h-2V9h2v2ZM9 9H7V7h2v2Zm8 0h-2V7h2v2ZM7 7H5V5h2v2Zm12 0h-2V5h2v2Z"/></svg>
                     </button>
                   </div>
                 ))
@@ -641,7 +695,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
           ) : (
             <>
               {projectType === 'mod' && activeModpack?.loader === 'forge' && offset === 0 && (!query || query.toLowerCase().includes('opti')) && (
-                <div className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})`, backdropFilter: blur ? 'blur(10px)' : 'none', WebkitBackdropFilter: blur ? 'blur(10px)' : 'none' }}>
+                <div className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})` }}>
                   <div className="mc-card-header">
                     <img src="https://optifine.net/favicon.ico" alt="icon" className="mc-card-icon" style={{ background: 'white' }} />
                     <div className="mc-card-title-area">
@@ -677,7 +731,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                 </div>
               )}
               {results.map((mod: any) => (
-                <div key={getModId(mod)} className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})`, backdropFilter: blur ? 'blur(10px)' : 'none', WebkitBackdropFilter: blur ? 'blur(10px)' : 'none' }}>
+                <div key={getModId(mod)} className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})`, cursor: 'pointer' }} onClick={() => setSelectedModForViewer(mod)}>
                   <div className="mc-card-header">
                     <img src={getModIcon(mod)} alt="icon" className="mc-card-icon" />
                     <div className="mc-card-title-area">
@@ -685,7 +739,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                         <span className="mc-card-title">{getModTitle(mod)}</span>
                         <span className="mc-card-loader">({activeModpack.loader.toUpperCase()})</span>
                       </div>
-                      <button className="mc-card-more" onClick={() => openModrinthPage(mod)}>•••</button>
+                      <button className="mc-card-more" onClick={(e) => { e.stopPropagation(); openModrinthPage(mod); }}>•••</button>
                     </div>
                   </div>
 
@@ -699,7 +753,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                     ))}
                   </div>
 
-                  <div className="mc-card-footer">
+                  <div className="mc-card-footer" onClick={e => e.stopPropagation()}>
                     <div className="mc-card-meta">
                       <span>↓ {getModDownloads(mod)} dl</span>
                       <span>≡ {getModDate(mod)}</span>
@@ -722,13 +776,13 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
 
       {/* Create Modpack Modal */}
       {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px' }}>
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px', maxHeight: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
               <span style={{ fontSize: '18px', color: 'white' }}>{t("mods.createModpackTitle")}</span>
               <button onClick={() => setShowCreateModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}><X size={20} /></button>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.name")}</label>
@@ -738,8 +792,8 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.loader")}</label>
-                  <McSelect 
-                    value={newLoader} 
+                  <McSelect
+                    value={newLoader}
                     onChange={v => setNewLoader(v)}
                     options={[
                       { value: 'fabric', label: 'Fabric' },
@@ -751,13 +805,14 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                 </div>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.gameVersion")}</label>
-                  <McSelect 
-                    value={newVersion} 
+                  <McSelect
+                    value={newVersion}
                     onChange={v => setNewVersion(v)}
                     options={gameVersions.map((v: string) => ({ value: v, label: v }))}
                   />
                 </div>
               </div>
+
 
               {newLoader === 'forge' && (
                 <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
@@ -778,7 +833,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.icon")}</label>
                 <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                  <label 
+                  <label
                     onClick={async (e) => {
                       e.preventDefault()
                       // @ts-ignore
@@ -790,17 +845,17 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                     <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
                   </label>
                   {PRESET_ICONS.map(icon => (
-                    <img 
-                      key={icon} 
-                      src={icon} 
-                      width={32} 
-                      height={32} 
-                      style={{ 
-                        cursor: 'pointer', 
+                    <img
+                      key={icon}
+                      src={icon}
+                      width={32}
+                      height={32}
+                      style={{
+                        cursor: 'pointer',
                         border: newIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
                         padding: '2px',
                         objectFit: 'cover'
-                      }} 
+                      }}
                       onClick={() => setNewIcon(icon)}
                     />
                   ))}
@@ -816,13 +871,13 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
 
       {/* Modpack Settings Modal */}
       {showModpackSettingsModal && activeModpack && (
-        <div className="modal-overlay" onClick={() => setShowModpackSettingsModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px' }}>
+        <div className="modal-overlay" onClick={() => setShowModpackSettingsModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px', maxHeight: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
               <span style={{ fontSize: '18px', color: 'white' }}>{t("mods.modpackSettings")}</span>
               <button onClick={() => setShowModpackSettingsModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}><X size={20} /></button>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.name")}</label>
@@ -832,7 +887,7 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.icon")}</label>
                 <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                  <label 
+                  <label
                     onClick={async (e) => {
                       e.preventDefault()
                       // @ts-ignore
@@ -844,17 +899,17 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
                     <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
                   </label>
                   {PRESET_ICONS.map(icon => (
-                    <img 
-                      key={icon} 
-                      src={icon} 
-                      width={32} 
-                      height={32} 
-                      style={{ 
-                        cursor: 'pointer', 
+                    <img
+                      key={icon}
+                      src={icon}
+                      width={32}
+                      height={32}
+                      style={{
+                        cursor: 'pointer',
                         border: editModpackIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
                         padding: '2px',
                         objectFit: 'cover'
-                      }} 
+                      }}
                       onClick={() => setEditModpackIcon(icon)}
                     />
                   ))}
@@ -862,15 +917,15 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button 
-                  className="mc-btn-primary" 
+                <button
+                  className="mc-btn-primary"
                   onClick={() => {
                     if (confirmDelete) {
                       deleteModpack()
                     } else {
                       setConfirmDelete(true)
                     }
-                  }} 
+                  }}
                   style={{ flex: 1, padding: '10px', background: '#e74c3c', borderColor: '#c0392b', color: 'white' }}
                 >
                   {confirmDelete ? t('mods.areYouSure') : t('mods.deleteModpack')}
@@ -880,6 +935,18 @@ export default function ModsMenu({ currentVersion, opacity = 95, blur = true }: 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mod Viewer Modal */}
+      {selectedModForViewer && (
+        <ModViewer
+          mod={selectedModForViewer}
+          activeModpack={activeModpack}
+          onClose={() => setSelectedModForViewer(null)}
+          onInstall={installMod}
+          isInstalled={isInstalled(selectedModForViewer)}
+          isDownloading={!!downloading[getModId(selectedModForViewer)]}
+        />
       )}
     </div>
   )
