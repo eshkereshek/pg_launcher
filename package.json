@@ -1,7 +1,7 @@
 {
   "name": "pagrysha-launcher",
   "private": true,
-  "version": "7.1.5",
+  "version": "7.1.6",
   "type": "module",
   "main": "dist-electron/main.js",
   "repository": "https://github.com/eshkereshek/pg_launcher",
@@ -61,6 +61,10 @@
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Pagrysha Launcher"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.png"
     }
   }
 }
