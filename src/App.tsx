@@ -295,12 +295,14 @@ export default function App() {
 
 
   const MinecraftFace = ({ acc, size = 32 }: { acc: Account, size?: number }) => {
-    if (acc.type !== 'elyby') {
+    if (acc.type !== 'elyby' && acc.type !== 'pgsync') {
       const url = acc.skinUrl || `https://minotar.net/helm/${acc.name}/${size}.png`;
       return <img src={url} width={size} height={size} style={{ imageRendering: 'pixelated', borderRadius: 0, width: size, height: size }} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://minotar.net/helm/Steve/${size}.png`; }} alt="Skin" />
     }
 
-    const rawSkinUrl = `http://skinsystem.ely.by/skins/${acc.name}.png`;
+    const rawSkinUrl = acc.type === 'pgsync' 
+      ? `https://pg-sync-server.onrender.com/api/cosmetics/skin/${acc.name}` 
+      : `http://skinsystem.ely.by/skins/${acc.name}.png`;
 
 
 
@@ -1682,7 +1684,7 @@ export default function App() {
                       <span style={{ color: '#888', fontSize: '11px', textTransform: 'uppercase' }}>{acc.type === 'offline' ? t("app.typeOffline") : acc.type}</span>
                     </div>
                     {accounts.length > 1 && (
-                      <button onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }} className="icon-button" style={{ color: '#e74c3c' }}>
+                      <button onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }} className="mc-btn-primary" style={{ background: '#e74c3c', borderColor: '#c0392b', color: 'white', padding: '5px 10px', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
                         <Trash size={16} />
                       </button>
                     )}
@@ -1702,7 +1704,7 @@ export default function App() {
                 <div className="mc-acc-arrow">{'>'}</div>
               </div>
               <div className={`mc-acc-type-btn ${authType === 'pgsync' ? 'selected' : ''}`} onClick={() => setAuthType('pgsync')}>
-                <div className="mc-acc-icon-box"><img src="/favicon.ico" width={24} /></div>
+                <div className="mc-acc-icon-box"><img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={24} /></div>
                 <div className="mc-acc-text">
                   <span className="subtitle">PG-SYNC</span>
                   <span className="title">{t("app.pgsyncAccount")}</span>
@@ -1734,7 +1736,7 @@ export default function App() {
               )}
               {(authType === 'elyby' || authType === 'pgsync') && (
                 <>
-                  <input type="text" className="mc-input" placeholder="E-mail" disabled={authLoading} value={authEmail} onChange={e => setAuthEmail(e.target.value)} />
+                  <input type="text" className="mc-input" placeholder={authType === 'pgsync' ? "Имя пользователя" : "E-mail"} disabled={authLoading} value={authEmail} onChange={e => setAuthEmail(e.target.value)} />
                   <div style={{ position: 'relative' }}>
                     <input type={showPassword ? "text" : "password"} className="mc-input" placeholder={t("app.passwordPlaceholder")} disabled={authLoading} value={authPassword} onChange={e => setAuthPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAccount()} style={{ width: '100%', paddingRight: '40px' }} />
                     <button 
