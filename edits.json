@@ -1,0 +1,513 @@
+[
+  {
+    "AllowMultiple": false,
+    "Description": "Add Authenticator import from minecraft-launcher-core to generate proper offline tokens",
+    "EndLine": 10,
+    "Instruction": "Add Authenticator to imports",
+    "ReplacementContent": "// @ts-ignore\nimport { Client, Authenticator } from 'minecraft-launcher-core'",
+    "StartLine": 9,
+    "TargetContent": "// @ts-ignore\nimport { Client } from 'minecraft-launcher-core'",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\electron\\main.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Fix offline sessions for LAN and refresh Ely.by tokens",
+    "EndLine": 1106,
+    "Instruction": "Replace authorization configuration to use Authenticator.getAuth for offline players and Ely.by refresh API for Ely.by tokens",
+    "ReplacementContent": "    let authObj: any = {\n      access_token: options.token || '0',\n      client_token: options.clientToken || '0',\n      uuid: options.uuid || '00000000-0000-0000-0000-000000000000',\n      name: options.username || 'Player',\n      user_properties: {},\n      meta: {\n        type: options.authType === 'microsoft' ? 'msa' : 'mojang',\n        demo: false\n      }\n    };\n\n    if (options.authType === 'offline' || (!options.token && options.authType !== 'elyby' && options.authType !== 'microsoft')) {\n      authObj = await Authenticator.getAuth(options.username || 'Player');\n    } else if (options.authType === 'elyby' && options.token && options.clientToken) {\n      try {\n        const refreshRes = await fetch('https://authserver.ely.by/auth/refresh', {\n          method: 'POST',\n          headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({\n            accessToken: options.token,\n            clientToken: options.clientToken,\n            requestUser: true\n          })\n        });\n        if (refreshRes.ok) {\n          const refData: any = await refreshRes.json();\n          authObj.access_token = refData.accessToken;\n          authObj.client_token = refData.clientToken;\n        }\n      } catch (e) {\n        console.error('Failed to refresh Ely.by token:', e);\n      }\n    }\n\n    const opts: any = {\n      clientPackage: undefined,\n      authorization: authObj,\n      root: rootPath,",
+    "StartLine": 1093,
+    "TargetContent": "    const opts: any = {\n      clientPackage: undefined,\n      authorization: {\n        access_token: options.token || '0',\n        client_token: options.clientToken || '0',\n        uuid: options.uuid || '00000000-0000-0000-0000-000000000000',\n        name: options.username || 'Player',\n        user_properties: {},\n        meta: {\n          type: options.authType === 'microsoft' ? 'msa' : 'mojang',\n          demo: false\n        }\n      },\n      root: rootPath,",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\electron\\main.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Add reinstall version functionality and remove extra themes",
+    "Instruction": "1. Import RefreshCw\n2. Remove warm_dark, warm_white, cold_dark, cold_white themes.\n3. Update theme dropdown to only show dark and light options.\n4. Add reinstall button next to downloaded versions in the dropdown.",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 4,
+        "ReplacementContent": "import { Trash, Folder, Play, Image, Brush, Settings, Wrench, Sparkles, ChevronDown, X, RefreshCw } from 'lucide-react'\nimport ModsMenu from './ModsMenu'",
+        "StartLine": 3,
+        "TargetContent": "import { Trash, Folder, Play, Image, Brush, Settings, Wrench, Sparkles, ChevronDown, X } from 'lucide-react'\nimport ModsMenu from './ModsMenu'"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 489,
+        "ReplacementContent": "      }\n    };",
+        "StartLine": 424,
+        "TargetContent": "      },\n      warm_dark: {\n        '--pg-black': '#1c1816',\n        '--pg-dark': '#27211e',\n        '--pg-dark2': '#332b27',\n        '--pg-dark3': '#3f3530',\n        '--pg-text': '#f7ebe1',\n        '--pg-text-muted': '#a69285',\n        '--pg-yellow': '#d97736',\n        '--pg-yellow-hover': '#e88848',\n        '--pg-yellow-highlight': '#fcae79',\n        '--pg-yellow-dark': '#ad531f',\n        '--pg-yellow-shadow': '#803810',\n        '--pg-hover': 'rgba(255, 255, 255, 0.05)',\n        '--pg-active': 'rgba(255, 255, 255, 0.1)',\n        '--pg-icon-filter': 'brightness(0) invert(1)',\n      },\n      warm_white: {\n        '--pg-black': '#fdfaf6',\n        '--pg-dark': '#f5eedc',\n        '--pg-dark2': '#ebdcb9',\n        '--pg-dark3': '#dcc899',\n        '--pg-text': '#2c241c',\n        '--pg-text-muted': '#7d6b5c',\n        '--pg-yellow': '#c68936',\n        '--pg-yellow-hover': '#d99743',\n        '--pg-yellow-highlight': '#f2be7e',\n        '--pg-yellow-dark': '#966320',\n        '--pg-yellow-shadow': '#664110',\n        '--pg-hover': 'rgba(0, 0, 0, 0.06)',\n        '--pg-active': 'rgba(0, 0, 0, 0.12)',\n        '--pg-icon-filter': 'brightness(0)',\n      },\n      cold_dark: {\n        '--pg-black': '#0f131a',\n        '--pg-dark': '#171d26',\n        '--pg-dark2': '#212936',\n        '--pg-dark3': '#2d3848',\n        '--pg-text': '#e2e8f0',\n        '--pg-text-muted': '#8090a8',\n        '--pg-yellow': '#39b54a',\n        '--pg-yellow-hover': '#43c555',\n        '--pg-yellow-highlight': '#5cdb6e',\n        '--pg-yellow-dark': '#2a8b36',\n        '--pg-yellow-shadow': '#1d6225',\n        '--pg-hover': 'rgba(255, 255, 255, 0.05)',\n        '--pg-active': 'rgba(255, 255, 255, 0.1)',\n        '--pg-icon-filter': 'brightness(0) invert(1)',\n      },\n      cold_white: {\n        '--pg-black': '#ffffff',\n        '--pg-dark': '#f0f4f8',\n        '--pg-dark2': '#d9e2ec',\n        '--pg-dark3': '#bcccdc',\n        '--pg-text': '#102a43',\n        '--pg-text-muted': '#627d98',\n        '--pg-yellow': '#39b54a',\n        '--pg-yellow-hover': '#43c555',\n        '--pg-yellow-highlight': '#5cdb6e',\n        '--pg-yellow-dark': '#2a8b36',\n        '--pg-yellow-shadow': '#1d6225',\n        '--pg-hover': 'rgba(0, 0, 0, 0.06)',\n        '--pg-active': 'rgba(0, 0, 0, 0.12)',\n        '--pg-icon-filter': 'brightness(0)',\n      }\n    };"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1183,
+        "ReplacementContent": "                          <span style={{ color: installedVersions.includes(v) ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: installedVersions.includes(v) ? 'bold' : 'normal', flex: 1 }}>\n                            {v} {installedVersions.includes(v) && t('app.downloaded')}\n                          </span>\n                          {installedVersions.includes(v) && (\n                            <div\n                              title=\"Переустановить\"\n                              onClick={async (e) => {\n                                e.stopPropagation();\n                                if (confirm(`Переустановить ${v}?`)) {\n                                  // @ts-ignore\n                                  await window.electronAPI.deleteModpackFolder(v);\n                                  setInstalledVersions(installedVersions.filter(iv => iv !== v));\n                                }\n                              }}\n                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'var(--pg-dark2)', borderRadius: '4px', cursor: 'pointer' }}\n                            >\n                              <RefreshCw size={14} color=\"var(--pg-text-muted)\" />\n                            </div>\n                          )}",
+        "StartLine": 1181,
+        "TargetContent": "                          <span style={{ color: installedVersions.includes(v) ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: installedVersions.includes(v) ? 'bold' : 'normal' }}>\n                            {v} {installedVersions.includes(v) && t('app.downloaded')}\n                          </span>"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1460,
+        "ReplacementContent": "                      options={[\n                        { value: 'dark', label: 'Темная (по умолчанию)' },\n                        { value: 'light', label: 'Светлая' }\n                      ]}",
+        "StartLine": 1454,
+        "TargetContent": "                      options={[\n                        { value: 'dark', label: 'Темная (по умолчанию)' },\n                        { value: 'light', label: 'Светлая' },\n                        { value: 'warm_dark', label: 'Темная теплая' },\n                        { value: 'warm_white', label: 'Теплая Белая' },\n                        { value: 'cold_dark', label: 'Холодная Темная' },\n                        { value: 'cold_white', label: 'Холодная белая' }\n                      ]}"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Fix Image conflict",
+    "EndLine": 31,
+    "Instruction": "Use window.Image to avoid conflict with imported Image icon from lucide-react",
+    "ReplacementContent": "const saveCompressedImage = (file: File, key: string, callback: (dataUrl: string) => void) => {\n  const img = new window.Image();\n  img.onload = () => {",
+    "StartLine": 29,
+    "TargetContent": "const saveCompressedImage = (file: File, key: string, callback: (dataUrl: string) => void) => {\n  const img = new Image();\n  img.onload = () => {",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Remove unused Sparkles import to fix typescript error",
+    "EndLine": 3,
+    "Instruction": "Remove Sparkles from import",
+    "ReplacementContent": "import { Trash, Folder, Play, Image, Brush, Settings, Wrench, ChevronDown, X, RefreshCw } from 'lucide-react'",
+    "StartLine": 3,
+    "TargetContent": "import { Trash, Folder, Play, Image, Brush, Settings, Wrench, Sparkles, ChevronDown, X, RefreshCw } from 'lucide-react'",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Force Vite server to bind to 127.0.0.1 to avoid IPv6/IPv4 mismatch with Electron",
+    "EndLine": 8,
+    "Instruction": "Add server: { host: '127.0.0.1' } to vite.config.ts",
+    "ReplacementContent": "export default defineConfig({\n  server: { host: '127.0.0.1' },\n  plugins: [",
+    "StartLine": 7,
+    "TargetContent": "export default defineConfig({\n  plugins: [",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\vite.config.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Make normal vanilla versions share gameDirectory with rootPath so they share saves and resourcepacks",
+    "EndLine": 1150,
+    "Instruction": "Change gameDirectory to rootPath if options.instanceId is undefined",
+    "ReplacementContent": "      overrides: {\n        maxSockets: 32,\n        detached: false,\n        env: {\n          ...process.env,\n          ...(javaPath !== 'java' ? { JAVA_HOME: path.dirname(path.dirname(javaPath)) } : {})\n        },\n        gameDirectory: options.instanceId ? path.join(rootPath, 'versions', options.instanceId) : rootPath\n      }\n    }",
+    "StartLine": 1141,
+    "TargetContent": "      overrides: {\n        maxSockets: 32,\n        detached: false,\n        env: {\n          ...process.env,\n          ...(javaPath !== 'java' ? { JAVA_HOME: path.dirname(path.dirname(javaPath)) } : {})\n        },\n        gameDirectory: path.join(rootPath, 'versions', options.instanceId || options.version)\n      }\n    }",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\electron\\main.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Move reinstall action to right click (context menu) and remove the inline button",
+    "Instruction": "In both dropdown lists for versions, add onContextMenu handler for reinstall and remove the inline button with RefreshCw",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 1136,
+        "ReplacementContent": "                      {versions.map(v => (\n                        <div\n                          key={v}\n                          className=\"dropdown-item\"\n                          onClick={() => { setSelectedVersion(v); handleCloseVersionDropdown(); }}\n                          onContextMenu={async (e) => {\n                            e.preventDefault();\n                            if (installedVersions.includes(v)) {\n                              if (confirm(`Переустановить ${v}?`)) {\n                                // @ts-ignore\n                                await window.electronAPI.deleteModpackFolder(v);\n                                setInstalledVersions(installedVersions.filter(iv => iv !== v));\n                              }\n                            }\n                          }}\n                          style={{\n                            padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--pg-dark3)',\n                            background: installedVersions.includes(v) ? 'var(--pg-active)' : 'transparent'\n                          }}\n                        >\n                          <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                          <span style={{ color: installedVersions.includes(v) ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: installedVersions.includes(v) ? 'bold' : 'normal', flex: 1 }}>\n                            {v} {installedVersions.includes(v) && t('app.downloaded')}\n                          </span>\n                        </div>\n                      ))}",
+        "StartLine": 1106,
+        "TargetContent": "                      {versions.map(v => (\n                        <div\n                          key={v}\n                          className=\"dropdown-item\"\n                          onClick={() => { setSelectedVersion(v); handleCloseVersionDropdown(); }}\n                          style={{\n                            padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--pg-dark3)',\n                            background: installedVersions.includes(v) ? 'var(--pg-active)' : 'transparent'\n                          }}\n                        >\n                          <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                          <span style={{ color: installedVersions.includes(v) ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: installedVersions.includes(v) ? 'bold' : 'normal', flex: 1 }}>\n                            {v} {installedVersions.includes(v) && t('app.downloaded')}\n                          </span>\n                          {installedVersions.includes(v) && (\n                            <div\n                              title=\"Переустановить\"\n                              onClick={async (e) => {\n                                e.stopPropagation();\n                                if (confirm(`Переустановить ${v}?`)) {\n                                  // @ts-ignore\n                                  await window.electronAPI.deleteModpackFolder(v);\n                                  setInstalledVersions(installedVersions.filter(iv => iv !== v));\n                                }\n                              }}\n                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, background: 'var(--pg-dark2)', borderRadius: '4px', cursor: 'pointer' }}\n                            >\n                              <RefreshCw size={14} color=\"var(--pg-text-muted)\" />\n                            </div>\n                          )}\n                        </div>\n                      ))}"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1276,
+        "ReplacementContent": "                          {versions.map(v => (\n                            <div\n                              key={v}\n                              className=\"dropdown-item\"\n                              onClick={() => { setSelectedVersion(v); handleCloseVersionDropdown(); }}\n                              onContextMenu={async (e) => {\n                                e.preventDefault();\n                                if (installedVersions.includes(v)) {\n                                  if (confirm(`Переустановить ${v}?`)) {\n                                    // @ts-ignore\n                                    await window.electronAPI.deleteModpackFolder(v);\n                                    setInstalledVersions(installedVersions.filter(iv => iv !== v));\n                                  }\n                                }\n                              }}\n                              style={{\n                                padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--pg-dark3)',\n                                background: installedVersions.includes(v) ? 'var(--pg-active)' : 'transparent'\n                              }}\n                            >\n                              <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                              <span style={{ color: installedVersions.includes(v) ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: installedVersions.includes(v) ? 'bold' : 'normal' }}>\n                                {v} {installedVersions.includes(v) && t('app.downloaded')}\n                              </span>\n                            </div>\n                          ))}",
+        "StartLine": 1261,
+        "TargetContent": "                          {versions.map(v => (\n                            <div\n                              key={v}\n                              className=\"dropdown-item\"\n                              onClick={() => { setSelectedVersion(v); handleCloseVersionDropdown(); }}\n                              style={{\n                                padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--pg-dark3)',\n                                background: installedVersions.includes(v) ? 'var(--pg-active)' : 'transparent'\n                              }}\n                            >\n                              <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                              <span style={{ color: installedVersions.includes(v) ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: installedVersions.includes(v) ? 'bold' : 'normal' }}>\n                                {v} {installedVersions.includes(v) && t('app.downloaded')}\n                              </span>\n                            </div>\n                          ))}"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Remove unused RefreshCw import",
+    "EndLine": 3,
+    "Instruction": "Remove RefreshCw from import",
+    "ReplacementContent": "import { Trash, Folder, Play, Image, Brush, Settings, Wrench, ChevronDown, X } from 'lucide-react'",
+    "StartLine": 3,
+    "TargetContent": "import { Trash, Folder, Play, Image, Brush, Settings, Wrench, ChevronDown, X, RefreshCw } from 'lucide-react'",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Add Forge versions to the official releases list and ensure proper launching",
+    "Instruction": "1. Add Forge versions to `versions` array.\n2. In `handleLaunch`, detect Forge versions and set the loader, without setting `instanceId` so they share root.\n3. Update icon rendering in both version dropdowns to show Wrench for Forge versions.",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 567,
+        "ReplacementContent": "  useEffect(() => {\n    let filtered = rawVersions\n    if (!showSnapshots) filtered = filtered.filter(v => v.type !== 'snapshot')\n    if (!showOldReleases) filtered = filtered.filter(v => v.type !== 'old_alpha' && v.type !== 'old_beta')\n    \n    const finalVersions: string[] = []\n    filtered.forEach(v => {\n      finalVersions.push(v.id)\n      if (v.type === 'release') {\n        finalVersions.push(`Forge ${v.id}`)\n      }\n    })\n    setVersions(finalVersions)\n\n    if (finalVersions.length > 0 && !selectedVersion) {\n      setSelectedVersion(finalVersions[0])\n    }\n  }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha])",
+        "StartLine": 558,
+        "TargetContent": "  useEffect(() => {\n    let filtered = rawVersions\n    if (!showSnapshots) filtered = filtered.filter(v => v.type !== 'snapshot')\n    if (!showOldReleases) filtered = filtered.filter(v => v.type !== 'old_alpha' && v.type !== 'old_beta')\n    setVersions(filtered.map(v => v.id))\n\n    if (filtered.length > 0 && !selectedVersion) {\n      setSelectedVersion(filtered[0].id)\n    }\n  }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha])"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 680,
+        "ReplacementContent": "    // Check if a modpack is selected\n    const isModpack = selectedVersion.startsWith('mp:')\n    const isForge = selectedVersion.startsWith('Forge ')\n    let launchOpts: any = {\n      version: isForge ? selectedVersion.replace('Forge ', '') : selectedVersion,\n      username: activeAccount.name,\n      uuid: activeAccount.uuid,\n      token: activeAccount.token,\n      clientToken: activeAccount.clientToken,\n      authType: activeAccount.type,\n      memory: { max: `${ramValue}M`, min: '1024M' }\n    }\n\n    if (isModpack) {\n      const mpName = selectedVersion.replace('mp:', '')\n      const mp = modpacks.find(m => m.name === mpName)\n      if (mp) {\n        launchOpts.version = mp.version\n        launchOpts.loader = mp.loader\n        launchOpts.modpackName = mp.name\n        launchOpts.instanceId = mp.name\n      }\n    } else if (isForge) {\n      launchOpts.loader = 'forge'\n    }",
+        "StartLine": 658,
+        "TargetContent": "    // Check if a modpack is selected\n    const isModpack = selectedVersion.startsWith('mp:')\n    let launchOpts: any = {\n      version: selectedVersion,\n      username: activeAccount.name,\n      uuid: activeAccount.uuid,\n      token: activeAccount.token,\n      clientToken: activeAccount.clientToken,\n      authType: activeAccount.type,\n      memory: { max: `${ramValue}M`, min: '1024M' },\n      instanceId: selectedVersion\n    }\n\n    if (isModpack) {\n      const mpName = selectedVersion.replace('mp:', '')\n      const mp = modpacks.find(m => m.name === mpName)\n      if (mp) {\n        launchOpts.version = mp.version\n        launchOpts.loader = mp.loader\n        launchOpts.modpackName = mp.name\n        launchOpts.instanceId = mp.name\n      }\n    }"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1126,
+        "ReplacementContent": "                          {v.startsWith('Forge ') \n                            ? <div style={{width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center'}}><Wrench size={18} color=\"var(--pg-text)\" /></div>\n                            : <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                          }",
+        "StartLine": 1126,
+        "TargetContent": "                          <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1275,
+        "ReplacementContent": "                              {v.startsWith('Forge ') \n                                ? <div style={{width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center'}}><Wrench size={18} color=\"var(--pg-text)\" /></div>\n                                : <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                              }",
+        "StartLine": 1275,
+        "TargetContent": "                              <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Change Forge version icons to use Anvil.png",
+    "Instruction": "Replace Wrench icon with Anvil.png in version dropdowns",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 1138,
+        "ReplacementContent": "                          {v.startsWith('Forge ') \n                            ? <img src=\"./iconsblocks/Anvil.png\" width={24} height={24} />\n                            : <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                          }",
+        "StartLine": 1135,
+        "TargetContent": "                          {v.startsWith('Forge ') \n                            ? <div style={{width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center'}}><Wrench size={18} color=\"var(--pg-text)\" /></div>\n                            : <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                          }"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1290,
+        "ReplacementContent": "                              {v.startsWith('Forge ') \n                                ? <img src=\"./iconsblocks/Anvil.png\" width={24} height={24} />\n                                : <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                              }",
+        "StartLine": 1287,
+        "TargetContent": "                              {v.startsWith('Forge ') \n                                ? <div style={{width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center'}}><Wrench size={18} color=\"var(--pg-text)\" /></div>\n                                : <img src=\"./iconsblocks/Grass_Block_(inventory)_MCE.png\" width={24} height={24} />\n                              }"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Add translations for app.showForge",
+    "Instruction": "Add `app.showForge` to the Russian and English translation objects.",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 44,
+        "ReplacementContent": "    'app.showForge': 'Отображать Forge версии',\n    'app.showSnapshots': 'Отображать Снапшоты (\"Snapshots\")',",
+        "StartLine": 44,
+        "TargetContent": "    'app.showSnapshots': 'Отображать Снапшоты (\"Snapshots\")',"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 217,
+        "ReplacementContent": "    'app.showForge': 'Show Forge versions',\n    'app.showSnapshots': 'Show Snapshots',",
+        "StartLine": 217,
+        "TargetContent": "    'app.showSnapshots': 'Show Snapshots',"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\i18n.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Add showForge toggle to settings",
+    "Instruction": "Add state, logic, saving, and UI for the showForge setting",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 373,
+        "ReplacementContent": "  // Settings State\n  const [showForge, setShowForge] = useState(localStorage.getItem('mc_show_forge') !== 'false')\n  const [showSnapshots, setShowSnapshots] = useState(localStorage.getItem('mc_show_snapshots') === 'true')",
+        "StartLine": 372,
+        "TargetContent": "  // Settings State\n  const [showSnapshots, setShowSnapshots] = useState(localStorage.getItem('mc_show_snapshots') === 'true')"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 575,
+        "ReplacementContent": "    const finalVersions: string[] = []\n    filtered.forEach(v => {\n      finalVersions.push(v.id)\n      if (showForge && v.type === 'release') {\n        finalVersions.push(`Forge ${v.id}`)\n      }\n    })\n    setVersions(finalVersions)\n\n    if (finalVersions.length > 0 && !selectedVersion) {\n      setSelectedVersion(finalVersions[0])\n    }\n  }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha, showForge])",
+        "StartLine": 563,
+        "TargetContent": "    const finalVersions: string[] = []\n    filtered.forEach(v => {\n      finalVersions.push(v.id)\n      if (v.type === 'release') {\n        finalVersions.push(`Forge ${v.id}`)\n      }\n    })\n    setVersions(finalVersions)\n\n    if (finalVersions.length > 0 && !selectedVersion) {\n      setSelectedVersion(finalVersions[0])\n    }\n  }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha])"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 583,
+        "ReplacementContent": "  const saveSettings = () => {\n    localStorage.setItem('mc_ram', ramValue.toString())\n    localStorage.setItem('mc_show_forge', showForge.toString())\n    localStorage.setItem('mc_show_snapshots', showSnapshots.toString())",
+        "StartLine": 581,
+        "TargetContent": "  const saveSettings = () => {\n    localStorage.setItem('mc_ram', ramValue.toString())\n    localStorage.setItem('mc_show_snapshots', showSnapshots.toString())"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1356,
+        "ReplacementContent": "                <div className=\"settings-checkbox-group\" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>\n                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type=\"checkbox\" checked={showForge} onChange={e => setShowForge(e.target.checked)} /> {t(\"app.showForge\")}</label>\n                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type=\"checkbox\" checked={showSnapshots} onChange={e => setShowSnapshots(e.target.checked)} /> {t(\"app.showSnapshots\")}</label>",
+        "StartLine": 1355,
+        "TargetContent": "                <div className=\"settings-checkbox-group\" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>\n                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type=\"checkbox\" checked={showSnapshots} onChange={e => setShowSnapshots(e.target.checked)} /> {t(\"app.showSnapshots\")}</label>"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Use Anvil icon for selected Forge version instead of Grass Block",
+    "Instruction": "Update selected version image src to use Anvil.png if selectedVersion starts with 'Forge '",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 1048,
+        "ReplacementContent": "                    <img\n                      src={selectedVersion.startsWith('mp:')\n                        ? (modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png')\n                        : selectedVersion.startsWith('Forge ') ? './iconsblocks/Anvil.png' : './iconsblocks/Grass_Block_(inventory)_MCE.png'}",
+        "StartLine": 1045,
+        "TargetContent": "                    <img\n                      src={selectedVersion.startsWith('mp:')\n                        ? (modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png')\n                        : './iconsblocks/Grass_Block_(inventory)_MCE.png'}"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1234,
+        "ReplacementContent": "                        <img\n                          src={selectedVersion.startsWith('mp:')\n                            ? (modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png')\n                            : selectedVersion.startsWith('Forge ') ? './iconsblocks/Anvil.png' : './iconsblocks/Grass_Block_(inventory)_MCE.png'}",
+        "StartLine": 1231,
+        "TargetContent": "                        <img\n                          src={selectedVersion.startsWith('mp:')\n                            ? (modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png')\n                            : './iconsblocks/Grass_Block_(inventory)_MCE.png'}"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Fix Ely.by local skin issue by pre-fetching the profile textures and injecting them into user_properties",
+    "EndLine": 1127,
+    "Instruction": "Add logic to fetch profile properties from Ely.by and set authObj.user_properties",
+    "ReplacementContent": "    }\n    \n    // FETCH ELY.BY PROFILE PROPERTIES TO FIX LOCAL SKIN RENDERING\n    if (options.authType === 'elyby' && options.uuid) {\n      try {\n        const profileRes = await fetch(`https://authserver.ely.by/sessionserver/session/minecraft/profile/${options.uuid}`)\n        if (profileRes.ok) {\n          const profileData: any = await profileRes.json()\n          if (profileData.properties) {\n            const propsObj: any = {}\n            for (const prop of profileData.properties) {\n              if (!propsObj[prop.name]) propsObj[prop.name] = []\n              propsObj[prop.name].push(prop.value)\n            }\n            authObj.user_properties = JSON.stringify(propsObj)\n          }\n        }\n      } catch (e) {\n        console.error('Failed to fetch Ely.by profile properties:', e)\n      }\n    }",
+    "StartLine": 1127,
+    "TargetContent": "    }",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\electron\\main.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Fix Ely.by local skin issue by pre-fetching the profile textures and injecting them into user_properties",
+    "EndLine": 1127,
+    "Instruction": "Add logic to fetch profile properties from Ely.by and set authObj.user_properties",
+    "ReplacementContent": "    }\n\n    if (options.authType === 'elyby' && options.uuid) {\n      try {\n        const profileRes = await fetch(`https://authserver.ely.by/sessionserver/session/minecraft/profile/${options.uuid}`);\n        if (profileRes.ok) {\n          const profileData: any = await profileRes.json();\n          if (profileData.properties) {\n            const propsObj: any = {};\n            for (const prop of profileData.properties) {\n              if (!propsObj[prop.name]) propsObj[prop.name] = [];\n              propsObj[prop.name].push(prop.value);\n            }\n            authObj.user_properties = JSON.stringify(propsObj);\n          }\n        }\n      } catch (e) {\n        console.error('Failed to fetch Ely.by profile properties:', e);\n      }\n    }\n",
+    "StartLine": 1126,
+    "TargetContent": "    }\n",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\electron\\main.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Format Ely.by UUID with hyphens to fix older Minecraft versions crashing or failing to parse the UUID",
+    "EndLine": 179,
+    "Instruction": "Format data.selectedProfile.id to include hyphens",
+    "ReplacementContent": "    let uuidStr = data.selectedProfile.id;\n    if (uuidStr.length === 32) {\n      uuidStr = `${uuidStr.slice(0, 8)}-${uuidStr.slice(8, 12)}-${uuidStr.slice(12, 16)}-${uuidStr.slice(16, 20)}-${uuidStr.slice(20)}`;\n    }\n    return {\n      type: 'elyby',\n      username: data.selectedProfile.name,\n      uuid: uuidStr,\n      token: data.accessToken,\n      clientToken: data.clientToken,\n      skinUrl: `https://ely.by/services/skins-renderer?url=https://skinsystem.ely.by/skins/${data.selectedProfile.name}.png&scale=5&renderFace=1`\n    }",
+    "StartLine": 172,
+    "TargetContent": "    return {\n      type: 'elyby',\n      username: data.selectedProfile.name,\n      uuid: data.selectedProfile.id,\n      token: data.accessToken,\n      clientToken: data.clientToken,\n      skinUrl: `https://ely.by/services/skins-renderer?url=https://skinsystem.ely.by/skins/${data.selectedProfile.name}.png&scale=5&renderFace=1`\n    }",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\electron\\main.ts",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Add button to upload crash log to mclo.gs and copy URL to clipboard",
+    "Instruction": "Add logUploadState, handleSendLog function, and the button in the crash modal",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 154,
+        "ReplacementContent": "  const [crashLog, setCrashLog] = useState<string | null>(null)\n  const [logUploadState, setLogUploadState] = useState<'idle' | 'uploading' | 'uploaded' | 'error'>('idle')\n\n  const handleSendLog = async () => {\n    if (!crashLog) return\n    setLogUploadState('uploading')\n    try {\n      const form = new URLSearchParams()\n      form.append('content', crashLog)\n      const res = await fetch('https://api.mclo.gs/1/log', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n        body: form.toString()\n      })\n      const data = await res.json()\n      if (data.success) {\n        navigator.clipboard.writeText(data.url)\n        setLogUploadState('uploaded')\n        setTimeout(() => setLogUploadState('idle'), 3000)\n      } else {\n        setLogUploadState('error')\n        setTimeout(() => setLogUploadState('idle'), 3000)\n      }\n    } catch(e) {\n      setLogUploadState('error')\n      setTimeout(() => setLogUploadState('idle'), 3000)\n    }\n  }",
+        "StartLine": 154,
+        "TargetContent": "  const [crashLog, setCrashLog] = useState<string | null>(null)"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1688,
+        "ReplacementContent": "            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>\n              <button className=\"mc-btn-primary mc-btn-green\" onClick={handleSendLog} disabled={logUploadState === 'uploading'}>\n                {logUploadState === 'idle' ? 'Отправить лог разработчику' : logUploadState === 'uploading' ? 'Загрузка...' : logUploadState === 'uploaded' ? 'Ссылка скопирована!' : 'Ошибка загрузки'}\n              </button>\n              <button className=\"mc-btn-primary mc-btn-yellow\" onClick={() => setCrashLog(null)}>\n                Закрыть\n              </button>\n            </div>",
+        "StartLine": 1684,
+        "TargetContent": "            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'flex-end' }}>\n              <button className=\"mc-btn-primary mc-btn-yellow\" onClick={() => setCrashLog(null)}>\n                Закрыть\n              </button>\n            </div>"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Open GitHub issues page with the log link after uploading to mclo.gs",
+    "EndLine": 174,
+    "Instruction": "Modify the handleSendLog success block to open the GitHub issues URL via openExternal",
+    "ReplacementContent": "      if (data.success) {\n        navigator.clipboard.writeText(data.url)\n        // @ts-ignore\n        if (window.electronAPI && window.electronAPI.openExternal) {\n          const ghUrl = `https://github.com/eshkereshek/pg_launcher/issues/new?title=Crash%20Report&body=Crash%20log:%20${data.url}`\n          // @ts-ignore\n          window.electronAPI.openExternal(ghUrl)\n        }\n        setLogUploadState('uploaded')\n        setTimeout(() => setLogUploadState('idle'), 3000)\n      } else {",
+    "StartLine": 169,
+    "TargetContent": "      if (data.success) {\n        navigator.clipboard.writeText(data.url)\n        setLogUploadState('uploaded')\n        setTimeout(() => setLogUploadState('idle'), 3000)\n      } else {",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Replace log send feature with a simple copy log button",
+    "Instruction": "Remove mclo.gs fetch logic and replace it with simple navigator.clipboard.writeText",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 187,
+        "ReplacementContent": "  const [logCopyState, setLogCopyState] = useState<'idle' | 'copied'>('idle')\n\n  const handleCopyLog = () => {\n    if (!crashLog) return\n    navigator.clipboard.writeText(crashLog)\n    setLogCopyState('copied')\n    setTimeout(() => setLogCopyState('idle'), 2000)\n  }",
+        "StartLine": 155,
+        "TargetContent": "  const [logUploadState, setLogUploadState] = useState<'idle' | 'uploading' | 'uploaded' | 'error'>('idle')\n\n  const handleSendLog = async () => {\n    if (!crashLog) return\n    setLogUploadState('uploading')\n    try {\n      const form = new URLSearchParams()\n      form.append('content', crashLog)\n      const res = await fetch('https://api.mclo.gs/1/log', {\n        method: 'POST',\n        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },\n        body: form.toString()\n      })\n      const data = await res.json()\n      if (data.success) {\n        navigator.clipboard.writeText(data.url)\n        // @ts-ignore\n        if (window.electronAPI && window.electronAPI.openExternal) {\n          const ghUrl = `https://github.com/eshkereshek/pg_launcher/issues/new?title=Crash%20Report&body=Crash%20log:%20${data.url}`\n          // @ts-ignore\n          window.electronAPI.openExternal(ghUrl)\n        }\n        setLogUploadState('uploaded')\n        setTimeout(() => setLogUploadState('idle'), 3000)\n      } else {\n        setLogUploadState('error')\n        setTimeout(() => setLogUploadState('idle'), 3000)\n      }\n    } catch(e) {\n      setLogUploadState('error')\n      setTimeout(() => setLogUploadState('idle'), 3000)\n    }\n  }"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1724,
+        "ReplacementContent": "            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>\n              <button className=\"mc-btn-primary mc-btn-green\" onClick={handleCopyLog}>\n                {logCopyState === 'idle' ? 'Скопировать лог' : 'Скопировано!'}\n              </button>\n              <button className=\"mc-btn-primary mc-btn-yellow\" onClick={() => setCrashLog(null)}>\n                Закрыть\n              </button>\n            </div>",
+        "StartLine": 1717,
+        "TargetContent": "            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>\n              <button className=\"mc-btn-primary mc-btn-green\" onClick={handleSendLog} disabled={logUploadState === 'uploading'}>\n                {logUploadState === 'idle' ? 'Отправить лог разработчику' : logUploadState === 'uploading' ? 'Загрузка...' : logUploadState === 'uploaded' ? 'Ссылка скопирована!' : 'Ошибка загрузки'}\n              </button>\n              <button className=\"mc-btn-primary mc-btn-yellow\" onClick={() => setCrashLog(null)}>\n                Закрыть\n              </button>\n            </div>"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Update CSS variables to use a warmer black/dark palette",
+    "EndLine": 14,
+    "Instruction": "Replace dark gray colors with warmer dark shades",
+    "ReplacementContent": "  --pg-black: #171513;\n  --pg-dark: #1e1b19;\n  --pg-dark2: #262320;\n  --pg-dark3: #2e2a27;",
+    "StartLine": 11,
+    "TargetContent": "  --pg-black: #111111;\n  --pg-dark: #1a1a1a;\n  --pg-dark2: #222222;\n  --pg-dark3: #2a2a2a;",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\index.css",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Update dark colors to warm black",
+    "Instruction": "Update CSS variables in dark theme and modal box background to use warm black colors",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 406,
+        "ReplacementContent": "        '--pg-black': '#171513',\n        '--pg-dark': '#1e1b19',\n        '--pg-dark2': '#262320',\n        '--pg-dark3': '#2e2a27',",
+        "StartLine": 403,
+        "TargetContent": "        '--pg-black': '#111111',\n        '--pg-dark': '#1a1a1a',\n        '--pg-dark2': '#222222',\n        '--pg-dark3': '#2a2a2a',"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 1661,
+        "ReplacementContent": "          <div className=\"modal-box\" style={{ background: '#171513', border: '3px solid #000', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #0a0a0a', padding: '30px', width: '800px', maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>",
+        "StartLine": 1661,
+        "TargetContent": "          <div className=\"modal-box\" style={{ background: '#111', border: '3px solid #000', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #0a0a0a', padding: '30px', width: '800px', maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Add background to mods, modpacks, and servers tabs",
+    "EndLine": 962,
+    "Instruction": "Modify the style attribute of .jl-main to apply the secondary background image for 'installations', 'modpacks', and 'servers' tabs.",
+    "ReplacementContent": "        <div className=\"jl-main\" style={\n          view === 'play' || view === 'skins' ? { backgroundImage: mainBgDataUrl ? `url(\"${mainBgDataUrl}\")` : 'url(\"./background.jpg\")' } : \n          (view === 'installations' || view === 'modpacks' || view === 'servers' ? { backgroundImage: secBgDataUrl ? `url(\"${secBgDataUrl}\")` : 'url(\"./bg-minecraft.png\")' } : {})\n        }>",
+    "StartLine": 962,
+    "TargetContent": "        <div className=\"jl-main\" style={view === 'play' || view === 'skins' ? { backgroundImage: mainBgDataUrl ? `url(\"${mainBgDataUrl}\")` : 'url(\"./background.jpg\")' } : {}}>",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Make ModsMenu background transparent to show global background",
+    "EndLine": 440,
+    "Instruction": "Change backgroundColor: 'var(--pg-black)' to backgroundColor: 'transparent'",
+    "ReplacementContent": "    <div className=\"mods-menu\" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'transparent', backgroundImage: bgImage ? `url(\"${bgImage}\")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden' }}>",
+    "StartLine": 440,
+    "TargetContent": "    <div className=\"mods-menu\" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--pg-black)', backgroundImage: bgImage ? `url(\"${bgImage}\")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden' }}>",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\ModsMenu.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Make ServersMenu background transparent to show global background",
+    "EndLine": 67,
+    "Instruction": "Change backgroundColor: 'var(--pg-black)' to backgroundColor: 'transparent'",
+    "ReplacementContent": "    backgroundColor: 'transparent', ",
+    "StartLine": 67,
+    "TargetContent": "    backgroundColor: 'var(--pg-black)', ",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\ServersMenu.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Enforce bg-minecraft.png as the background for secondary tabs",
+    "EndLine": 964,
+    "Instruction": "Remove secBgDataUrl override so it uses the new image consistently without flashing",
+    "ReplacementContent": "          (view === 'installations' || view === 'modpacks' || view === 'servers' ? { backgroundImage: 'url(\"./bg-minecraft.png\")' } : {})",
+    "StartLine": 964,
+    "TargetContent": "          (view === 'installations' || view === 'modpacks' || view === 'servers' ? { backgroundImage: secBgDataUrl ? `url(\"${secBgDataUrl}\")` : 'url(\"./bg-minecraft.png\")' } : {})",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\App.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "Description": "Make mod menus backgrounds transparent",
+    "Instruction": "Remove solid backgrounds from .mods-sidebar and .mods-main",
+    "ReplacementChunks": [
+      {
+        "AllowMultiple": false,
+        "EndLine": 300,
+        "ReplacementContent": ".mods-sidebar {\n  width: 240px;\n  border-right: 1px solid var(--pg-dark3);\n  padding: 20px;\n  overflow-y: auto;\n}",
+        "StartLine": 295,
+        "TargetContent": ".mods-sidebar {\n  width: 240px;\n  background-color: var(--pg-dark);\n  border-right: 1px solid var(--pg-dark3);\n  padding: 20px;\n  overflow-y: auto;\n}"
+      },
+      {
+        "AllowMultiple": false,
+        "EndLine": 320,
+        "ReplacementContent": ".mods-main {\n  flex: 1;\n  padding: 20px;\n  overflow-y: auto;\n  scroll-behavior: smooth;\n  background: transparent;\n}",
+        "StartLine": 314,
+        "TargetContent": ".mods-main {\n  flex: 1;\n  padding: 20px;\n  overflow-y: auto;\n  scroll-behavior: smooth;\n  background: var(--pg-dark2);\n}"
+      }
+    ],
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\index.css",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Make modpacks menu background transparent",
+    "EndLine": 326,
+    "Instruction": "Remove solid background from .modpacks-menu",
+    "ReplacementContent": ".modpacks-menu {\n  flex: 1;\n  background: transparent;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}",
+    "StartLine": 320,
+    "TargetContent": ".modpacks-menu {\n  flex: 1;\n  background: var(--pg-black);\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\layout.css",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  },
+  {
+    "AllowMultiple": false,
+    "Description": "Make ModsMenu sidebar background transparent",
+    "EndLine": 531,
+    "Instruction": "Change background: 'var(--pg-dark)' to background: 'transparent' for the sidebar",
+    "ReplacementContent": "          <div className=\"mods-sidebar\" \n            style={{ width: '220px', background: 'transparent', borderRight: '2px solid var(--pg-dark2)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}\n          >",
+    "StartLine": 530,
+    "TargetContent": "          <div className=\"mods-sidebar\" \n            style={{ width: '220px', background: 'var(--pg-dark)', borderRight: '2px solid var(--pg-dark2)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}\n          >",
+    "TargetFile": "d:\\DRDM\\mc-launcher\\src\\ModsMenu.tsx",
+    "toolAction": "Searching the web",
+    "toolSummary": "Web search"
+  }
+]

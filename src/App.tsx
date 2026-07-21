@@ -18,7 +18,7 @@ interface Modpack {
 interface Account {
   id: string
   name: string
-  type: 'offline' | 'elyby' | 'microsoft'
+  type: 'offline' | 'elyby' | 'microsoft' | 'pgsync'
   uuid?: string
   token?: string
   clientToken?: string
@@ -227,7 +227,7 @@ export default function App() {
   const [activeAccount, setActiveAccount] = useState<Account>({ id: '1', name: 'Player', type: 'offline' })
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
-  const [authType, setAuthType] = useState<'offline' | 'elyby' | 'microsoft'>('offline')
+  const [authType, setAuthType] = useState<'offline' | 'elyby' | 'microsoft' | 'pgsync'>('offline')
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -601,21 +601,25 @@ export default function App() {
     if (authType === 'offline' && !newAccountName.trim()) return
     setAuthLoading(true)
     try {
-      let newAcc: Account
+      let newAcc: Account | null = null;
       if (authType === 'offline') {
         newAcc = { id: Date.now().toString(), name: newAccountName, type: 'offline' }
       } else if (authType === 'microsoft') {
         // @ts-ignore
         const res = await window.electronAPI.authMicrosoft()
         newAcc = { id: Date.now().toString(), name: res.username, type: 'microsoft', uuid: res.uuid, token: res.token, skinUrl: res.skinUrl }
-      } else {
-        // Ely.by
+      } else if (authType === 'elyby' || authType === 'pgsync') {
         if (!authEmail || !authPassword) { setAuthError('Введите логин и пароль'); setAuthLoading(false); return }
-        // @ts-ignore
-        const res = await window.electronAPI.authElyby(authEmail, authPassword)
-        newAcc = { id: Date.now().toString(), name: res.username, type: 'elyby', uuid: res.uuid, token: res.token, clientToken: res.clientToken, skinUrl: res.skinUrl }
+        const res = authType === 'elyby' 
+          // @ts-ignore
+          ? await window.electronAPI.authElyby(authEmail, authPassword)
+          // @ts-ignore
+          : await window.electronAPI.authPgsync(authEmail, authPassword);
+        
+        newAcc = { id: Date.now().toString(), name: res.username, type: authType, uuid: res.uuid, token: res.token, clientToken: res.clientToken, skinUrl: res.skinUrl }
       }
 
+      if (!newAcc) return;
       const newAccounts = [...accounts, newAcc]
       saveAccounts(newAccounts, newAcc)
       setNewAccountName('')
@@ -814,6 +818,7 @@ export default function App() {
               <span className="jl-profile-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 {activeAccount.type === 'microsoft' && <>Лицензия</>}
                 {activeAccount.type === 'elyby' && <>Ely.by</>}
+                {activeAccount.type === 'pgsync' && <>Pagrysha</>}
                 {activeAccount.type === 'offline' && <>Offline</>}
               </span>
             </div>
@@ -1696,6 +1701,14 @@ export default function App() {
                 </div>
                 <div className="mc-acc-arrow">{'>'}</div>
               </div>
+              <div className={`mc-acc-type-btn ${authType === 'pgsync' ? 'selected' : ''}`} onClick={() => setAuthType('pgsync')}>
+                <div className="mc-acc-icon-box"><img src="/favicon.ico" width={24} /></div>
+                <div className="mc-acc-text">
+                  <span className="subtitle">PG-SYNC</span>
+                  <span className="title">{t("app.pgsyncAccount")}</span>
+                </div>
+                <div className="mc-acc-arrow">{'>'}</div>
+              </div>
               <div className={`mc-acc-type-btn ${authType === 'microsoft' ? 'selected' : ''}`} onClick={() => setAuthType('microsoft')}>
                 <div className="mc-acc-icon-box"><img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" width={24} /></div>
                 <div className="mc-acc-text">
@@ -1719,7 +1732,7 @@ export default function App() {
               {authType === 'offline' && (
                 <input type="text" className="mc-input" placeholder={t("app.nicknamePlaceholder")} value={newAccountName} onChange={e => setNewAccountName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAccount()} />
               )}
-              {authType === 'elyby' && (
+              {(authType === 'elyby' || authType === 'pgsync') && (
                 <>
                   <input type="text" className="mc-input" placeholder="E-mail" disabled={authLoading} value={authEmail} onChange={e => setAuthEmail(e.target.value)} />
                   <div style={{ position: 'relative' }}>

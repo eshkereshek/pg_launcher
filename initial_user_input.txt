@@ -1,0 +1,13 @@
+<USER_REQUEST>
+при выборе версии с forge отображается земля а не наковальня исправь
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-07-18T23:56:20+03:00.
+
+The user's current state is as follows:
+Active Document: d:\DRDM\mc-launcher\src\i18n.tsx (LANGUAGE_TSX)
+Cursor is on line: 48
+Other open documents:
+- d:\DRDM\mc-launcher\src\i18n.tsx (LANGUAGE_TSX)
+- d:\DRDM\mc-launcher\src\App.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>

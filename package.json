@@ -1,7 +1,7 @@
 {
   "name": "pagrysha-launcher",
   "private": true,
-  "version": "7.1.0",
+  "version": "7.1.5",
   "type": "module",
   "main": "dist-electron/main.js",
   "repository": "https://github.com/eshkereshek/pg_launcher",
@@ -49,7 +49,6 @@
     },
     "win": {
       "target": [
-        "nsis",
         "portable"
       ],
       "icon": "build/icon.png"

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveAccounts: (accounts: any) => ipcRenderer.invoke('save-accounts', accounts),
   authMicrosoft: () => ipcRenderer.invoke('auth-microsoft'),
   authElyby: (e: string, p: string) => ipcRenderer.invoke('auth-elyby', e, p),
+  authPgsync: (e: string, p: string) => ipcRenderer.invoke('auth-pgsync', e, p),
   openFolder: () => ipcRenderer.invoke('open-folder'),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),

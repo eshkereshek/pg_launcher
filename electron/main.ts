@@ -189,6 +189,41 @@ ipcMain.handle('auth-elyby', async (_, email, password) => {
   }
 })
 
+// --- PG-SYNC AUTH ---
+ipcMain.handle('auth-pgsync', async (_, username, password) => {
+  try {
+    const response = await fetch('https://pg-sync-server.onrender.com/api/yggdrasil/authserver/authenticate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: { name: 'Minecraft', version: 1 },
+        username: username,
+        password: password,
+        requestUser: true
+      })
+    })
+    if (!response.ok) {
+      throw new Error('Неверный логин или пароль')
+    }
+    const data: any = await response.json()
+    let rawUuid = data.selectedProfile.id;
+    if (rawUuid && rawUuid.length === 32 && !rawUuid.includes('-')) {
+      rawUuid = `${rawUuid.slice(0,8)}-${rawUuid.slice(8,12)}-${rawUuid.slice(12,16)}-${rawUuid.slice(16,20)}-${rawUuid.slice(20)}`;
+    }
+    return {
+      type: 'pgsync',
+      username: data.selectedProfile.name,
+      uuid: rawUuid,
+      token: data.accessToken,
+      clientToken: data.clientToken,
+      skinUrl: `https://minotar.net/helm/${data.selectedProfile.name}/40.png`
+    }
+  } catch (e: any) {
+    console.error(e)
+    throw new Error('Ошибка Pagrysha Account: ' + e.message)
+  }
+})
+
 // --- SKINS PERSISTENCE ---
 const skinsDir = path.join(app.getPath('userData'), 'skins')
 import { dialog } from 'electron'
@@ -1199,7 +1234,7 @@ ipcMain.handle('launch-game', async (_event, options) => {
       }
     }
 
-    if (options.authType === 'elyby') {
+    if (options.authType === 'elyby' || options.authType === 'pgsync') {
       const injectorPath = path.join(rootPath, 'authlib-injector.jar')
       if (!fs.existsSync(injectorPath)) {
         sendStatus('Downloading Ely.by Skin system helper...')
@@ -1215,7 +1250,8 @@ ipcMain.handle('launch-game', async (_event, options) => {
         }
       }
       if (fs.existsSync(injectorPath)) {
-        let jvmArgs = [`-javaagent:${injectorPath}=ely.by`]
+        const yggdrasilUrl = options.authType === 'elyby' ? 'ely.by' : 'https://pg-sync-server.onrender.com/api/yggdrasil';
+        let jvmArgs = [`-javaagent:${injectorPath}=${yggdrasilUrl}`]
         const minorVer = parseInt(options.version.split('.')[1]) || 0
         if (minorVer >= 17) {
           jvmArgs.push(
