@@ -301,7 +301,7 @@ export default function App() {
     }
 
     const rawSkinUrl = acc.type === 'pgsync' 
-      ? `https://pg-sync-server.onrender.com/api/cosmetics/skin/${acc.name}` 
+      ? `https://pg-sync-server.onrender.com/api/cosmetics/${acc.name}/skin.png` 
       : `http://skinsystem.ely.by/skins/${acc.name}.png`;
 
 
