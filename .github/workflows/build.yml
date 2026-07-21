@@ -6,8 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-mac:
-    runs-on: macos-latest
+  build-mac-intel:
+    runs-on: macos-26-intel
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -17,10 +18,13 @@ jobs:
         with:
           node-version: 20
 
+      - name: Verify Architecture
+        run: uname -m
+
       - name: Install Dependencies
         run: npm install
 
-      - name: Build for macOS
+      - name: Build for macOS Intel
         run: npm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -28,7 +32,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: pagrysha-launcher-mac
+          name: pagrysha-launcher-mac-intel
           path: |
             dist-build/*.dmg
             dist-build/*.zip
