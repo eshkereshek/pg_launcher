@@ -66,10 +66,10 @@ const launcher = new Client()
 function createWindow() {
   const isInstaller = !!process.env.PORTABLE_EXECUTABLE_DIR;
   win = new BrowserWindow({
-    width: isInstaller ? 800 : 1000,
-    height: isInstaller ? 500 : 600,
-    minWidth: 800,
-    minHeight: 500,
+    width: isInstaller ? 800 : 1100,
+    height: isInstaller ? 500 : 650,
+    minWidth: isInstaller ? 800 : 1100,
+    minHeight: isInstaller ? 500 : 650,
     resizable: !isInstaller,
     title: 'Pagrysha Launcher',
     icon: path.join(process.env.VITE_PUBLIC || '', 'icon.png'),
@@ -1347,48 +1347,13 @@ ipcMain.handle('launch-game', async (_event, options) => {
     })
     
     sendStatus('Preparing game files... (This may take a while)')
-    const gameProcess: any = await launcher.launch(opts)
+    await launcher.launch(opts)
     
     gameStarted = true;
     win?.webContents.send('download-finish', 'game_launch')
     sendStatus('Игра запущена')
 
-    const behavior = options.onPlayBehavior || 'close'
-    const isPackaged = app.isPackaged
 
-    if (behavior === 'close' && isPackaged && gameProcess && gameProcess.pid) {
-      const { spawn } = require('child_process');
-      const monitorScript = `
-const { spawn } = require('child_process');
-const gamePid = ${gameProcess.pid};
-const launcherPath = ${JSON.stringify(process.execPath)};
-
-function checkProcess() {
-  try {
-    process.kill(gamePid, 0);
-    setTimeout(checkProcess, 1000);
-  } catch (e) {
-    spawn(launcherPath, [], { detached: true, stdio: 'ignore' });
-    process.exit(0);
-  }
-}
-setTimeout(checkProcess, 1000);
-      `;
-      const monitorPath = path.join(app.getPath('userData'), 'monitor.js');
-      fs.writeFileSync(monitorPath, monitorScript, 'utf8');
-
-      spawn(process.execPath, [monitorPath], {
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-      }).unref();
-
-      setTimeout(() => {
-        app.quit();
-      }, 1000);
-    } else if (behavior === 'hide' || (behavior === 'close' && !isPackaged)) {
-      win?.hide();
-    }
 
     setTimeout(() => {
       sendStatus('')

@@ -13,6 +13,7 @@ export const translations = {
     'app.sidebarModpacks': 'Сборки',
     'app.sidebarNews': 'Новости',
     'app.sidebarServers': 'Сервера',
+    'app.sidebarWardrobe': 'Гардероб',
     'app.accounts': 'Аккаунты',
     'app.sidebarSettings': 'Настройки',
     'app.playBtn': 'ИГРАТЬ',
@@ -120,7 +121,13 @@ export const translations = {
     'skins.equipElyby': 'Сменить на Ely.by',
     'skins.elybyRedirect': 'Откроется страница Ely.by для смены скина',
     'skins.previewHint': 'Здесь вы можете просматривать скины в 3D. Для смены скина нажмите кнопку ниже.',
-
+    'wardrobe.title': 'Ваш Гардероб',
+    'wardrobe.uploadSkin': 'Загрузить скин',
+    'wardrobe.uploadCape': 'Загрузить плащ',
+    'wardrobe.deleteSkin': 'Удалить скин',
+    'wardrobe.deleteCape': 'Удалить плащ',
+    'wardrobe.error': 'Ошибка загрузки:',
+    'wardrobe.success': 'Успешно обновлено!',
     
     // ModsMenu.tsx
     'mods.modpack': 'Сборка:',
@@ -188,6 +195,7 @@ export const translations = {
     'app.sidebarModpacks': 'Modpacks',
     'app.sidebarNews': 'News',
     'app.sidebarServers': 'Servers',
+    'app.sidebarWardrobe': 'Wardrobe',
     'app.accounts': 'Accounts',
     'app.sidebarSettings': 'Settings',
     'app.playBtn': 'PLAY',
@@ -295,6 +303,13 @@ export const translations = {
     'skins.equipElyby': 'Change on Ely.by',
     'skins.elybyRedirect': 'Ely.by skin change page will open',
     'skins.previewHint': 'Preview skins in 3D here. To change your skin, click the button below.',
+    'wardrobe.title': 'Your Wardrobe',
+    'wardrobe.uploadSkin': 'Upload Skin',
+    'wardrobe.uploadCape': 'Upload Cape',
+    'wardrobe.deleteSkin': 'Delete Skin',
+    'wardrobe.deleteCape': 'Delete Cape',
+    'wardrobe.error': 'Upload error:',
+    'wardrobe.success': 'Successfully updated!',
 
     
     // ModsMenu.tsx

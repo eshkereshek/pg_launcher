@@ -6,6 +6,7 @@ import ModpacksMenu from './ModpacksMenu'
 import { ServersMenu } from './ServersMenu'
 import { McSelect } from './McSelect'
 import pkg from '../package.json'
+import WardrobeMenu from './WardrobeMenu'
 
 interface Modpack {
   name: string
@@ -168,7 +169,7 @@ const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], siz
 
 export default function App() {
   const { t, language, setLanguage } = useTranslation();
-  const [view, setView] = useState<'play' | 'installations' | 'modpacks' | 'settings' | 'servers'>('play')
+  const [view, setView] = useState<'play' | 'installations' | 'modpacks' | 'settings' | 'servers' | 'wardrobe'>('play')
   const [showAccountsModal, setShowAccountsModal] = useState(false)
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [showVersionDropdown, setShowVersionDropdown] = useState(false)
@@ -180,14 +181,6 @@ export default function App() {
   const [secBgDataUrl, setSecBgDataUrl] = useState<string | null>(() => localStorage.getItem('mc_sec_bg_data'))
 
   const [isClosingSettings, setIsClosingSettings] = useState(false);
-  const [onPlayBehavior, setOnPlayBehavior] = useState<'keep' | 'hide' | 'close'>(() => {
-    const saved = localStorage.getItem('onPlayBehavior')
-    if (saved) return saved as 'keep' | 'hide' | 'close'
-    const oldHide = localStorage.getItem('hideLauncherOnPlay')
-    if (oldHide === 'true') return 'hide'
-    if (oldHide === 'false') return 'keep'
-    return 'close' // Default to close completely
-  });
 
   const handleCloseSettings = () => {
     setIsClosingSettings(true);
@@ -196,6 +189,11 @@ export default function App() {
       setIsClosingSettings(false);
     }, 200);
   };
+
+  // Ping the server to wake it up on launcher start
+  useEffect(() => {
+    fetch('https://pg-sync-server.onrender.com/').catch(() => {});
+  }, []);
 
   useEffect(() => {
     // @ts-ignore
@@ -225,6 +223,7 @@ export default function App() {
 
   const [accounts, setAccounts] = useState<Account[]>([{ id: '1', name: 'Player', type: 'offline' }])
   const [activeAccount, setActiveAccount] = useState<Account>({ id: '1', name: 'Player', type: 'offline' })
+  const [skinTimestamp, setSkinTimestamp] = useState<number>(Date.now())
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authType, setAuthType] = useState<'offline' | 'elyby' | 'microsoft' | 'pgsync'>('offline')
@@ -301,8 +300,8 @@ export default function App() {
     }
 
     const rawSkinUrl = acc.type === 'pgsync' 
-      ? `https://pg-sync-server.onrender.com/api/cosmetics/${acc.name}/skin.png` 
-      : `http://skinsystem.ely.by/skins/${acc.name}.png`;
+      ? `https://pg-sync-server.onrender.com/api/cosmetics/${acc.name}/skin.png?v=${skinTimestamp}` 
+      : `http://skinsystem.ely.by/skins/${acc.name}.png?v=${skinTimestamp}`;
 
 
 
@@ -404,10 +403,7 @@ export default function App() {
     // @ts-ignore
     window.electronAPI.onGameClosed(() => {
       setGameRunning(false)
-      if (localStorage.getItem('mc_hide_launcher_on_play') === 'true') {
-        // We can't directly un-hide from here if hidden in main.ts, but main.ts does win.show()
-      }
-      
+
       // @ts-ignore
       if (window.electronAPI && window.electronAPI.updateDiscordPresence) {
         // @ts-ignore
@@ -457,7 +453,9 @@ export default function App() {
         const savedAccounts = await window.electronAPI.getAccounts()
         if (Array.isArray(savedAccounts) && savedAccounts.length > 0) {
           setAccounts(savedAccounts)
-          setActiveAccount(savedAccounts[0])
+          const lastId = localStorage.getItem('activeAccountId')
+          const found = savedAccounts.find(a => a.id === lastId)
+          setActiveAccount(found || savedAccounts[0])
         }
       } catch (e) { }
     }
@@ -506,7 +504,6 @@ export default function App() {
     localStorage.setItem('mc_show_beta', showBeta.toString())
     localStorage.setItem('mc_show_alpha', showAlpha.toString())
     localStorage.setItem('mc_args', mcArgs)
-    localStorage.setItem('onPlayBehavior', onPlayBehavior)
     localStorage.setItem('mc_menu_opacity', menuOpacity.toString())
     localStorage.setItem('mc_enable_servers_tab', enableServersTab.toString())
     localStorage.setItem('mc_new_design', enableNewDesign.toString())
@@ -594,6 +591,7 @@ export default function App() {
   const saveAccounts = async (newAccounts: Account[], newActive: Account) => {
     setAccounts(newAccounts)
     setActiveAccount(newActive)
+    localStorage.setItem('activeAccountId', newActive.id)
     // @ts-ignore
     await window.electronAPI.saveAccounts(newAccounts)
   }
@@ -658,6 +656,26 @@ export default function App() {
     }
     setGameRunning(true)
     setLaunching(true)
+    
+    // Ping server to wake it up if it's sleeping (Render free tier)
+    setProgress('Пробуждаем сервер (до 1 мин)...')
+    let serverReady = false
+    let retries = 0
+    while (!serverReady && retries < 30) { // Up to 60 seconds (30 * 2s)
+      try {
+        const res = await fetch('https://pg-sync-server.onrender.com/')
+        if (res.ok) {
+          serverReady = true
+        } else {
+          await new Promise(r => setTimeout(r, 2000))
+          retries++
+        }
+      } catch (e) {
+        await new Promise(r => setTimeout(r, 2000))
+        retries++
+      }
+    }
+
     setProgress('Инициализация запуска...')
 
     // Check if a modpack is selected
@@ -671,7 +689,7 @@ export default function App() {
       authType: activeAccount.type,
       memory: { max: `${ramValue}M`, min: '1024M' },
       instanceId: selectedVersion,
-      onPlayBehavior
+      onPlayBehavior: 'keep'
     }
 
     if (isModpack) {
@@ -904,6 +922,16 @@ export default function App() {
                 }}>
                   <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAnUlEQVR4AaxSgQ2AIAwbPq5eru1MTSMqEDV0wa7buoQpPn6/NthgZgSQR8gBC5NAWBtAOk/WqEEyCAVYGqAGkuN4A04my84OcldIe67gAk5weK66u4MZWZ/8dqcW8rh1kIne4A64V0FhD6iFNG4dXK2n8Cm4A+1VIHbgtzrSVg44vfUOqDk7ygEnimT3N0iXNWpAksQIWFOtkORI2AEAAP//kZTYHgAAAAZJREFUAwBWGzYhjQL2qgAAAABJRU5ErkJggg==" width="16" height="16" />
                 </svg> {t("app.sidebarServers")}
+              </div>
+            )}
+            {activeAccount.type === 'pgsync' && (
+              <div className={`jl-nav-item ${view === 'wardrobe' ? 'active' : ''}`} onClick={() => setView('wardrobe')}>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{
+                  opacity: view === 'wardrobe' ? 1 : 0.67,
+                  transition: 'opacity 0.2s'
+                }}>
+                  <path d="M20.38 3.46L16 2a8.5 8.5 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
+                </svg> {t("app.sidebarWardrobe")}
               </div>
             )}
           </div>
@@ -1449,6 +1477,7 @@ export default function App() {
           )}
           {view === 'modpacks' && <ModpacksMenu currentVersion={selectedVersion} opacity={menuOpacity} />}
           {view === 'servers' && <ServersMenu opacity={menuOpacity} />}
+          {view === 'wardrobe' && <WardrobeMenu account={activeAccount} onSkinChange={() => setSkinTimestamp(Date.now())} />}
 
         </div>
       </div>
@@ -1520,22 +1549,6 @@ export default function App() {
                 </div>
               ) : settingsTab === 'customization' ? (
                 <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div className="settings-label">Действие при запуске игры</div>
-                    <div style={{ marginTop: '5px' }}>
-                      <McSelect
-                        value={onPlayBehavior}
-                        onChange={(v) => setOnPlayBehavior(v as 'keep' | 'hide' | 'close')}
-                        options={[
-                          { value: 'close', label: 'Закрывать полностью', icon: '⚡' },
-                          { value: 'hide', label: 'Скрывать лаунчер', icon: '👁️' },
-                          { value: 'keep', label: 'Оставлять открытым', icon: '📋' }
-                        ]}
-                        style={{ width: '250px' }}
-                      />
-                    </div>
-                  </div>
-
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <div className="settings-label">{t('app.launcherLanguage')}</div>
                     <div style={{ marginTop: '5px' }}>
@@ -1658,7 +1671,7 @@ export default function App() {
       {showAccountsModal && (
         <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setShowAccountsModal(false)}>
           <div className="modal-box" style={{ background: '#111', border: '3px solid #000', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #0a0a0a', padding: '30px', width: '500px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '25px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '25px', flexShrink: 0 }}>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <h2 style={{ color: '#fff', fontSize: '18px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>{t("app.chooseAccountType")}</h2>
                 <span style={{ color: '#888', fontSize: '12px', marginTop: '5px' }}>{t("app.chooseAccountDesc")}</span>
@@ -1674,7 +1687,7 @@ export default function App() {
 
             {/* Existing accounts list */}
             {accounts.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '150px', overflowY: 'auto', marginBottom: '25px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '130px', overflowY: 'auto', marginBottom: '25px', flexShrink: 0 }}>
                 {accounts.map(acc => (
                   <div key={acc.id} className="mc-acc-list-item" onClick={() => saveAccounts(accounts, acc)}
                     style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px 15px', background: activeAccount.id === acc.id ? '#1e1e1e' : '#151515', border: '1px solid', borderColor: activeAccount.id === acc.id ? '#555' : '#222', cursor: 'pointer' }}>
@@ -1711,14 +1724,7 @@ export default function App() {
                 </div>
                 <div className="mc-acc-arrow">{'>'}</div>
               </div>
-              <div className={`mc-acc-type-btn ${authType === 'microsoft' ? 'selected' : ''}`} onClick={() => setAuthType('microsoft')}>
-                <div className="mc-acc-icon-box"><img src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg" width={24} /></div>
-                <div className="mc-acc-text">
-                  <span className="subtitle">{t("app.licenseTitle")}</span>
-                  <span className="title">{t("app.microsoftAccount")}</span>
-                </div>
-                <div className="mc-acc-arrow">{'>'}</div>
-              </div>
+
               <div className={`mc-acc-type-btn ${authType === 'offline' ? 'selected' : ''}`} onClick={() => setAuthType('offline')}>
                 <div className="mc-acc-icon-box"><img src="https://minotar.net/helm/Steve/40.png" width={24} style={{ imageRendering: 'pixelated' }} /></div>
                 <div className="mc-acc-text">
