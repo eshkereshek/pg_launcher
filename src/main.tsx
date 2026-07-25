@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useState, useEffect, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 
 window.onerror = function (msg, _url, _lineNo, _columnNo, error) {
@@ -16,20 +16,23 @@ import './index.css'
 import './settings.css'
 import './layout.css'
 import './mc-cards.css'
-import App from './App.tsx'
 
 import { LanguageProvider } from './i18n.tsx'
-
-import { useState, useEffect } from 'react'
 import InstallerApp from './InstallerApp'
 
+const App = lazy(() => import('./App.tsx'))
+
 function MainWrapper() {
-  const [isInstaller, setIsInstaller] = useState<boolean | null>(null)
+  // @ts-ignore
+  const initialSync = window.electronAPI?.isInstallerSync ? window.electronAPI.isInstallerSync() : null
+  const [isInstaller, setIsInstaller] = useState<boolean | null>(initialSync)
 
   useEffect(() => {
-    // @ts-ignore
-    window.electronAPI.isInstaller().then(setIsInstaller)
-  }, [])
+    if (isInstaller === null) {
+      // @ts-ignore
+      window.electronAPI?.isInstaller?.().then((res: boolean) => setIsInstaller(res)).catch(() => setIsInstaller(false))
+    }
+  }, [isInstaller])
 
   if (isInstaller === null) return <div style={{ backgroundColor: '#1e222d', width: '100vw', height: '100vh' }} />
 
@@ -38,9 +41,11 @@ function MainWrapper() {
   }
 
   return (
-    <LanguageProvider>
-      <App />
-    </LanguageProvider>
+    <Suspense fallback={<div style={{ backgroundColor: '#1e222d', width: '100vw', height: '100vh' }} />}>
+      <LanguageProvider>
+        <App />
+      </LanguageProvider>
+    </Suspense>
   )
 }
 

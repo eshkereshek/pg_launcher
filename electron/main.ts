@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import { createRequire } from 'module'
@@ -17,32 +17,33 @@ import * as cheerio from 'cheerio'
 const require = createRequire(import.meta.url)
 
 // --- Patch MCLC for speed --- //
-try {
-  const mclcHandlerPath = require.resolve('minecraft-launcher-core/components/handler.js')
-  let handlerCode = fs.readFileSync(mclcHandlerPath, 'utf8')
-  // Fix freezing asset check by using async stat instead of sync stat or checksum
-  if (handlerCode.includes('!await this.checkSum(hash, path.join(subAsset, hash))')) {
-    handlerCode = handlerCode.replace(
-      '!await this.checkSum(hash, path.join(subAsset, hash))',
-      '(await require("fs").promises.stat(path.join(subAsset, hash)).then(s => s.size === 0).catch(() => true))'
-    )
-    
-    // Fix isModernForge for Minecraft >= 2.0 or 26.0 (where the '1.' prefix is dropped)
-    if (handlerCode.includes("json.inheritsFrom.split('.')[1] >= 12")) {
-      handlerCode = handlerCode.split("json.inheritsFrom.split('.')[1] >= 12").join(
-        "(parseInt(json.inheritsFrom.split('.')[0]) > 1 || parseInt(json.inheritsFrom.split('.')[1]) >= 12)"
+if (!process.env.PORTABLE_EXECUTABLE_DIR) {
+  try {
+    const mclcHandlerPath = require.resolve('minecraft-launcher-core/components/handler.js')
+    let handlerCode = fs.readFileSync(mclcHandlerPath, 'utf8')
+    // Fix freezing asset check by using async stat instead of sync stat or checksum
+    if (handlerCode.includes('!await this.checkSum(hash, path.join(subAsset, hash))')) {
+      handlerCode = handlerCode.replace(
+        '!await this.checkSum(hash, path.join(subAsset, hash))',
+        '(await require("fs").promises.stat(path.join(subAsset, hash)).then(s => s.size === 0).catch(() => true))'
       )
-    }
+      
+      // Fix isModernForge for Minecraft >= 2.0 or 26.0 (where the '1.' prefix is dropped)
+      if (handlerCode.includes("json.inheritsFrom.split('.')[1] >= 12")) {
+        handlerCode = handlerCode.split("json.inheritsFrom.split('.')[1] >= 12").join(
+          "(parseInt(json.inheritsFrom.split('.')[0]) > 1 || parseInt(json.inheritsFrom.split('.')[1]) >= 12)"
+        )
+      }
 
-    fs.writeFileSync(mclcHandlerPath, handlerCode)
-    console.log('MCLC handler patched successfully for fast assets check and modern forge!')
+      fs.writeFileSync(mclcHandlerPath, handlerCode)
+      console.log('MCLC handler patched successfully for fast assets check and modern forge!')
+    }
+  } catch (e) {
+    console.log('Failed to patch MCLC:', e)
   }
-} catch (e) {
-  console.log('Failed to patch MCLC:', e)
 }
 
 process.noDeprecation = true;
-app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('limit-fps', '60');
 
 const __filename = fileURLToPath(import.meta.url)
@@ -73,13 +74,22 @@ function createWindow() {
     resizable: !isInstaller,
     title: 'Pagrysha Launcher',
     icon: path.join(process.env.VITE_PUBLIC || '', 'icon.png'),
+    show: isInstaller,
+    backgroundColor: '#121212',
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      additionalArguments: [isInstaller ? '--is-installer' : '--not-installer']
     },
     frame: false
   })
+
+  if (!isInstaller) {
+    win.once('ready-to-show', () => {
+      win?.show()
+    })
+  }
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
@@ -96,8 +106,15 @@ app.on('window-all-closed', () => {
 })
 
 app.whenReady().then(() => {
-  setupDiscordRPC()
+  if (!process.env.PORTABLE_EXECUTABLE_DIR) {
+    saveInstallPath(path.dirname(process.execPath));
+  }
   createWindow()
+  if (!process.env.PORTABLE_EXECUTABLE_DIR) {
+    setTimeout(() => {
+      setupDiscordRPC().catch(() => {})
+    }, 100)
+  }
 })
 
 ipcMain.on('window-minimize', () => win?.minimize())
@@ -226,7 +243,6 @@ ipcMain.handle('auth-pgsync', async (_, username, password) => {
 
 // --- SKINS PERSISTENCE ---
 const skinsDir = path.join(app.getPath('userData'), 'skins')
-import { dialog } from 'electron'
 
 ipcMain.handle('select-skin-file', async () => {
   if (!win) return null
@@ -1176,8 +1192,11 @@ ipcMain.handle('launch-game', async (_event, options) => {
     let finalClientToken = options.clientToken || '0';
 
     if (!options.uuid || options.uuid === '') {
-      const hash = crypto.createHash('md5').update('OfflinePlayer:' + (options.username || 'Player')).digest('hex');
-      finalUuid = `${hash.slice(0,8)}-${hash.slice(8,12)}-${hash.slice(12,16)}-${hash.slice(16,20)}-${hash.slice(20)}`;
+      const hash = crypto.createHash('md5').update('OfflinePlayer:' + (options.username || 'Player')).digest();
+      hash[6] = (hash[6] & 0x0f) | 0x30;
+      hash[8] = (hash[8] & 0x3f) | 0x80;
+      const hex = hash.toString('hex');
+      finalUuid = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
     }
 
     if (options.authType === 'elyby' && options.token && options.clientToken) {
@@ -1237,37 +1256,39 @@ ipcMain.handle('launch-game', async (_event, options) => {
     if (options.authType === 'elyby' || options.authType === 'pgsync') {
       const injectorPath = path.join(rootPath, 'authlib-injector.jar')
       if (!fs.existsSync(injectorPath)) {
-        sendStatus('Downloading Ely.by Skin system helper...')
+        sendStatus('Downloading Skin system helper...')
         try {
           const response = await fetch('https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.8/authlib-injector-1.2.8.jar')
           if (!response.ok) throw new Error(`HTTP error ${response.status}`)
           const arrayBuffer = await response.arrayBuffer()
           fs.writeFileSync(injectorPath, Buffer.from(arrayBuffer))
-          sendStatus('Ely.by Skin helper downloaded!')
+          sendStatus('Skin helper downloaded!')
         } catch (e: any) {
           console.error('Failed to download authlib-injector', e)
-          sendStatus(`Warning: Ely.by skin system failed: ${e.message}`)
+          sendStatus(`Warning: Skin system failed: ${e.message}`)
         }
       }
       if (fs.existsSync(injectorPath)) {
         const yggdrasilUrl = options.authType === 'elyby' ? 'ely.by' : 'https://pg-sync-server.onrender.com/api/yggdrasil';
-        let jvmArgs = [`-javaagent:${injectorPath}=${yggdrasilUrl}`]
-        const minorVer = parseInt(options.version.split('.')[1]) || 0
-        if (minorVer >= 17) {
-          jvmArgs.push(
-            '--add-opens=java.base/java.net=ALL-UNNAMED',
-            '--add-opens=java.base/sun.security.util=ALL-UNNAMED',
-            '--add-opens=java.base/java.util.jar=ALL-UNNAMED',
-            '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
-            '--add-exports=java.base/sun.security.util=ALL-UNNAMED',
-            '--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED'
-          )
-        }
+        let jvmArgs = [
+          `-javaagent:${injectorPath}=${yggdrasilUrl}`,
+          '-Dauthlibinjector.side=client'
+        ]
+        jvmArgs.push(
+          '--add-opens=java.base/java.net=ALL-UNNAMED',
+          '--add-opens=java.base/sun.security.util=ALL-UNNAMED',
+          '--add-opens=java.base/java.util.jar=ALL-UNNAMED',
+          '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
+          '--add-opens=java.base/java.lang=ALL-UNNAMED',
+          '--add-opens=java.base/java.util=ALL-UNNAMED',
+          '--add-exports=java.base/sun.security.util=ALL-UNNAMED',
+          '--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED'
+        )
         opts.customArgs = [
           ...jvmArgs,
           ...(opts.customArgs || [])
         ]
-        sendStatus('Ely.by skin system injected!')
+        sendStatus('Skin system injected!')
       }
     }
 
@@ -1368,12 +1389,51 @@ ipcMain.handle('launch-game', async (_event, options) => {
 })
 
 // --- INSTALLER LOGIC ---
+const lastInstallPathFile = path.join(app.getPath('appData'), 'pagrysha-launcher-data', 'last_install_path.txt');
+
+function getSavedInstallPath(): string {
+  try {
+    if (fs.existsSync(lastInstallPathFile)) {
+      const saved = fs.readFileSync(lastInstallPathFile, 'utf-8').trim();
+      if (saved && saved.length > 0) {
+        return saved;
+      }
+    }
+  } catch (e) {}
+  return path.join(app.getPath('appData'), '..', 'Local', 'pagrysha-launcher');
+}
+
+function saveInstallPath(targetPath: string) {
+  try {
+    const parent = path.dirname(lastInstallPathFile);
+    if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
+    fs.writeFileSync(lastInstallPathFile, targetPath, 'utf-8');
+  } catch (e) {
+    console.error('Failed to save install path:', e);
+  }
+}
+
 ipcMain.handle('is-installer', () => {
   return !!process.env.PORTABLE_EXECUTABLE_DIR;
 });
 
+ipcMain.handle('select-folder', async (_, defaultPath?: string) => {
+  const options: Electron.OpenDialogOptions = {
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Выберите папку для установки Pagrysha Launcher'
+  };
+  if (defaultPath && typeof defaultPath === 'string' && defaultPath.trim().length > 0) {
+    options.defaultPath = defaultPath;
+  }
+  const result = await dialog.showOpenDialog(options);
+  if (!result.canceled && result.filePaths.length > 0) {
+    return result.filePaths[0];
+  }
+  return null;
+});
+
 ipcMain.handle('get-default-install-path', () => {
-  return path.join(app.getPath('appData'), '..', 'Local', 'pagrysha-launcher');
+  return getSavedInstallPath();
 });
 
 ipcMain.handle('install-app', async (_, targetPath: string) => {
@@ -1384,6 +1444,9 @@ ipcMain.handle('install-app', async (_, targetPath: string) => {
       fs.mkdirSync(targetPath, { recursive: true });
     }
     
+    // Save target install path so future updates/installers remember it
+    saveInstallPath(targetPath);
+
     // Disable ASAR so fs.promises.cp treats app.asar as a normal file
     process.noAsar = true;
     await fs.promises.cp(sourceDir, targetPath, { recursive: true, force: true });
@@ -1537,6 +1600,7 @@ ipcMain.handle('check-updates', async () => {
 
 ipcMain.handle('download-and-run-update', async (event, url: string) => {
   try {
+    saveInstallPath(path.dirname(process.execPath));
     const tempExePath = path.join(app.getPath('temp'), `Pagrysha_Update_${Date.now()}.exe`);
     
     const res = await fetch(url);

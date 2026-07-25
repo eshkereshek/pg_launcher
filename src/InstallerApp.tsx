@@ -204,11 +204,7 @@ export default function InstallerApp() {
                 <br/><br/>
                 Разработчик не является правообладателем игры Minecraft, её ресурсов, торговых марок или иных объектов интеллектуальной собственности компании Mojang Studios или Microsoft Corporation, и лаунчер является лишь сторонним инструментом для запуска, не предоставляющим прав на саму игру. Пользователь обязан соблюдать официальное Лицензионное соглашение Mojang/Microsoft, доступное по адресу account.mojang.com/documents/minecraft_eula, и несет полную ответственность за использование своего аккаунта.
                 <br/><br/>
-                Программное обеспечение предоставляется на условиях «как есть», что означает отсутствие гарантий бесперебойной работы, отсутствия ошибок или полной совместимости с любыми пользовательскими модификациями. Разработчик не несет ответственности за любые прямые или косвенные убытки, включая потерю игровых данных, миров, прогресса, повреждение файлов конфигурации или операционной системы, возникшие в результате использования лаунчера. Использование лаунчера для подключения к сторонним серверам осуществляется исключительно на страх и риск Пользователя, при этом Разработчик не несет ответственности за действия администраторов таких серверов или их содержимое.
-                <br/><br/>
-                Лаунчер может собирать исключительно техническую информацию, необходимую для корректной работы приложения и устранения программных сбоев. Настоящее Соглашение действует до момента удаления вами программного обеспечения с вашего устройства, а Разработчик оставляет за собой право в одностороннем порядке вносить изменения в текст условий, при этом продолжение использования лаунчера после внесения таких изменений подтверждает ваше согласие с новой редакцией Соглашения.
-                <br/><br/>
-                Если вы не согласны с любым из положений настоящего текста, вы обязаны немедленно прекратить использование программы и удалить её со своего устройства.
+                Программное обеспечение предоставляется на условиях «как есть», что означает отсутствие гарантий бесперебойной работы, отсутствия ошибок или полной совместимости с любыми пользовательскими модификациями. Разработчик не несет ответственности за любые прямые или косвенные убытки, включая потерю игровых данных, миров, прогресса, повреждение файлов конфигурации или операционной системы, возникшие в результате использования лаунчера.
               </div>
               <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
@@ -224,13 +220,52 @@ export default function InstallerApp() {
               <h1 style={{ margin: '0 0 10px 0', fontSize: '24px', fontFamily: titleFont, letterSpacing: '1px', textShadow: '2px 2px 0 rgba(0,0,0,0.5)' }}>Выбор папки установки</h1>
               <p style={{ fontSize: '13px', color: warmText, marginBottom: '20px' }}>Программа будет установлена в следующую папку.</p>
               
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <input 
                   type="text" 
                   value={installPath}
-                  onChange={e => setInstallPath(e.target.value)}
-                  style={{ flex: 1, padding: '8px', backgroundColor: warmPanel, border: `2px solid #111`, color: '#fff', outline: 'none', fontFamily: 'monospace' }}
+                  onChange={async e => {
+                    const newPath = e.target.value;
+                    setInstallPath(newPath);
+                    if (newPath) {
+                      // @ts-ignore
+                      const installed = await window.electronAPI.checkIsInstalled(newPath);
+                      setIsInstalled(installed);
+                      if (installed) {
+                        setInstallMode('update');
+                      }
+                    }
+                  }}
+                  style={{ flex: 1, padding: '8px 12px', backgroundColor: warmPanel, border: '2px solid #111', color: '#fff', outline: 'none', fontFamily: 'monospace', fontSize: '13px' }}
                 />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      // @ts-ignore
+                      const selected = await window.electronAPI.selectFolder(installPath);
+                      if (selected) {
+                        setInstallPath(selected);
+                        // @ts-ignore
+                        const installed = await window.electronAPI.checkIsInstalled(selected);
+                        setIsInstalled(installed);
+                        if (installed) {
+                          setInstallMode('update');
+                        }
+                      }
+                    } catch (err) {
+                      console.error('Error selecting folder:', err);
+                    }
+                  }}
+                  className="mc-btn-primary"
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    fontFamily: titleFont,
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer'
+                  }}
+                >Обзор...</button>
               </div>
               <p style={{ fontSize: '12px', color: '#9c8e7e', marginTop: '10px' }}>Требуется свободного места: ~150 МБ</p>
             </div>

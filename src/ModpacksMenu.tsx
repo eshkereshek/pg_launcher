@@ -15,11 +15,17 @@ export default function ModpacksMenu({ currentVersion, opacity = 95 }: { current
   const [isFetchingMore, setIsFetchingMore] = useState(false)
 
   useEffect(() => {
-    if (!localStorage.getItem('mc_sec_bg_data')) {
+    const customBg = localStorage.getItem('mc_sec_bg_data')
+    if (customBg) {
+      setBgImage(customBg)
+    } else {
       // @ts-ignore
-      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\bg-minecraft.png')
-        .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
-        .catch(console.error)
+      if (window.electronAPI && window.electronAPI.readLocalImage) {
+        // @ts-ignore
+        window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\2026-07-25_15.19.11.png')
+          .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
+          .catch(console.error)
+      }
     }
 
     loadRecommended(0, false)

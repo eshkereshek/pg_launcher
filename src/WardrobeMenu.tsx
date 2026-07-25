@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from './i18n';
 import { SkinViewer, WalkingAnimation } from 'skinview3d';
+import { Upload, Trash2 } from 'lucide-react';
 
 interface Account {
   id: string;
@@ -9,7 +10,15 @@ interface Account {
   token?: string;
 }
 
-export default function WardrobeMenu({ account, onSkinChange }: { account: Account, onSkinChange?: () => void }) {
+export default function WardrobeMenu({ 
+  account, 
+  opacity = 95, 
+  onSkinChange 
+}: { 
+  account: Account, 
+  opacity?: number, 
+  onSkinChange?: () => void 
+}) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const skinViewerRef = useRef<SkinViewer | null>(null);
@@ -118,22 +127,28 @@ export default function WardrobeMenu({ account, onSkinChange }: { account: Accou
     document.getElementById(id)?.click();
   };
 
+  const frameBgStyle: React.CSSProperties = {
+    background: `rgba(20, 20, 20, ${opacity / 100})`,
+    border: '3px solid #111',
+    boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #111',
+    backdropFilter: 'blur(8px)',
+  };
+
   return (
     <div style={{ padding: '25px', color: 'white', display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <h1 style={{ fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase', margin: '0 0 15px 0', fontSize: '24px' }}>{t('wardrobe.title') as string}</h1>
+      <h1 style={{ fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase', margin: '0 0 15px 0', fontSize: '24px', letterSpacing: '1px' }}>{t('wardrobe.title') as string}</h1>
       
-      <div style={{ display: 'flex', gap: '30px', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', gap: '25px', flex: 1, minHeight: 0 }}>
+        {/* 3D Model Frame */}
         <div style={{ 
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           alignSelf: 'stretch',
-          width: '240px',
+          width: '260px',
           flexShrink: 0,
-          background: 'rgba(0,0,0,0.5)', 
-          padding: '15px', 
-          border: '3px solid #111', 
-          boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #111'
+          padding: '15px',
+          ...frameBgStyle
         }}>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <canvas ref={canvasRef} style={{ imageRendering: 'pixelated' }} />
@@ -143,38 +158,64 @@ export default function WardrobeMenu({ account, onSkinChange }: { account: Accou
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
+        {/* Action Cards Container */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
           {message && (
             <div style={{ 
-              padding: '10px', 
-              background: message.includes('error') || message.includes('Ошибка') ? 'rgba(255,50,50,0.2)' : 'rgba(50,255,50,0.2)', 
-              border: `2px solid ${message.includes('error') || message.includes('Ошибка') ? '#ff4444' : '#44ff44'}`,
-              borderRadius: '4px'
+              padding: '12px 16px', 
+              background: message.includes('error') || message.includes('Ошибка') ? 'rgba(231, 76, 60, 0.2)' : 'rgba(46, 204, 113, 0.2)', 
+              border: `2px solid ${message.includes('error') || message.includes('Ошибка') ? '#e74c3c' : '#2ecc71'}`,
+              color: message.includes('error') || message.includes('Ошибка') ? '#ff6b6b' : '#2ecc71',
+              fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+              fontSize: '13px'
             }}>
               {message}
             </div>
           )}
 
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.5)', padding: '15px', border: '3px solid #111', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #111' }}>
-            <h3 style={{ fontFamily: '"Blocks", sans-serif', margin: '0 0 5px 0', fontSize: '16px' }}>Скин</h3>
-            <p style={{ color: '#aaa', fontSize: '12px', marginBottom: '15px', marginTop: 0 }}>Формат PNG, размер 64x64 или 64x32</p>
-            <div style={{ display: 'flex', gap: '10px', marginTop: 'auto' }}>
+          {/* Skin Card */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px 25px', ...frameBgStyle }}>
+            <h3 style={{ fontFamily: '"Blocks", sans-serif', margin: '0 0 6px 0', fontSize: '18px', color: '#ffffff', letterSpacing: '1px' }}>Скин</h3>
+            <p style={{ color: '#888888', fontSize: '12px', marginBottom: '20px', marginTop: 0 }}>Формат PNG, размер 64x64 или 64x32</p>
+            
+            <div style={{ display: 'flex', gap: '12px', marginTop: 'auto', flexWrap: 'wrap' }}>
               <button 
                 className="mc-btn-primary hover-scale-btn" 
-                style={{ flex: 1 }}
+                style={{ 
+                  padding: '10px 22px', 
+                  fontSize: '13px', 
+                  fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                  letterSpacing: '1px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
                 onClick={() => triggerFileInput('skin-upload')}
                 disabled={loading}
               >
+                <Upload size={16} />
                 {t('wardrobe.uploadSkin') as string}
               </button>
+              
               <button 
-                className="mc-btn-primary hover-scale-btn" 
-                style={{ flex: 1 }}
+                className="mc-btn-danger" 
+                style={{ 
+                  padding: '10px 20px', 
+                  fontSize: '13px', 
+                  letterSpacing: '1px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
                 onClick={() => handleDelete('skin')}
                 disabled={loading}
               >
+                <Trash2 size={16} />
                 {t('wardrobe.deleteSkin') as string}
               </button>
+
               <input 
                 type="file" 
                 id="skin-upload" 
@@ -189,26 +230,49 @@ export default function WardrobeMenu({ account, onSkinChange }: { account: Accou
             </div>
           </div>
 
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.5)', padding: '15px', border: '3px solid #111', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #111' }}>
-            <h3 style={{ fontFamily: '"Blocks", sans-serif', margin: '0 0 5px 0', fontSize: '16px' }}>Плащ</h3>
-            <p style={{ color: '#aaa', fontSize: '12px', marginBottom: '15px', marginTop: 0 }}>Формат PNG, размер 64x32</p>
-            <div style={{ display: 'flex', gap: '10px', marginTop: 'auto' }}>
+          {/* Cape Card */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px 25px', ...frameBgStyle }}>
+            <h3 style={{ fontFamily: '"Blocks", sans-serif', margin: '0 0 6px 0', fontSize: '18px', color: '#ffffff', letterSpacing: '1px' }}>Плащ</h3>
+            <p style={{ color: '#888888', fontSize: '12px', marginBottom: '20px', marginTop: 0 }}>Формат PNG, размер 64x32</p>
+            
+            <div style={{ display: 'flex', gap: '12px', marginTop: 'auto', flexWrap: 'wrap' }}>
               <button 
                 className="mc-btn-primary hover-scale-btn" 
-                style={{ flex: 1 }}
+                style={{ 
+                  padding: '10px 22px', 
+                  fontSize: '13px', 
+                  fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                  letterSpacing: '1px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
                 onClick={() => triggerFileInput('cape-upload')}
                 disabled={loading}
               >
+                <Upload size={16} />
                 {t('wardrobe.uploadCape') as string}
               </button>
+
               <button 
-                className="mc-btn-primary hover-scale-btn" 
-                style={{ flex: 1 }}
+                className="mc-btn-danger" 
+                style={{ 
+                  padding: '10px 20px', 
+                  fontSize: '13px', 
+                  letterSpacing: '1px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
                 onClick={() => handleDelete('cape')}
                 disabled={loading}
               >
+                <Trash2 size={16} />
                 {t('wardrobe.deleteCape') as string}
               </button>
+
               <input 
                 type="file" 
                 id="cape-upload" 

@@ -58,7 +58,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   
   // Installer API
+  isInstallerSync: () => process.argv.includes('--is-installer') || !!process.env.PORTABLE_EXECUTABLE_DIR,
   isInstaller: () => ipcRenderer.invoke('is-installer'),
+  selectFolder: (defaultPath?: string) => ipcRenderer.invoke('select-folder', defaultPath),
   getDefaultInstallPath: () => ipcRenderer.invoke('get-default-install-path'),
   installApp: (targetPath: string) => ipcRenderer.invoke('install-app', targetPath),
   createShortcuts: (targetPath: string) => ipcRenderer.invoke('create-shortcuts', targetPath),

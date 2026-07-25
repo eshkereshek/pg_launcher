@@ -3,12 +3,42 @@ name: Build Launcher
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
-jobs:
-  build-mac-intel:
-    runs-on: macos-26-intel
+permissions:
+  contents: write
 
+jobs:
+  build-linux-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Linux DEB
+        run: npx tsc -b && npx vite build && npx electron-builder --linux deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux DEB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagrysha-launcher-linux-deb
+          path: |
+            dist-build/*.deb
+
+  build-mac-intel:
+    runs-on: macos-13
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -24,15 +54,89 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Build for macOS Intel
-        run: npm run build
+      - name: Build for macOS Intel (x64)
+        run: npx tsc -b && npx vite build && npx electron-builder --mac --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Artifacts
+      - name: Upload macOS Intel Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pagrysha-launcher-mac-intel
           path: |
             dist-build/*.dmg
             dist-build/*.zip
+
+  build-mac-arm:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Architecture
+        run: uname -m
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build for macOS ARM (arm64)
+        run: npx tsc -b && npx vite build && npx electron-builder --mac --arm64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS ARM Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagrysha-launcher-mac-arm
+          path: |
+            dist-build/*.dmg
+            dist-build/*.zip
+
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build for Windows EXE
+        run: npx tsc -b && npx vite build && npx electron-builder --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagrysha-launcher-win-exe
+          path: |
+            dist-build/*.exe
+
+  release:
+    needs: [build-linux-deb, build-mac-intel, build-mac-arm, build-windows-exe]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

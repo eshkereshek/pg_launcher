@@ -169,30 +169,29 @@ const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], siz
 
 export default function App() {
   const { t, language, setLanguage } = useTranslation();
-  const [view, setView] = useState<'play' | 'installations' | 'modpacks' | 'settings' | 'servers' | 'wardrobe'>('play')
-  const [showAccountsModal, setShowAccountsModal] = useState(false)
+  const [view, setView] = useState<'play' | 'installations' | 'modpacks' | 'settings' | 'servers' | 'wardrobe' | 'accounts'>('play')
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [showVersionDropdown, setShowVersionDropdown] = useState(false)
   const [isClosingVersionDropdown, setIsClosingVersionDropdown] = useState(false)
   const [newAccountName, setNewAccountName] = useState('')
 
-  const [settingsTab, setSettingsTab] = useState<'main' | 'customization' | 'experimental'>('main')
+  const [settingsTab, setSettingsTab] = useState<'customization' | 'main' | 'experimental'>('customization')
   const [mainBgDataUrl, setMainBgDataUrl] = useState<string | null>(() => localStorage.getItem('mc_main_bg_data'))
   const [secBgDataUrl, setSecBgDataUrl] = useState<string | null>(() => localStorage.getItem('mc_sec_bg_data'))
 
-  const [isClosingSettings, setIsClosingSettings] = useState(false);
-
-  const handleCloseSettings = () => {
-    setIsClosingSettings(true);
-    setTimeout(() => {
-      setView('play');
-      setIsClosingSettings(false);
-    }, 200);
-  };
 
   // Ping the server to wake it up on launcher start
   useEffect(() => {
     fetch('https://pg-sync-server.onrender.com/').catch(() => {});
+    if (!secBgDataUrl) {
+      // @ts-ignore
+      if (window.electronAPI && window.electronAPI.readLocalImage) {
+        // @ts-ignore
+        window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\2026-07-25_15.19.11.png')
+          .then((dataUrl: string) => { if (dataUrl) setSecBgDataUrl(dataUrl) })
+          .catch(console.error)
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -202,6 +201,7 @@ export default function App() {
       if (view === 'installations') stateStr = "Устанавливает версии"
       if (view === 'modpacks') stateStr = "Выбирает моды"
       if (view === 'settings') stateStr = "В настройках"
+      if (view === 'accounts') stateStr = "Управление аккаунтами"
       
       // @ts-ignore
       window.electronAPI.updateDiscordPresence({
@@ -230,6 +230,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  const [selectedAuthMethod, setSelectedAuthMethod] = useState<'offline' | 'elyby' | 'pgsync' | null>(null)
 
   const [rawVersions, setRawVersions] = useState<any[]>([])
   const [versions, setVersions] = useState<string[]>([])
@@ -355,7 +356,7 @@ export default function App() {
 
   const [menuOpacity, setMenuOpacity] = useState(Number(localStorage.getItem('mc_menu_opacity') || 95))
   const [enableServersTab, setEnableServersTab] = useState(localStorage.getItem('mc_enable_servers_tab') === 'true')
-  const [enableNewDesign, setEnableNewDesign] = useState(localStorage.getItem('mc_new_design') === 'true')
+  const [enableNewDesign] = useState(localStorage.getItem('mc_new_design') === 'true')
   const [autoOpenInstallSettings, setAutoOpenInstallSettings] = useState(false)
   const [autoOpenInstallCreate, setAutoOpenInstallCreate] = useState(false)
   const [showPlayEditModal, setShowPlayEditModal] = useState(false)
@@ -375,11 +376,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!progress) return;
+
+    const lower = progress.toLowerCase();
+    const isCompleted = 
+      lower.includes('установлен') ||
+      lower.includes('установлена') ||
+      lower.includes('установлены') ||
+      lower.includes('завершена') ||
+      lower.includes('запущен') ||
+      lower.includes('complete') ||
+      lower.includes('installed') ||
+      lower.includes('ошибка') ||
+      lower.includes('error') ||
+      lower.includes('не найден') ||
+      lower.includes('failed');
+
+    if (isCompleted) {
+      const timer = setTimeout(() => {
+        setProgress('');
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [progress]);
+
+  useEffect(() => {
     // @ts-ignore
     window.electronAPI.onLaunchProgress((msg: string) => {
       setProgress(msg)
-      if (msg === 'Launch complete') setTimeout(() => setProgress(''), 3000)
-      if (msg === 'Установка завершена!') setTimeout(() => setProgress(''), 2000)
     })
 
     // @ts-ignore
@@ -507,7 +531,7 @@ export default function App() {
     localStorage.setItem('mc_menu_opacity', menuOpacity.toString())
     localStorage.setItem('mc_enable_servers_tab', enableServersTab.toString())
     localStorage.setItem('mc_new_design', enableNewDesign.toString())
-    handleCloseSettings()
+    alert('Настройки сохранены!')
   }
 
   const handleOpenPlayEditModal = () => {
@@ -625,7 +649,8 @@ export default function App() {
       setNewAccountName('')
       setAuthEmail('')
       setAuthPassword('')
-      setShowAccountsModal(false)
+      setSelectedAuthMethod(null)
+      setView('play')
     } catch (e: any) {
       let errMsg = e.message || String(e)
       if (errMsg.includes('Неверный логин или пароль')) {
@@ -651,7 +676,7 @@ export default function App() {
     if (gameRunning) return;
     if (!activeAccount) {
       alert('Пожалуйста, выберите или добавьте аккаунт для игры!');
-      setShowAccountsModal(true);
+      setView('accounts');
       return;
     }
     setGameRunning(true)
@@ -874,7 +899,8 @@ export default function App() {
               <div
                 onClick={() => {
                   setShowAccountDropdown(false);
-                  setShowAccountsModal(true);
+                  setView('accounts');
+                  setSelectedAuthMethod(null);
                 }}
                 className="account-dropdown-item"
                 style={{
@@ -939,7 +965,7 @@ export default function App() {
           <div className="jl-nav-separator" style={{ height: '8px', background: '#333', margin: '10px 0 0 0', border: '3px solid #111', borderLeft: 'none', borderRight: 'none', boxShadow: 'inset 0 3px 0 0 #555, inset 0 -3px 0 0 #222' }}></div>
 
           <div className="jl-bottom">
-            <div className="jl-nav-item" onClick={() => setShowAccountsModal(true)}>
+            <div className={`jl-nav-item ${view === 'accounts' ? 'active' : ''}`} onClick={() => { setView('accounts'); setSelectedAuthMethod(null); }}>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <img src="https://minotar.net/helm/Steve/16.png" style={{ width: 16, height: 16, zIndex: 2 }} />
                 <img src="https://minotar.net/helm/Alex/16.png" style={{ width: 16, height: 16, marginLeft: -6, zIndex: 1 }} />
@@ -966,6 +992,84 @@ export default function App() {
 
         {/* Main Content */}
         <div className="jl-main" style={view === 'play' ? { backgroundImage: mainBgDataUrl ? `url("${mainBgDataUrl}")` : 'url("./background.jpg")' } : {}}>
+
+          {/* Top Active Downloads Progress Bar */}
+          {activeDownloads.length > 0 && (
+            <div style={{
+              width: '100%',
+              background: 'rgba(18, 18, 18, 0.95)',
+              borderBottom: '2px solid var(--pg-yellow)',
+              boxShadow: '0 4px 15px rgba(0, 0, 0, 0.6)',
+              padding: '10px 24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              zIndex: 100,
+              boxSizing: 'border-box',
+              backdropFilter: 'blur(8px)',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                  <span style={{ 
+                    fontSize: '11px', 
+                    fontFamily: '"MinecraftTen", "Blocks", sans-serif', 
+                    background: 'var(--pg-yellow)', 
+                    color: '#000', 
+                    padding: '2px 8px', 
+                    letterSpacing: '1px',
+                    flexShrink: 0 
+                  }}>
+                    ЗАГРУЗКА {activeDownloads.length > 1 ? `(1 из ${activeDownloads.length})` : ''}
+                  </span>
+                  <span style={{ 
+                    fontSize: '13px', 
+                    fontFamily: '"MinecraftTen", "Blocks", sans-serif', 
+                    color: '#ffffff',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {activeDownloads[0].name}
+                  </span>
+                  <span style={{ 
+                    fontSize: '12px', 
+                    color: '#aaaaaa', 
+                    whiteSpace: 'nowrap', 
+                    overflow: 'hidden', 
+                    textOverflow: 'ellipsis' 
+                  }}>
+                    {activeDownloads[0].text}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexShrink: 0 }}>
+                  <span style={{ fontSize: '13px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', color: 'var(--pg-yellow)' }}>
+                    {activeDownloads[0].progress}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div style={{ 
+                width: '100%', 
+                height: '6px', 
+                background: '#0d0d0d', 
+                border: '1px solid #000', 
+                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.8)',
+                overflow: 'hidden' 
+              }}>
+                <div 
+                  style={{ 
+                    width: `${activeDownloads[0].progress}%`, 
+                    height: '100%', 
+                    background: 'linear-gradient(90deg, #f1c40f, #f39c12)', 
+                    boxShadow: '0 0 8px rgba(241, 196, 15, 0.6)', 
+                    transition: 'width 0.2s ease-out' 
+                  }} 
+                />
+              </div>
+            </div>
+          )}
 
           <style>{`
           @keyframes progress-bar-stripes {
@@ -1015,7 +1119,14 @@ export default function App() {
               }}>
                 {translatedProgress}
               </span>
-              {progress !== 'Установка завершена!' && progress !== 'Игра запущена' && progress !== 'Моды установлены!' && (
+              {!progress.toLowerCase().includes('установлен') &&
+               !progress.toLowerCase().includes('установлена') &&
+               !progress.toLowerCase().includes('установлены') &&
+               !progress.toLowerCase().includes('завершена') &&
+               !progress.toLowerCase().includes('complete') &&
+               !progress.toLowerCase().includes('installed') &&
+               !progress.toLowerCase().includes('не найден') &&
+               progress !== 'Игра запущена' && (
                 <div style={{
                   width: '100px',
                   height: '8px',
@@ -1040,6 +1151,24 @@ export default function App() {
                   />
                 </div>
               )}
+              <button
+                onClick={() => setProgress('')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#aaa',
+                  cursor: 'pointer',
+                  fontSize: '15px',
+                  padding: '0 2px',
+                  lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginLeft: 'auto'
+                }}
+                title="Закрыть"
+              >
+                ✕
+              </button>
             </div>
           )}
 
@@ -1168,7 +1297,7 @@ export default function App() {
                   </div>
 
                   <div
-                    className="jl-play-btn-wrapper hover-scale-btn"
+                    className="jl-play-btn-wrapper"
                     onClick={(!launching && !gameRunning) ? handleLaunch : undefined}
                     style={{
                       zIndex: 10, position: 'relative', width: '220px', height: '70px',
@@ -1477,300 +1606,620 @@ export default function App() {
           )}
           {view === 'modpacks' && <ModpacksMenu currentVersion={selectedVersion} opacity={menuOpacity} />}
           {view === 'servers' && <ServersMenu opacity={menuOpacity} />}
-          {view === 'wardrobe' && <WardrobeMenu account={activeAccount} onSkinChange={() => setSkinTimestamp(Date.now())} />}
+          {view === 'settings' && (
+            <div 
+              className="jl-content settings-tab-view" 
+              style={{ 
+                flex: 1,
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                background: `rgba(18, 18, 18, ${menuOpacity / 100})`,
+                overflow: 'hidden',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* Fixed Top Sub-Tabs Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '30px',
+                borderBottom: '2px solid #282828',
+                padding: '24px 45px 0 45px',
+                userSelect: 'none',
+                flexShrink: 0,
+                background: 'rgba(18, 18, 18, 0.98)',
+                zIndex: 10
+              }}>
+                <div
+                  onClick={() => setSettingsTab('customization')}
+                  style={{
+                    fontSize: '15px',
+                    fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                    color: settingsTab === 'customization' ? '#ffffff' : '#888888',
+                    borderBottom: settingsTab === 'customization' ? '3px solid var(--pg-yellow)' : '3px solid transparent',
+                    paddingBottom: '12px',
+                    cursor: 'pointer',
+                    letterSpacing: '1px',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  ЛАУНЧЕР
+                </div>
+
+                <div
+                  onClick={() => setSettingsTab('main')}
+                  style={{
+                    fontSize: '15px',
+                    fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                    color: settingsTab === 'main' ? '#ffffff' : '#888888',
+                    borderBottom: settingsTab === 'main' ? '3px solid var(--pg-yellow)' : '3px solid transparent',
+                    paddingBottom: '12px',
+                    cursor: 'pointer',
+                    letterSpacing: '1px',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  MINECRAFT
+                </div>
+
+                <div
+                  onClick={() => setSettingsTab('experimental')}
+                  style={{
+                    fontSize: '15px',
+                    fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                    color: settingsTab === 'experimental' ? '#ffffff' : '#888888',
+                    borderBottom: settingsTab === 'experimental' ? '3px solid var(--pg-yellow)' : '3px solid transparent',
+                    paddingBottom: '12px',
+                    cursor: 'pointer',
+                    letterSpacing: '1px',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  ЭКСПЕРИМЕНТАЛЬНЫЕ
+                </div>
+              </div>
+
+              {/* Scrollable Settings Content Area */}
+              <div 
+                className="custom-scrollbar" 
+                style={{ 
+                  flex: 1, 
+                  overflowY: 'auto', 
+                  padding: '25px 45px 35px 45px',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}
+              >
+                {/* Tab 1: ЛАУНЧЕР (Customization) */}
+                {settingsTab === 'customization' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '650px' }}>
+                    {/* Section: Язык */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Язык / Language
+                      </div>
+                      <div>
+                        <McSelect 
+                          value={language} 
+                          onChange={(v) => setLanguage(v as Language)} 
+                          options={[
+                            { value: 'ru', label: 'Русский - Россия', icon: '🇷🇺' },
+                            { value: 'en', label: 'English - United States', icon: '🇬🇧' }
+                          ]} 
+                          style={{ width: '300px' }} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Section: Прозрачность и темы */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Прозрачность интерфейса
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ flex: 1, maxWidth: '400px' }}>
+                          <input type="range" min="0" max="100" step="5" className="ram-slider" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '100%' }} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white', fontFamily: '"Inter", sans-serif', fontWeight: 500 }}>
+                          <input type="number" className="mc-input" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '60px', padding: '5px', textAlign: 'center' }} /> %
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section: Кастомные фоны */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Фоновые изображения
+                      </div>
+                      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                        {/* Main BG */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '15px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
+                          <span style={{ fontSize: '12px', color: '#ccc', fontWeight: 'bold' }}>Главный экран</span>
+                          {mainBgDataUrl && (
+                            <img src={mainBgDataUrl} style={{ width: '180px', height: '100px', objectFit: 'cover', border: '2px solid #000' }} alt="Main Preview" />
+                          )}
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <label className="mc-btn-primary" style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '12px', color: 'white' }}>
+                              {t('app.selectFile')}
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => setMainBgDataUrl(url));
+                                }
+                              }} />
+                            </label>
+                            {mainBgDataUrl && (
+                              <button className="mc-btn-primary" style={{ background: '#c0392b', borderColor: '#e74c3c', padding: '6px 12px', fontSize: '12px' }} onClick={() => { localStorage.removeItem('mc_main_bg_data'); setMainBgDataUrl(null); }}>
+                                Сбросить
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Secondary BG */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '15px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
+                          <span style={{ fontSize: '12px', color: '#ccc', fontWeight: 'bold' }}>Вторичный экран</span>
+                          {secBgDataUrl && (
+                            <img src={secBgDataUrl} style={{ width: '180px', height: '100px', objectFit: 'cover', border: '2px solid #000' }} alt="Secondary Preview" />
+                          )}
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <label className="mc-btn-primary" style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '12px', color: 'white' }}>
+                              {t('app.selectFile')}
+                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => setSecBgDataUrl(url));
+                                }
+                              }} />
+                            </label>
+                            {secBgDataUrl && (
+                              <button className="mc-btn-primary" style={{ background: '#c0392b', borderColor: '#e74c3c', padding: '6px 12px', fontSize: '12px' }} onClick={() => { localStorage.removeItem('mc_sec_bg_data'); setSecBgDataUrl(null); }}>
+                                Сбросить
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section: Сбросить настройки лаунчера */}
+                    <div style={{ marginTop: '10px', paddingTop: '20px', borderTop: '1px solid #282828' }}>
+                      <button 
+                        className="hover-scale-btn"
+                        onClick={() => {
+                          if (confirm('Вы действительно хотите сбросить все настройки лаунчера?')) {
+                            localStorage.clear();
+                            window.location.reload();
+                          }
+                        }}
+                        style={{
+                          padding: '10px 20px',
+                          background: 'rgba(231, 76, 60, 0.15)',
+                          border: '2px solid #e74c3c',
+                          color: '#ff6b6b',
+                          fontSize: '13px',
+                          fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                          letterSpacing: '1px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 8px rgba(0,0,0,0.4)'
+                        }}
+                      >
+                        Сбросить настройки лаунчера
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: MINECRAFT (Main) */}
+                {settingsTab === 'main' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '650px' }}>
+                    {/* Section: Память ОЗУ */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Выделение оперативной памяти (ОЗУ)
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ flex: 1, maxWidth: '400px' }}>
+                          <input type="range" min="512" max={maxRam} step="512" className="ram-slider" value={ramValue} onChange={e => setRamValue(Number(e.target.value))} style={{ width: '100%' }} />
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#888', marginTop: '4px' }}>
+                            <span>512M</span>
+                            <span>{Math.floor(maxRam * 0.25)}M</span>
+                            <span>{Math.floor(maxRam * 0.5)}M</span>
+                            <span>{Math.floor(maxRam * 0.75)}M</span>
+                            <span>MAX ({maxRam}M)</span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white', fontFamily: '"Inter", sans-serif', fontWeight: 500 }}>
+                          <input type="number" className="mc-input" value={ramValue} onChange={e => setRamValue(Number(e.target.value))} style={{ width: '75px', padding: '5px', textAlign: 'center' }} /> MB
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section: Список версий */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Отображаемые категории версий
+                      </div>
+                      <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '16px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={showSnapshots} onChange={e => setShowSnapshots(e.target.checked)} /> {t("app.showSnapshots")}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={showModified} onChange={e => setShowModified(e.target.checked)} /> {t("app.showForge")}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={showOldReleases} onChange={e => setShowOldReleases(e.target.checked)} /> {t("app.showOldReleases")}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={showBeta} onChange={e => setShowBeta(e.target.checked)} /> {t("app.showBeta")}
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={showAlpha} onChange={e => setShowAlpha(e.target.checked)} /> {t("app.showAlpha")}
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Section: Аргументы JVM */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Аргументы запуска Minecraft (JVM)
+                      </div>
+                      <input type="text" value={mcArgs} onChange={e => setMcArgs(e.target.value)} placeholder="-Xmx4G -XX:+UseG1GC" className="mc-input" style={{ width: '100%', maxWidth: '500px' }} />
+                    </div>
+
+                    {/* Section: Java Runtime */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Выбор версии Java
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <McSelect 
+                          value="default" 
+                          onChange={() => {}} 
+                          options={[{value: 'default', label: t("app.default")}]} 
+                          style={{ width: '300px' }} 
+                        />
+                        <button className="mc-btn-primary" style={{ padding: '8px 16px', fontSize: '13px' }}>{t("app.change")}</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: ЭКСПЕРИМЕНТАЛЬНЫЕ (Experimental) */}
+                {settingsTab === 'experimental' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '650px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Функционал в разработке
+                      </div>
+                      <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#141414', padding: '16px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={enableServersTab} onChange={e => setEnableServersTab(e.target.checked)} /> Включить вкладку "Сервера"
+                        </label>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Очистка данных
+                      </div>
+                      <div>
+                        <button 
+                          className="mc-btn-primary" 
+                          style={{ background: '#e74c3c', borderColor: '#c0392b', color: 'white', padding: '10px 18px', fontSize: '13px' }} 
+                          onClick={async () => {
+                            try {
+                              // @ts-ignore
+                              const res = await window.electronAPI.clearCache()
+                              if (res.status === 'success') {
+                                alert('Кэш лаунчера успешно очищен!')
+                              } else {
+                                alert('Ошибка очистки кэша: ' + res.error)
+                              }
+                            } catch(e: any) {
+                              alert('Ошибка: ' + e.message)
+                            }
+                          }}
+                        >
+                          Очистить кэш лаунчера
+                        </button>
+                        <p style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
+                          Удаляет временные файлы загрузки сборок, кеш OptiFine и текущей сессии.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bottom Save Action Bar */}
+                <div style={{ marginTop: 'auto', paddingTop: '25px', display: 'flex', justifyContent: 'flex-start', borderTop: '1px solid #282828' }}>
+                  <button 
+                    className="mc-btn-primary hover-scale-btn" 
+                    onClick={() => {
+                      saveSettings();
+                    }}
+                    style={{
+                      padding: '10px 24px',
+                      fontSize: '14px',
+                      fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                      letterSpacing: '1px'
+                    }}
+                  >
+                    {t("app.save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {view === 'wardrobe' && <WardrobeMenu account={activeAccount} opacity={menuOpacity} onSkinChange={() => setSkinTimestamp(Date.now())} />}
+
+          {view === 'accounts' && (
+            <div 
+              className="jl-content accounts-tab-view" 
+              style={{ 
+                flex: 1, 
+                height: '100%', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                background: `rgba(18, 18, 18, ${menuOpacity / 100})`, 
+                overflowY: 'auto', 
+                boxSizing: 'border-box',
+                padding: '40px 50px'
+              }}
+            >
+              <div style={{ 
+                maxWidth: '650px', 
+                width: '100%', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '25px', 
+                margin: selectedAuthMethod !== null ? 'auto' : '0 auto' 
+              }}>
+                <div>
+                  <h1 style={{ color: '#fff', fontSize: '24px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>
+                    {selectedAuthMethod === null 
+                      ? t("app.chooseAccountType") 
+                      : (selectedAuthMethod === 'offline' ? 'Вход без регистрации' : 'Вход в аккаунт')}
+                  </h1>
+                  <span style={{ color: '#888', fontSize: '13px', marginTop: '6px', display: 'block' }}>
+                    {selectedAuthMethod === null 
+                      ? t("app.chooseAccountDesc") 
+                      : (selectedAuthMethod === 'offline' ? 'Укажите никнейм игрока для локального входа' : 'Введите имя пользователя/E-mail и пароль')}
+                  </span>
+                </div>
+
+                {/* Existing accounts list */}
+                {selectedAuthMethod === null && accounts.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      Ваши аккаунты
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                      {accounts.map(acc => (
+                        <div 
+                          key={acc.id} 
+                          className="mc-acc-list-item" 
+                          onClick={() => saveAccounts(accounts, acc)}
+                          style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '15px', 
+                            padding: '12px 18px', 
+                            background: activeAccount.id === acc.id ? 'rgba(241, 196, 15, 0.12)' : '#141414', 
+                            border: '2px solid', 
+                            borderColor: activeAccount.id === acc.id ? 'var(--pg-yellow)' : '#262626', 
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <MinecraftFace acc={acc} size={36} />
+                          <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                            <span style={{ color: 'white', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '15px', fontFamily: '"Blocks", sans-serif' }}>{acc.name}</span>
+                            <span style={{ color: '#888', fontSize: '11px', textTransform: 'uppercase', marginTop: '2px' }}>{acc.type === 'offline' ? t("app.typeOffline") : acc.type}</span>
+                          </div>
+                          {activeAccount.id === acc.id && (
+                            <span style={{ fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', color: 'var(--pg-yellow)', padding: '3px 8px', background: 'rgba(241,196,15,0.2)', border: '1px solid var(--pg-yellow)' }}>
+                              АКТИВЕН
+                            </span>
+                          )}
+                          {accounts.length > 1 && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }} 
+                              className="mc-btn-danger" 
+                              style={{ padding: '6px 12px', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
+                              title="Удалить аккаунт"
+                            >
+                              <Trash size={16} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add new account section */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', borderTop: selectedAuthMethod === null ? '1px solid #282828' : 'none', paddingTop: selectedAuthMethod === null ? '20px' : '0px' }}>
+                  {selectedAuthMethod === null ? (
+                    /* Step 1: Method selection cards */
+                    <>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Добавить новый аккаунт
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div 
+                          className="mc-acc-type-btn" 
+                          onClick={() => { setSelectedAuthMethod('elyby'); setAuthType('elyby'); setAuthError(''); }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="mc-acc-icon-box"><img src="https://ely.by/favicon.ico" width={24} /></div>
+                          <div className="mc-acc-text">
+                            <span className="subtitle">{t("app.licenseTitle")}</span>
+                            <span className="title">{t("app.elybyAccount")}</span>
+                          </div>
+                          <div className="mc-acc-arrow">{'>'}</div>
+                        </div>
+
+                        <div 
+                          className="mc-acc-type-btn" 
+                          onClick={() => { setSelectedAuthMethod('pgsync'); setAuthType('pgsync'); setAuthError(''); }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="mc-acc-icon-box"><img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={24} /></div>
+                          <div className="mc-acc-text">
+                            <span className="subtitle">PG-SYNC</span>
+                            <span className="title">{t("app.pgsyncAccount")}</span>
+                          </div>
+                          <div className="mc-acc-arrow">{'>'}</div>
+                        </div>
+
+                        <div 
+                          className="mc-acc-type-btn" 
+                          onClick={() => { setSelectedAuthMethod('offline'); setAuthType('offline'); setAuthError(''); }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <div className="mc-acc-icon-box"><img src="https://minotar.net/helm/Steve/40.png" width={24} style={{ imageRendering: 'pixelated' }} /></div>
+                          <div className="mc-acc-text">
+                            <span className="subtitle">{t("app.offlineTitle")}</span>
+                            <span className="title">{t("app.offlineAccount")}</span>
+                          </div>
+                          <div className="mc-acc-arrow">{'>'}</div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    /* Step 2: Dedicated Form Panel */
+                    <div className="mc-acc-form-panel" style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '16px', 
+                      background: '#121212', 
+                      padding: '28px 30px', 
+                      border: '2px solid #2d2d2d',
+                      boxShadow: '0 8px 25px rgba(0,0,0,0.6)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #282828', paddingBottom: '15px' }}>
+                        <button 
+                          className="hover-scale-btn" 
+                          onClick={() => { setSelectedAuthMethod(null); setAuthError(''); }}
+                          style={{ 
+                            padding: '6px 14px', 
+                            fontSize: '12px', 
+                            background: '#222', 
+                            color: '#ccc', 
+                            border: '1px solid #444', 
+                            cursor: 'pointer',
+                            fontFamily: '"Blocks", sans-serif'
+                          }}
+                        >
+                          ← Назад
+                        </button>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} />}
+                          {selectedAuthMethod === 'pgsync' && <img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={20} />}
+                          {selectedAuthMethod === 'offline' && <img src="https://minotar.net/helm/Steve/20.png" width={20} style={{ imageRendering: 'pixelated' }} />}
+                          <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '15px', color: '#fff', textTransform: 'uppercase' }}>
+                            {selectedAuthMethod === 'elyby' && t("app.elybyAccount")}
+                            {selectedAuthMethod === 'pgsync' && t("app.pgsyncAccount")}
+                            {selectedAuthMethod === 'offline' && t("app.offlineAccount")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '5px' }}>
+                        {selectedAuthMethod === 'offline' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', color: '#aaa', fontFamily: '"Blocks", sans-serif' }}>Никнейм игрока</label>
+                            <input 
+                              type="text" 
+                              className="mc-input" 
+                              placeholder={t("app.nicknamePlaceholder")} 
+                              value={newAccountName} 
+                              onChange={e => setNewAccountName(e.target.value)} 
+                              onKeyDown={e => e.key === 'Enter' && addAccount()} 
+                              autoFocus
+                            />
+                          </div>
+                        )}
+
+                        {(selectedAuthMethod === 'elyby' || selectedAuthMethod === 'pgsync') && (
+                          <>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <label style={{ fontSize: '12px', color: '#aaa', fontFamily: '"Blocks", sans-serif' }}>
+                                {selectedAuthMethod === 'pgsync' ? "Имя пользователя" : "E-mail"}
+                              </label>
+                              <input 
+                                type="text" 
+                                className="mc-input" 
+                                placeholder={selectedAuthMethod === 'pgsync' ? "Имя пользователя" : "E-mail"} 
+                                disabled={authLoading} 
+                                value={authEmail} 
+                                onChange={e => setAuthEmail(e.target.value)} 
+                                autoFocus
+                              />
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              <label style={{ fontSize: '12px', color: '#aaa', fontFamily: '"Blocks", sans-serif' }}>Пароль</label>
+                              <div style={{ position: 'relative' }}>
+                                <input 
+                                  type={showPassword ? "text" : "password"} 
+                                  className="mc-input" 
+                                  placeholder={t("app.passwordPlaceholder")} 
+                                  disabled={authLoading} 
+                                  value={authPassword} 
+                                  onChange={e => setAuthPassword(e.target.value)} 
+                                  onKeyDown={e => e.key === 'Enter' && addAccount()} 
+                                  style={{ width: '100%', paddingRight: '40px' }} 
+                                />
+                                <button 
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}
+                                  type="button"
+                                >
+                                  {showPassword ? (
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22"/></svg>
+                                  ) : (
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {authError && (
+                          <div style={{ color: '#e74c3c', fontSize: '13px', padding: '8px 12px', background: 'rgba(231, 76, 60, 0.15)', border: '1px solid #e74c3c' }}>
+                            {authError}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '10px' }}>
+                          <button className="mc-btn-primary" style={{ padding: '10px 25px', textTransform: 'uppercase', letterSpacing: '1px' }} onClick={addAccount} disabled={authLoading}>
+                            {authLoading ? t("app.loading") : t("app.add")}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
-
-      {/* Settings Overlay */}
-      {view === 'settings' && (
-        <div className={`settings-modal-overlay ${isClosingSettings ? 'closing' : ''}`} onClick={handleCloseSettings}>
-          <div className="settings-modal-box" onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexShrink: 0 }}>
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <div onClick={() => setSettingsTab('main')} style={{ padding: '10px 0', color: settingsTab === 'main' ? '#fff' : '#aaa', borderBottom: settingsTab === 'main' ? '2px solid var(--pg-yellow)' : 'none', cursor: 'pointer', fontWeight: 'bold' }}>{t("app.mainSettings")}</div>
-                <div onClick={() => setSettingsTab('customization')} style={{ padding: '10px 0', color: settingsTab === 'customization' ? '#fff' : '#aaa', borderBottom: settingsTab === 'customization' ? '2px solid var(--pg-yellow)' : 'none', cursor: 'pointer', fontWeight: 'bold' }}>{t("app.launcherSettings")}</div>
-                <div onClick={() => setSettingsTab('experimental')} style={{ padding: '10px 0', color: settingsTab === 'experimental' ? '#fff' : '#aaa', borderBottom: settingsTab === 'experimental' ? '2px solid var(--pg-yellow)' : 'none', cursor: 'pointer', fontWeight: 'bold' }}>Экспериментальные</div>
-              </div>
-              <button
-                onClick={handleCloseSettings}
-                className="mc-btn-primary"
-                style={{ padding: '6px 10px', background: '#222', border: 'none', color: '#aaa', display: 'flex', alignItems: 'center', cursor: 'pointer', alignSelf: 'flex-start' }}
-              >
-                <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '14px', lineHeight: '14px', textTransform: 'lowercase' }}>x</span>
-              </button>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px', marginBottom: '10px', minHeight: 0 }} className="custom-scrollbar">
-              {settingsTab === 'main' ? (
-                <div className="settings-grid" style={{ marginTop: '10px' }}>
-                  <div className="settings-label">{t("app.versionList")}</div>
-                  <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" checked={showSnapshots} onChange={e => setShowSnapshots(e.target.checked)} /> {t("app.showSnapshots")}</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" checked={showModified} onChange={e => setShowModified(e.target.checked)} /> {t("app.showForge")}</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" checked={showOldReleases} onChange={e => setShowOldReleases(e.target.checked)} /> {t("app.showOldReleases")}</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" checked={showBeta} onChange={e => setShowBeta(e.target.checked)} /> {t("app.showBeta")}</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" checked={showAlpha} onChange={e => setShowAlpha(e.target.checked)} /> {t("app.showAlpha")}</label>
-                  </div>
-
-                  <div className="settings-label" style={{ marginTop: '20px' }}>{t("app.minecraftArguments")}</div>
-                  <div className="settings-input-wrapper" style={{ marginTop: '20px' }}>
-                    <input type="text" value={mcArgs} onChange={e => setMcArgs(e.target.value)} placeholder={t("app.mcArgsPlaceholder")} className="mc-input" style={{ width: '100%' }} />
-                  </div>
-
-                  <div className="settings-label" style={{ marginTop: '20px' }}>{t("app.javaSelection")}</div>
-                  <div className="settings-java-row" style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                    <McSelect 
-                      value="default" 
-                      onChange={() => {}} 
-                      options={[{value: 'default', label: t("app.default")}]} 
-                      style={{ flex: 1 }} 
-                    />
-                    <button className="mc-btn-primary" style={{ background: '#2c3e50', borderColor: '#34495e', color: 'white', textShadow: 'none' }}>{t("app.change")}</button>
-                  </div>
-
-                  <div className="settings-label" style={{ marginTop: '20px' }}>{t("app.memoryAllocation")}</div>
-                  <div className="settings-ram-wrapper" style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <div className="ram-slider-container" style={{ flex: 1 }}>
-                      <input type="range" min="512" max={maxRam} step="512" className="ram-slider" value={ramValue} onChange={e => setRamValue(Number(e.target.value))} style={{ width: '100%' }} />
-                      <div className="ram-marks" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#888', marginTop: '5px' }}>
-                        <span>512M</span>
-                        <span>{Math.floor(maxRam * 0.25)}M</span>
-                        <span>{Math.floor(maxRam * 0.5)}M</span>
-                        <span>{Math.floor(maxRam * 0.75)}M</span>
-                        <span>MAX</span>
-                      </div>
-                    </div>
-                    <div className="ram-value-box" style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white' }}>
-                      <input type="number" className="mc-input" value={ramValue} onChange={e => setRamValue(Number(e.target.value))} style={{ width: '70px', padding: '5px' }} /> MB
-                    </div>
-                  </div>
-
-                </div>
-              ) : settingsTab === 'customization' ? (
-                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div className="settings-label">{t('app.launcherLanguage')}</div>
-                    <div style={{ marginTop: '5px' }}>
-                      <McSelect 
-                        value={language} 
-                        onChange={(v) => setLanguage(v as Language)} 
-                        options={[
-                          { value: 'ru', label: 'Русский', icon: '🇷🇺' },
-                          { value: 'en', label: 'English', icon: '🇬🇧' }
-                        ]} 
-                        style={{ width: '200px' }} 
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div className="settings-label">{t('app.mainBg')}</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
-                      {mainBgDataUrl && (
-                        <img src={mainBgDataUrl} style={{ width: '192px', height: '108px', objectFit: 'cover', border: '2px solid #333', borderRadius: '4px' }} alt="Main Preview" />
-                      )}
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <label className="mc-btn-primary" style={{ cursor: 'pointer', padding: '8px 15px', color: 'white' }}>
-                          {t('app.selectFile')}
-                          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
-                            if (e.target.files && e.target.files[0]) {
-                              saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => setMainBgDataUrl(url));
-                            }
-                          }} />
-                        </label>
-                        {mainBgDataUrl && (
-                          <button className="mc-btn-primary" style={{ background: '#c0392b', borderColor: '#e74c3c' }} onClick={() => { localStorage.removeItem('mc_main_bg_data'); setMainBgDataUrl(null); }}>
-                            {t('app.reset')}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div className="settings-label">{t('app.secBg')}</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
-                      {secBgDataUrl && (
-                        <img src={secBgDataUrl} style={{ width: '192px', height: '108px', objectFit: 'cover', border: '2px solid #333', borderRadius: '4px' }} alt="Secondary Preview" />
-                      )}
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <label className="mc-btn-primary" style={{ cursor: 'pointer', padding: '8px 15px', color: 'white' }}>
-                          {t('app.selectFile')}
-                          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
-                            if (e.target.files && e.target.files[0]) {
-                              saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => setSecBgDataUrl(url));
-                            }
-                          }} />
-                        </label>
-                        <button className="mc-btn-primary" style={{ background: '#e74c3c', borderColor: '#c0392b', color: 'white', padding: '8px 15px' }} onClick={() => {
-                          localStorage.removeItem('mc_sec_bg_data');
-                          setSecBgDataUrl(null);
-                        }}>{t('app.reset')}</button>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: '12px', color: '#aaa' }}>{t("app.secBgWarning")}</span>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div className="settings-label">Прозрачность меню</div>
-                    <div className="settings-ram-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <div className="ram-slider-container" style={{ flex: 1 }}>
-                        <input type="range" min="0" max="100" step="5" className="ram-slider" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '100%' }} />
-                      </div>
-                      <div className="ram-value-box" style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white' }}>
-                        <input type="number" className="mc-input" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '60px', padding: '5px' }} /> %
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-              ) : settingsTab === 'experimental' ? (
-                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={enableServersTab} onChange={e => setEnableServersTab(e.target.checked)} /> Включить вкладку "Сервера"
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer', marginTop: '10px' }}>
-                      <input type="checkbox" checked={enableNewDesign} onChange={e => setEnableNewDesign(e.target.checked)} /> Новый дизайн нижней панели
-                    </label>
-                  </div>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                    <div className="settings-label">Очистка данных</div>
-                    <button className="mc-btn-primary" style={{ background: '#e74c3c', borderColor: '#c0392b', color: 'white', padding: '10px', width: '250px' }} onClick={async () => {
-                      try {
-                        // @ts-ignore
-                        const res = await window.electronAPI.clearCache()
-                        if (res.status === 'success') {
-                          alert('Кэш лаунчера успешно очищен!')
-                        } else {
-                          alert('Ошибка очистки кэша: ' + res.error)
-                        }
-                      } catch(e: any) {
-                        alert('Ошибка: ' + e.message)
-                      }
-                    }}>
-                      Очистить кэш лаунчера
-                    </button>
-                    <span style={{ fontSize: '11px', color: '#888' }}>Удаляет временные файлы установки сборок и кэш сессии.</span>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            <div className="settings-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', flexShrink: 0 }}>
-              <button className="mc-btn-primary" style={{ background: '#222', borderColor: '#333', color: 'white', textShadow: 'none' }} onClick={handleCloseSettings}>{t("app.cancel")}</button>
-              <button className="mc-btn-primary" onClick={saveSettings}>{t("app.save")}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Accounts Modal */}
-      {showAccountsModal && (
-        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setShowAccountsModal(false)}>
-          <div className="modal-box" style={{ background: '#111', border: '3px solid #000', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #0a0a0a', padding: '30px', width: '500px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '25px', flexShrink: 0 }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <h2 style={{ color: '#fff', fontSize: '18px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>{t("app.chooseAccountType")}</h2>
-                <span style={{ color: '#888', fontSize: '12px', marginTop: '5px' }}>{t("app.chooseAccountDesc")}</span>
-              </div>
-              <button
-                onClick={() => setShowAccountsModal(false)}
-                className="mc-btn-primary"
-                style={{ padding: '6px 10px', background: '#222', border: 'none', color: '#aaa', display: 'flex', alignItems: 'center', cursor: 'pointer', alignSelf: 'flex-start' }}
-              >
-                <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '14px', lineHeight: '14px', textTransform: 'lowercase' }}>x</span>
-              </button>
-            </div>
-
-            {/* Existing accounts list */}
-            {accounts.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '130px', overflowY: 'auto', marginBottom: '25px', flexShrink: 0 }}>
-                {accounts.map(acc => (
-                  <div key={acc.id} className="mc-acc-list-item" onClick={() => saveAccounts(accounts, acc)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '15px', padding: '10px 15px', background: activeAccount.id === acc.id ? '#1e1e1e' : '#151515', border: '1px solid', borderColor: activeAccount.id === acc.id ? '#555' : '#222', cursor: 'pointer' }}>
-                    <MinecraftFace acc={acc} size={32} />
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                      <span style={{ color: 'white', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '14px' }}>{acc.name}</span>
-                      <span style={{ color: '#888', fontSize: '11px', textTransform: 'uppercase' }}>{acc.type === 'offline' ? t("app.typeOffline") : acc.type}</span>
-                    </div>
-                    {accounts.length > 1 && (
-                      <button onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }} className="mc-btn-primary" style={{ background: '#e74c3c', borderColor: '#c0392b', color: 'white', padding: '5px 10px', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
-                        <Trash size={16} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Account Type Selector - Beautiful Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div className={`mc-acc-type-btn ${authType === 'elyby' ? 'selected' : ''}`} onClick={() => setAuthType('elyby')}>
-                <div className="mc-acc-icon-box"><img src="https://ely.by/favicon.ico" width={24} /></div>
-                <div className="mc-acc-text">
-                  <span className="subtitle">{t("app.licenseTitle")}</span>
-                  <span className="title">{t("app.elybyAccount")}</span>
-                </div>
-                <div className="mc-acc-arrow">{'>'}</div>
-              </div>
-              <div className={`mc-acc-type-btn ${authType === 'pgsync' ? 'selected' : ''}`} onClick={() => setAuthType('pgsync')}>
-                <div className="mc-acc-icon-box"><img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={24} /></div>
-                <div className="mc-acc-text">
-                  <span className="subtitle">PG-SYNC</span>
-                  <span className="title">{t("app.pgsyncAccount")}</span>
-                </div>
-                <div className="mc-acc-arrow">{'>'}</div>
-              </div>
-
-              <div className={`mc-acc-type-btn ${authType === 'offline' ? 'selected' : ''}`} onClick={() => setAuthType('offline')}>
-                <div className="mc-acc-icon-box"><img src="https://minotar.net/helm/Steve/40.png" width={24} style={{ imageRendering: 'pixelated' }} /></div>
-                <div className="mc-acc-text">
-                  <span className="subtitle">{t("app.offlineTitle")}</span>
-                  <span className="title">{t("app.offlineAccount")}</span>
-                </div>
-                <div className="mc-acc-arrow">{'>'}</div>
-              </div>
-            </div>
-
-            {/* Inputs depending on selected type */}
-            <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {authType === 'offline' && (
-                <input type="text" className="mc-input" placeholder={t("app.nicknamePlaceholder")} value={newAccountName} onChange={e => setNewAccountName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAccount()} />
-              )}
-              {(authType === 'elyby' || authType === 'pgsync') && (
-                <>
-                  <input type="text" className="mc-input" placeholder={authType === 'pgsync' ? "Имя пользователя" : "E-mail"} disabled={authLoading} value={authEmail} onChange={e => setAuthEmail(e.target.value)} />
-                  <div style={{ position: 'relative' }}>
-                    <input type={showPassword ? "text" : "password"} className="mc-input" placeholder={t("app.passwordPlaceholder")} disabled={authLoading} value={authPassword} onChange={e => setAuthPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAccount()} style={{ width: '100%', paddingRight: '40px' }} />
-                    <button 
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}
-                      type="button"
-                    >
-                      {showPassword ? (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22"/></svg>
-                      ) : (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                      )}
-                    </button>
-                  </div>
-                </>
-              )}
-              {authError && (
-                <div style={{ color: '#e74c3c', fontSize: '13px', marginTop: '5px' }}>{authError}</div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '10px' }}>
-                <button className="mod-btn install" style={{ padding: '10px 25px', textTransform: 'uppercase', letterSpacing: '1px' }} onClick={addAccount} disabled={authLoading}>
-                  {authLoading ? t("app.loading") : t("app.add")}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Crash Modal */}
       {crashLog !== null && (

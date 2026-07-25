@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from './i18n'
-import { Plus, X, Package, Check, Settings } from 'lucide-react'
+import { Plus, X, Package, Settings, Search, Power, Trash2 } from 'lucide-react'
 import { McSelect } from './McSelect'
 import ModViewer from './ModViewer'
 
@@ -95,6 +95,14 @@ export default function ModsMenu({
   const [installOptifine, setInstallOptifine] = useState(false)
   const [installElybySkins, setInstallElybySkins] = useState(false)
   const [selectedModForViewer, setSelectedModForViewer] = useState<any>(null)
+  const [installedSearchQuery, setInstalledSearchQuery] = useState('')
+  const [contextMenuModId, setContextMenuModId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleClose = () => setContextMenuModId(null);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, []);
 
   const [newName, setNewName] = useState('')
   const [newLoader, setNewLoader] = useState('forge')
@@ -148,11 +156,17 @@ export default function ModsMenu({
     }
     load()
 
-    if (!localStorage.getItem('mc_sec_bg_data')) {
+    const customBg = localStorage.getItem('mc_sec_bg_data')
+    if (customBg) {
+      setBgImage(customBg)
+    } else {
       // @ts-ignore
-      window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\bg-minecraft.png')
-        .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
-        .catch(console.error)
+      if (window.electronAPI && window.electronAPI.readLocalImage) {
+        // @ts-ignore
+        window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\2026-07-25_15.19.11.png')
+          .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
+          .catch(console.error)
+      }
     }
   }, [])
 
@@ -628,57 +642,184 @@ export default function ModsMenu({
               }
             }}
           >
-            <div style={{ padding: '15px', fontWeight: 'bold', borderBottom: '1px solid var(--pg-dark3)', display: 'flex', justifyContent: 'space-between', color: 'white', fontSize: '14px' }}>
+            <div style={{ padding: '14px 15px', fontWeight: 'bold', borderBottom: '1px solid var(--pg-dark3)', display: 'flex', justifyContent: 'space-between', color: 'white', fontSize: '13px', fontFamily: '"Blocks", sans-serif', letterSpacing: '0.5px' }}>
               <span>{t('mods.installed')} {projectType === 'resourcepack' ? t('mods.typeResourcepacks') : projectType === 'shader' ? t('mods.typeShaders') : t('mods.typeMods')} ({activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length})</span>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '10px', gap: '5px' }}>
-              {activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length === 0 ? (
-                <div style={{ color: '#aaa', textAlign: 'center', padding: '20px', fontSize: '13px' }}>{t("mods.empty")}</div>
+
+            {/* Search bar for installed mods */}
+            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--pg-dark3)', background: 'rgba(0,0,0,0.25)' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Search size={13} color="#777" style={{ position: 'absolute', left: '10px' }} />
+                <input
+                  type="text"
+                  placeholder="Поиск установленных..."
+                  value={installedSearchQuery}
+                  onChange={e => setInstalledSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 10px 6px 28px',
+                    background: '#141414',
+                    border: '1px solid #282828',
+                    color: '#fff',
+                    fontSize: '12px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                {installedSearchQuery && (
+                  <button
+                    onClick={() => setInstalledSearchQuery('')}
+                    style={{ position: 'absolute', right: '8px', background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '11px', lineHeight: 1 }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* List container */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '8px', gap: '6px' }}>
+              {activeModpack.installedMods
+                .filter(m => (m.type || 'mod') === projectType)
+                .filter(m => m.title.toLowerCase().includes(installedSearchQuery.toLowerCase())).length === 0 ? (
+                <div style={{ color: '#888', textAlign: 'center', padding: '25px 15px', fontSize: '12px' }}>
+                  {activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length === 0 
+                    ? t("mods.empty") 
+                    : "Ничего не найдено"}
+                </div>
               ) : (
-                activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).map(m => (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--pg-dark3)', borderRadius: '0', opacity: m.isEnabled === false ? 0.5 : 1 }}>
-                    <Check size={16} color={m.isEnabled === false ? "#777" : "#2ecc71"} style={{ flexShrink: 0 }} />
-                    <span style={{ color: 'white', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textDecoration: m.isEnabled === false ? 'line-through' : 'none' }}>{m.title}</span>
-                    <button
-                      onClick={async () => {
-                        try {
-                          // @ts-ignore
-                          await window.electronAPI.toggleMod(m.title, activeModpack.name, !(m.isEnabled !== false));
-                          const updatedMp = {
-                            ...activeModpack,
-                            installedMods: activeModpack.installedMods.map(mod => mod.id === m.id ? { ...mod, isEnabled: (m.isEnabled === false) } : mod)
-                          };
-                          setActiveModpack(updatedMp);
-                          const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
-                          persistModpacks(updatedAll);
-                        } catch (e) { console.error(e) }
+                activeModpack.installedMods
+                  .filter(m => (m.type || 'mod') === projectType)
+                  .filter(m => m.title.toLowerCase().includes(installedSearchQuery.toLowerCase()))
+                  .map(m => (
+                    <div 
+                      key={m.id} 
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenuModId(contextMenuModId === m.id ? null : m.id);
                       }}
-                      title={m.isEnabled === false ? "Enable" : "Disable"}
-                      style={{ background: 'transparent', border: 'none', color: m.isEnabled === false ? '#aaa' : '#f39c12', cursor: 'pointer', padding: '2px', display: 'flex' }}
+                      style={{ 
+                        position: 'relative',
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '10px', 
+                        padding: '8px 10px', 
+                        background: m.isEnabled === false ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.03)', 
+                        border: '1px solid',
+                        borderColor: contextMenuModId === m.id ? 'var(--pg-yellow)' : (m.isEnabled === false ? '#222' : '#2a2a2a'), 
+                        opacity: m.isEnabled === false ? 0.6 : 1,
+                        transition: 'all 0.15s ease',
+                        cursor: 'context-menu',
+                        userSelect: 'none'
+                      }}
                     >
-                      {m.isEnabled === false ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="14" height="14" style={{ opacity: 0.6 }}><path d="M18 22H6v-2h12v2ZM6 20H4v-2h2v2Zm14 0h-2v-2h2v2ZM4 18H2V8h2v10Zm18 0h-2V8h2v10Zm-9-7h-2V2h2v9ZM6 8H4V6h2v2Zm14 0h-2V6h2v2ZM8 6H6V4h2v2Zm10 0h-2V4h2v2Z"/></svg>
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="14" height="14"><path d="M18 22H6v-2h12v2ZM6 20H4v-2h2v2Zm14 0h-2v-2h2v2ZM4 18H2V8h2v10Zm18 0h-2V8h2v10Zm-9-7h-2V2h2v9ZM6 8H4V6h2v2Zm14 0h-2V6h2v2ZM8 6H6V4h2v2Zm10 0h-2V4h2v2Z"/></svg>
+                      <span 
+                        style={{ 
+                          color: m.isEnabled === false ? '#777' : '#eee', 
+                          fontSize: '12px', 
+                          fontWeight: 500,
+                          overflow: 'hidden', 
+                          textOverflow: 'ellipsis', 
+                          whiteSpace: 'nowrap', 
+                          flex: 1, 
+                          textDecoration: m.isEnabled === false ? 'line-through' : 'none' 
+                        }}
+                        title={m.title}
+                      >
+                        {m.title}
+                      </span>
+
+                      {/* Power toggle button (gray initially, yellow on hover, right edge) */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            // @ts-ignore
+                            await window.electronAPI.toggleMod(m.title, activeModpack.name, !(m.isEnabled !== false));
+                            const updatedMp = {
+                              ...activeModpack,
+                              installedMods: activeModpack.installedMods.map(mod => mod.id === m.id ? { ...mod, isEnabled: (m.isEnabled === false) } : mod)
+                            };
+                            setActiveModpack(updatedMp);
+                            const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
+                            persistModpacks(updatedAll);
+                          } catch (err) { console.error(err) }
+                        }}
+                        title={m.isEnabled === false ? "Включить" : "Выключить"}
+                        style={{ 
+                          background: 'transparent', 
+                          border: 'none', 
+                          color: m.isEnabled === false ? '#444' : '#666', 
+                          cursor: 'pointer', 
+                          padding: '4px', 
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginLeft: 'auto',
+                          transition: 'color 0.15s ease, transform 0.1s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--pg-yellow)'}
+                        onMouseLeave={e => e.currentTarget.style.color = m.isEnabled === false ? '#444' : '#666'}
+                      >
+                        <Power size={14} />
+                      </button>
+
+                      {/* Right-click Context Popup (positioned right inside the item) */}
+                      {contextMenuModId === m.id && (
+                        <div 
+                          style={{ 
+                            position: 'absolute', 
+                            top: '100%', 
+                            right: '10px', 
+                            zIndex: 99999, 
+                            background: '#161616', 
+                            border: '2px solid #333', 
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.95), inset 0 1px 0 0 #444', 
+                            padding: '4px',
+                            minWidth: '120px'
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div 
+                            className="hover-scale-btn"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setContextMenuModId(null);
+                              if (!activeModpack) return;
+                              try {
+                                // @ts-ignore
+                                await window.electronAPI.uninstallMod(m.title, activeModpack.name);
+                                const updatedMp = { 
+                                  ...activeModpack, 
+                                  installedMods: activeModpack.installedMods.filter(mod => mod.id !== m.id) 
+                                };
+                                setActiveModpack(updatedMp);
+                                const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
+                                persistModpacks(updatedAll);
+                              } catch (err) { console.error(err) }
+                            }}
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '8px', 
+                              padding: '8px 12px', 
+                              color: '#e74c3c', 
+                              fontSize: '12px', 
+                              fontFamily: '"Blocks", sans-serif', 
+                              cursor: 'pointer',
+                              background: 'rgba(231, 76, 60, 0.1)',
+                              border: '1px solid rgba(231, 76, 60, 0.3)',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Trash2 size={14} color="#e74c3c" />
+                            <span>Удалить</span>
+                          </div>
+                        </div>
                       )}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          // @ts-ignore
-                          await window.electronAPI.uninstallMod(m.title, activeModpack.name);
-                          const updatedMp = { ...activeModpack, installedMods: activeModpack.installedMods.filter(mod => mod.id !== m.id) };
-                          setActiveModpack(updatedMp);
-                          const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
-                          persistModpacks(updatedAll);
-                        } catch (e) { console.error(e) }
-                      }}
-                      style={{ background: 'transparent', border: 'none', color: '#e74c3c', cursor: 'pointer', padding: '2px', display: 'flex' }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="14" height="14"><path d="M7 19H5v-2h2v2Zm12 0h-2v-2h2v2ZM9 15v2H7v-2h2Zm8 2h-2v-2h2v2Zm-6-2H9v-2h2v2Zm4 0h-2v-2h2v2Zm-2-2h-2v-2h2v2Zm-2-2H9V9h2v2Zm4 0h-2V9h2v2ZM9 9H7V7h2v2Zm8 0h-2V7h2v2ZM7 7H5V5h2v2Zm12 0h-2V5h2v2Z"/></svg>
-                    </button>
-                  </div>
-                ))
+                    </div>
+                  ))
               )}
             </div>
           </div>
