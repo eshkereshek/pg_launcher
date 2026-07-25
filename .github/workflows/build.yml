@@ -1,13 +1,16 @@
-name: Build Launcher
+name: Build Windows EXE
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-mac-intel:
-    runs-on: macos-26-intel
+  build-windows:
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Code
@@ -18,21 +21,17 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify Architecture
-        run: uname -m
-
       - name: Install Dependencies
         run: npm install
 
-      - name: Build for macOS Intel
+      - name: Build for Windows (Portable EXE)
         run: npm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload Artifacts
+      - name: Upload EXE Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pagrysha-launcher-mac-intel
-          path: |
-            dist-build/*.dmg
-            dist-build/*.zip
+          name: pagrysha-launcher-win-portable
+          path: dist-build/*.exe
