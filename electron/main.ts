@@ -2100,24 +2100,26 @@ ipcMain.handle('launch-game', async (_event, options) => {
 const lastInstallPathFile = path.join(app.getPath('appData'), 'pagrysha-launcher-data', 'last_install_path.txt');
 
 function getSavedInstallPath(): string {
+  const defaultPath = process.platform === 'win32'
+    ? path.join(app.getPath('appData'), '..', 'Local', 'pagrysha-launcher')
+    : process.platform === 'darwin'
+      ? path.join(app.getPath('home'), 'Applications', 'Pagrysha Launcher')
+      : path.join(app.getPath('home'), '.local', 'share', 'pagrysha-launcher');
+
   try {
     if (fs.existsSync(lastInstallPathFile)) {
       const saved = fs.readFileSync(lastInstallPathFile, 'utf-8').trim();
-      if (saved && saved.length > 0) {
+      if (saved && saved.length > 0 && !saved.includes('node_modules') && fs.existsSync(saved)) {
         return saved;
       }
     }
   } catch (e) {}
-  if (process.platform === 'win32') {
-    return path.join(app.getPath('appData'), '..', 'Local', 'pagrysha-launcher');
-  } else if (process.platform === 'darwin') {
-    return path.join(app.getPath('home'), 'Applications', 'Pagrysha Launcher');
-  } else {
-    return path.join(app.getPath('home'), '.local', 'share', 'pagrysha-launcher');
-  }
+
+  return defaultPath;
 }
 
 function saveInstallPath(targetPath: string) {
+  if (!targetPath || targetPath.includes('node_modules')) return;
   try {
     const parent = path.dirname(lastInstallPathFile);
     if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
@@ -2218,9 +2220,13 @@ ipcMain.handle('launch-installed', async (_, targetPath: string) => {
 });
 
 ipcMain.handle('check-is-installed', (_, targetPath: string) => {
+  if (!targetPath || typeof targetPath !== 'string' || targetPath.trim().length === 0) return false;
   const exeName = path.basename(process.execPath);
-  const finalExePath = path.join(targetPath, exeName);
-  return fs.existsSync(finalExePath);
+  return (
+    fs.existsSync(path.join(targetPath, exeName)) ||
+    fs.existsSync(path.join(targetPath, 'Pagrysha Launcher.exe')) ||
+    fs.existsSync(path.join(targetPath, 'resources', 'app.asar'))
+  );
 });
 
 async function purgeAllLauncherData(targetPath?: string) {
@@ -2380,7 +2386,9 @@ ipcMain.handle('check-updates', async () => {
 
 ipcMain.handle('download-and-run-update', async (event, url: string) => {
   try {
-    saveInstallPath(path.dirname(process.execPath));
+    if (app.isPackaged) {
+      saveInstallPath(path.dirname(process.execPath));
+    }
     const tempExePath = path.join(app.getPath('temp'), `Pagrysha_Update_${Date.now()}.exe`);
     
     const res = await fetch(url);
