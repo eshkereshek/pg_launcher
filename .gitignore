@@ -6,6 +6,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.class
+*.java
+public/2026-*.png
 
 node_modules
 dist

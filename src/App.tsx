@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation, type Language } from './i18n'
 import { Trash, Folder, Play } from 'lucide-react'
 import ModsMenu from './ModsMenu'
@@ -183,15 +183,6 @@ export default function App() {
   // Ping the server to wake it up on launcher start
   useEffect(() => {
     fetch('https://pg-sync-server.onrender.com/').catch(() => {});
-    if (!secBgDataUrl) {
-      // @ts-ignore
-      if (window.electronAPI && window.electronAPI.readLocalImage) {
-        // @ts-ignore
-        window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\2026-07-25_15.19.11.png')
-          .then((dataUrl: string) => { if (dataUrl) setSecBgDataUrl(dataUrl) })
-          .catch(console.error)
-      }
-    }
   }, []);
 
   useEffect(() => {
@@ -238,60 +229,18 @@ export default function App() {
   const [installedVersions, setInstalledVersions] = useState<string[]>([])
   const [modpacks, setModpacks] = useState<Modpack[]>([])
 
-  const [selectedVersion, setSelectedVersion] = useState('')
+  const [selectedVersion, setSelectedVersion] = useState(localStorage.getItem('mc_selected_version') || '')
   const [launching, setLaunching] = useState(false)
   const [gameRunning, setGameRunning] = useState(false)
   const [crashLog, setCrashLog] = useState<string | null>(null)
   const [activeDownloads, setActiveDownloads] = useState<{ id: string, name: string, text: string, progress: number }[]>([])
   const [showDownloadsDropdown, setShowDownloadsDropdown] = useState(false)
+  const [isClosingDownloadsDropdown, setIsClosingDownloadsDropdown] = useState(false)
+  const [justCompletedDownloads, setJustCompletedDownloads] = useState(false)
+  const downloadsCloseTimerRef = useRef<any>(null)
   const [updateInfo, setUpdateInfo] = useState<{hasUpdate: boolean, version?: string, downloadUrl?: string}>({hasUpdate: false})
   const [isUpdating, setIsUpdating] = useState(false);
   const [progress, setProgress] = useState('')
-  const translatedProgress = useMemo(() => {
-    if (!progress) return '';
-    if (progress === 'Инициализация запуска...') return t('backend.initLaunch');
-    if (progress === 'Установка завершена!') return t('backend.installComplete');
-    if (progress === 'Игра запущена') return t('backend.gameStarted');
-    if (progress === 'Моды установлены!') return t('backend.modsInstalled');
-
-    if (progress.startsWith('Скачивание: ')) return progress.replace('Скачивание: ', t('backend.downloading') + ' ');
-    if (progress.startsWith('Проверка файлов: ')) return progress.replace('Проверка файлов: ', t('backend.checkingFiles') + ' ');
-    if (progress.startsWith('Загрузка мода ')) return progress.replace('Загрузка мода ', t('backend.downloadingMod') + ' ');
-    if (progress === 'Поиск OptiFine...') return t('backend.searchOptifine');
-    if (progress === 'OptiFine для этой версии не найден!') return t('backend.optifineNotFound');
-    if (progress.startsWith('Скачивание ') && progress.includes('(Источник')) {
-      return progress.replace('Скачивание ', t('backend.downloading') + ' ').replace('Источник', t('backend.source'));
-    }
-    if (progress === 'OptiFine успешно установлен!') return t('backend.optifineSuccess');
-    if (progress.startsWith('Ошибка установки OptiFine:')) return progress.replace('Ошибка установки OptiFine:', t('backend.optifineError'));
-
-    if (progress.startsWith('Fetching modpack versions')) return progress.replace('Fetching modpack versions', t('backend.fetchingModpackVersions'));
-    if (progress.startsWith('Downloading file')) return progress.replace('Downloading file', t('backend.downloadingFile'));
-    if (progress.startsWith('Extracting modpack')) return t('backend.extractingModpack');
-    if (progress.startsWith('Downloading modpack archive')) return t('backend.downloadingArchive');
-    if (progress.startsWith('Applying')) return progress.replace('Applying', t('backend.applying'));
-    if (progress === 'Modpack installation complete!') return t('backend.modpackComplete');
-    if (progress.startsWith('Installing Fabric')) return progress.replace('Installing Fabric', t('backend.installingFabric'));
-    if (progress.startsWith('Downloading Fabric')) return progress.replace('Downloading Fabric', t('backend.downloadingFabric'));
-    if (progress === 'Fabric installed successfully!') return t('backend.fabricSuccess');
-    if (progress === 'Fabric already installed!') return t('backend.fabricAlreadyInstalled');
-    if (progress.startsWith('Looking for Forge')) return progress.replace('Looking for Forge', t('backend.lookingForForge'));
-    if (progress === 'Forge already installed!') return t('backend.forgeAlreadyInstalled');
-    if (progress.startsWith('Downloading Forge')) return progress.replace('Downloading Forge', t('backend.downloadingForge'));
-    if (progress === 'Forge downloaded! Installing...') return t('backend.forgeDownloaded');
-    if (progress.startsWith('Java ') && progress.includes('is already installed!')) return progress.replace('is already installed!', t('backend.javaAlreadyInstalled'));
-    if (progress.startsWith('Downloading Java')) return progress.replace('Downloading Java', t('backend.downloadingJava'));
-    if (progress === 'Extracting Java Runtime...') return t('backend.extractingJava');
-    if (progress === 'Checking Java...') return t('backend.checkingJava');
-    if (progress === 'Initializing Minecraft Core...') return t('backend.initCore');
-    if (progress === 'Downloading Ely.by Skin system helper...') return t('backend.downloadElyby');
-    if (progress === 'Ely.by Skin helper downloaded!') return t('backend.elybyDownloaded');
-    if (progress.startsWith('Warning: Ely.by')) return progress.replace('Warning: Ely.by skin system failed:', t('backend.elybyWarning'));
-    if (progress === 'Preparing game files... (This may take a while)') return t('backend.preparingFiles');
-    if (progress.startsWith('Error:')) return progress.replace('Error:', t('backend.error'));
-
-    return progress;
-  }, [progress, t]);
 
 
   const MinecraftFace = ({ acc, size = 32 }: { acc: Account, size?: number }) => {
@@ -346,9 +295,47 @@ export default function App() {
   // Settings State
   const [showSnapshots, setShowSnapshots] = useState(localStorage.getItem('mc_show_snapshots') === 'true')
   const [showModified, setShowModified] = useState(localStorage.getItem('mc_show_modified') !== 'false')
-  const [showOldReleases, setShowOldReleases] = useState(localStorage.getItem('mc_show_old_releases') !== 'false')
+  const [showOldReleases, setShowOldReleases] = useState(localStorage.getItem('mc_show_old_releases') === 'true')
   const [showBeta, setShowBeta] = useState(localStorage.getItem('mc_show_beta') === 'true')
   const [showAlpha, setShowAlpha] = useState(localStorage.getItem('mc_show_alpha') === 'true')
+
+  const handleSelectVersion = (v: string) => {
+    setSelectedVersion(v)
+    localStorage.setItem('mc_selected_version', v)
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({ selectedVersion: v })
+  }
+
+  const handleToggleSnapshots = (checked: boolean) => {
+    setShowSnapshots(checked)
+    localStorage.setItem('mc_show_snapshots', checked.toString())
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({ showSnapshots: checked })
+  }
+  const handleToggleModified = (checked: boolean) => {
+    setShowModified(checked)
+    localStorage.setItem('mc_show_modified', checked.toString())
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({ showModified: checked })
+  }
+  const handleToggleOldReleases = (checked: boolean) => {
+    setShowOldReleases(checked)
+    localStorage.setItem('mc_show_old_releases', checked.toString())
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({ showOldReleases: checked })
+  }
+  const handleToggleBeta = (checked: boolean) => {
+    setShowBeta(checked)
+    localStorage.setItem('mc_show_beta', checked.toString())
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({ showBeta: checked })
+  }
+  const handleToggleAlpha = (checked: boolean) => {
+    setShowAlpha(checked)
+    localStorage.setItem('mc_show_alpha', checked.toString())
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({ showAlpha: checked })
+  }
   const [mcArgs, setMcArgs] = useState(localStorage.getItem('mc_args') || '')
 
   const [maxRam, setMaxRam] = useState(8192)
@@ -356,6 +343,7 @@ export default function App() {
 
   const [menuOpacity, setMenuOpacity] = useState(Number(localStorage.getItem('mc_menu_opacity') || 95))
   const [enableServersTab, setEnableServersTab] = useState(localStorage.getItem('mc_enable_servers_tab') === 'true')
+  const [enableTabAnimations, setEnableTabAnimations] = useState(localStorage.getItem('mc_enable_tab_animations') !== 'false')
   const [enableNewDesign] = useState(localStorage.getItem('mc_new_design') === 'true')
   const [autoOpenInstallSettings, setAutoOpenInstallSettings] = useState(false)
   const [autoOpenInstallCreate, setAutoOpenInstallCreate] = useState(false)
@@ -364,16 +352,101 @@ export default function App() {
   const [editPlayIcon, setEditPlayIcon] = useState('')
   const [confirmPlayDelete, setConfirmPlayDelete] = useState(false)
 
+  // Java Runtime State
+  const [customJava, setCustomJava] = useState(localStorage.getItem('mc_custom_java') || 'auto')
+  const [installedJavas, setInstalledJavas] = useState<Record<string, { installed: boolean; path: string | null }>>({})
+  const [showJavaManagerModal, setShowJavaManagerModal] = useState(false)
+  const [installingJava, setInstallingJava] = useState<string | null>(null)
+  const [javaProgress, setJavaProgress] = useState<{ version: string; status: string; progress: number } | null>(null)
+  const [javaError, setJavaError] = useState('')
+
+  const refreshInstalledJavas = async () => {
+    try {
+      // @ts-ignore
+      if (window.electronAPI && window.electronAPI.getInstalledJavas) {
+        // @ts-ignore
+        const res = await window.electronAPI.getInstalledJavas()
+        if (res) setInstalledJavas(res)
+      }
+    } catch (e) {
+      console.error('Failed to load installed Javas:', e)
+    }
+  }
+
+  const handleInstallJava = async (version: '8' | '17' | '21') => {
+    if (installingJava) return
+    setInstallingJava(version)
+    setJavaError('')
+    setJavaProgress({ version, status: `Подготовка к установке Java ${version}...`, progress: 5 })
+    try {
+      // @ts-ignore
+      await window.electronAPI.installJava(version)
+      await refreshInstalledJavas()
+      setJavaProgress(null)
+    } catch (err: any) {
+      setJavaError(err.message || 'Ошибка установки Java')
+    } finally {
+      setInstallingJava(null)
+    }
+  }
+
+  const handleInstallAllRecommended = async () => {
+    if (installingJava) return
+    const toInstall: ('8' | '17' | '21')[] = []
+    if (!installedJavas['8']?.installed) toInstall.push('8')
+    if (!installedJavas['17']?.installed) toInstall.push('17')
+    if (!installedJavas['21']?.installed) toInstall.push('21')
+
+    for (const v of toInstall) {
+      await handleInstallJava(v)
+    }
+  }
+
+  useEffect(() => {
+    refreshInstalledJavas()
+    // @ts-ignore
+    if (window.electronAPI && window.electronAPI.onJavaInstallProgress) {
+      // @ts-ignore
+      window.electronAPI.onJavaInstallProgress((data: any) => {
+        setJavaProgress(data)
+      })
+    }
+  }, [])
+
+  const handleCloseDownloadsDropdown = () => {
+    if (downloadsCloseTimerRef.current) {
+      clearTimeout(downloadsCloseTimerRef.current);
+      downloadsCloseTimerRef.current = null;
+    }
+    setIsClosingDownloadsDropdown(true);
+    setTimeout(() => {
+      setShowDownloadsDropdown(false);
+      setIsClosingDownloadsDropdown(false);
+      setJustCompletedDownloads(false);
+    }, 250);
+  };
+
+  const handleToggleDownloadsDropdown = () => {
+    if (showDownloadsDropdown) {
+      handleCloseDownloadsDropdown();
+    } else {
+      setIsClosingDownloadsDropdown(false);
+      setShowDownloadsDropdown(true);
+    }
+  };
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as HTMLElement;
       if (!target.closest('.titlebar-downloads') && !target.closest('.downloads-dropdown')) {
-        setShowDownloadsDropdown(false);
+        if (showDownloadsDropdown && !isClosingDownloadsDropdown) {
+          handleCloseDownloadsDropdown();
+        }
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [showDownloadsDropdown, isClosingDownloadsDropdown]);
 
   useEffect(() => {
     if (!progress) return;
@@ -408,6 +481,13 @@ export default function App() {
 
     // @ts-ignore
     window.electronAPI.onDownloadUpdate((data: any) => {
+      if (downloadsCloseTimerRef.current) {
+        clearTimeout(downloadsCloseTimerRef.current)
+        downloadsCloseTimerRef.current = null
+      }
+      setJustCompletedDownloads(false)
+      setIsClosingDownloadsDropdown(false)
+      setShowDownloadsDropdown(true)
       setActiveDownloads(prev => {
         const idx = prev.findIndex(d => d.id === data.id)
         if (idx !== -1) {
@@ -421,7 +501,24 @@ export default function App() {
 
     // @ts-ignore
     window.electronAPI.onDownloadFinish((id: string) => {
-      setActiveDownloads(prev => prev.filter(d => d.id !== id))
+      setActiveDownloads(prev => {
+        const next = prev.filter(d => d.id !== id)
+        if (next.length === 0) {
+          setJustCompletedDownloads(true)
+          if (downloadsCloseTimerRef.current) {
+            clearTimeout(downloadsCloseTimerRef.current)
+          }
+          downloadsCloseTimerRef.current = setTimeout(() => {
+            setIsClosingDownloadsDropdown(true)
+            setTimeout(() => {
+              setShowDownloadsDropdown(false)
+              setIsClosingDownloadsDropdown(false)
+              setJustCompletedDownloads(false)
+            }, 300)
+          }, 2000)
+        }
+        return next
+      })
     })
 
     // @ts-ignore
@@ -484,6 +581,66 @@ export default function App() {
       } catch (e) { }
     }
     loadAccounts()
+
+    const loadSettings = async () => {
+      try {
+        // @ts-ignore
+        const disk = await window.electronAPI?.getSettings?.()
+        if (disk && typeof disk === 'object') {
+          if (disk.showSnapshots !== undefined) {
+            setShowSnapshots(Boolean(disk.showSnapshots))
+            localStorage.setItem('mc_show_snapshots', String(disk.showSnapshots))
+          }
+          if (disk.showModified !== undefined) {
+            setShowModified(Boolean(disk.showModified))
+            localStorage.setItem('mc_show_modified', String(disk.showModified))
+          }
+          if (disk.showOldReleases !== undefined) {
+            setShowOldReleases(Boolean(disk.showOldReleases))
+            localStorage.setItem('mc_show_old_releases', String(disk.showOldReleases))
+          }
+          if (disk.showBeta !== undefined) {
+            setShowBeta(Boolean(disk.showBeta))
+            localStorage.setItem('mc_show_beta', String(disk.showBeta))
+          }
+          if (disk.showAlpha !== undefined) {
+            setShowAlpha(Boolean(disk.showAlpha))
+            localStorage.setItem('mc_show_alpha', String(disk.showAlpha))
+          }
+          if (disk.ramValue !== undefined) {
+            setRamValue(Number(disk.ramValue))
+            localStorage.setItem('mc_ram', String(disk.ramValue))
+          }
+          if (disk.mcArgs !== undefined) {
+            setMcArgs(String(disk.mcArgs))
+            localStorage.setItem('mc_args', String(disk.mcArgs))
+          }
+          if (disk.customJava !== undefined) {
+            setCustomJava(String(disk.customJava))
+            localStorage.setItem('mc_custom_java', String(disk.customJava))
+          }
+          if (disk.selectedVersion !== undefined) {
+            setSelectedVersion(String(disk.selectedVersion))
+            localStorage.setItem('mc_selected_version', String(disk.selectedVersion))
+          }
+          if (disk.enableTabAnimations !== undefined) {
+            setEnableTabAnimations(Boolean(disk.enableTabAnimations))
+            localStorage.setItem('mc_enable_tab_animations', String(disk.enableTabAnimations))
+          }
+          if (disk.enableServersTab !== undefined) {
+            setEnableServersTab(Boolean(disk.enableServersTab))
+            localStorage.setItem('mc_enable_servers_tab', String(disk.enableServersTab))
+          }
+          if (disk.menuOpacity !== undefined) {
+            setMenuOpacity(Number(disk.menuOpacity))
+            localStorage.setItem('mc_menu_opacity', String(disk.menuOpacity))
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load disk settings:', e)
+      }
+    }
+    loadSettings()
   }, [])
 
   useEffect(() => {
@@ -497,9 +654,9 @@ export default function App() {
             const mpName = selectedVersion.replace('mp:', '')
             if (!saved.some((m: any) => m.name === mpName)) {
               if (versions.length > 0) {
-                setSelectedVersion(versions[0])
+                handleSelectVersion(versions[0])
               } else {
-                setSelectedVersion('')
+                handleSelectVersion('')
               }
             }
           }
@@ -511,14 +668,50 @@ export default function App() {
 
   useEffect(() => {
     let filtered = rawVersions
-    if (!showSnapshots) filtered = filtered.filter(v => v.type !== 'snapshot')
-    if (!showOldReleases) filtered = filtered.filter(v => v.type !== 'old_alpha' && v.type !== 'old_beta')
-    setVersions(filtered.map(v => v.id))
 
-    if (filtered.length > 0 && !selectedVersion) {
-      setSelectedVersion(filtered[0].id)
+    if (!showSnapshots) {
+      filtered = filtered.filter(v => v.type !== 'snapshot')
     }
-  }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha])
+    if (!showBeta) {
+      filtered = filtered.filter(v => v.type !== 'old_beta' && !v.id?.startsWith('b1.') && !v.id?.startsWith('beta'))
+    }
+    if (!showAlpha) {
+      filtered = filtered.filter(v => 
+        v.type !== 'old_alpha' && 
+        !v.id?.startsWith('a1.') && 
+        !v.id?.startsWith('alpha') && 
+        !v.id?.startsWith('c0.') && 
+        !v.id?.startsWith('inf-') && 
+        !v.id?.startsWith('rd-')
+      )
+    }
+    if (!showOldReleases) {
+      filtered = filtered.filter(v => !(v.type === 'release' && /^1\.[0-5](\.|$)/.test(v.id)))
+    }
+
+    const versionIds = filtered.map(v => v.id)
+    setVersions(versionIds)
+
+    if (versionIds.length > 0) {
+      const savedVersion = localStorage.getItem('mc_selected_version')
+      const isVersionValid = (ver: string | null | undefined): boolean => {
+        if (!ver) return false
+        if (ver.startsWith('mp:')) return true
+        if (versionIds.includes(ver)) return true
+        if (showModified && (forgeVersions.includes(ver) || ver.includes('Forge'))) return true
+        if (installedVersions.includes(ver)) return true
+        return false
+      }
+
+      if (!selectedVersion || !isVersionValid(selectedVersion)) {
+        if (isVersionValid(savedVersion)) {
+          setSelectedVersion(savedVersion!)
+        } else {
+          setSelectedVersion(versionIds[0])
+        }
+      }
+    }
+  }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha, forgeVersions, installedVersions])
 
   const saveSettings = () => {
     localStorage.setItem('mc_ram', ramValue.toString())
@@ -528,9 +721,30 @@ export default function App() {
     localStorage.setItem('mc_show_beta', showBeta.toString())
     localStorage.setItem('mc_show_alpha', showAlpha.toString())
     localStorage.setItem('mc_args', mcArgs)
+    localStorage.setItem('mc_custom_java', customJava)
     localStorage.setItem('mc_menu_opacity', menuOpacity.toString())
     localStorage.setItem('mc_enable_servers_tab', enableServersTab.toString())
+    localStorage.setItem('mc_enable_tab_animations', enableTabAnimations.toString())
     localStorage.setItem('mc_new_design', enableNewDesign.toString())
+
+    // Also persist to disk settings.json
+    // @ts-ignore
+    window.electronAPI?.saveSettings?.({
+      ramValue,
+      showSnapshots,
+      showModified,
+      showOldReleases,
+      showBeta,
+      showAlpha,
+      mcArgs,
+      customJava,
+      menuOpacity,
+      enableServersTab,
+      enableTabAnimations,
+      enableNewDesign,
+      selectedVersion
+    })
+
     alert('Настройки сохранены!')
   }
 
@@ -578,7 +792,7 @@ export default function App() {
     setModpacks(updated);
     // @ts-ignore
     await window.electronAPI.saveModpacks(updated);
-    setSelectedVersion(`mp:${safeEditName}`);
+    handleSelectVersion(`mp:${safeEditName}`);
     setShowPlayEditModal(false);
   };
 
@@ -601,11 +815,11 @@ export default function App() {
     await window.electronAPI.saveModpacks(updated);
 
     if (updated.length > 0) {
-      setSelectedVersion(`mp:${updated[0].name}`);
+      handleSelectVersion(`mp:${updated[0].name}`);
     } else if (versions.length > 0) {
-      setSelectedVersion(versions[0]);
+      handleSelectVersion(versions[0]);
     } else {
-      setSelectedVersion('');
+      handleSelectVersion('');
     }
     setShowPlayEditModal(false);
   };
@@ -714,7 +928,17 @@ export default function App() {
       authType: activeAccount.type,
       memory: { max: `${ramValue}M`, min: '1024M' },
       instanceId: selectedVersion,
-      onPlayBehavior: 'keep'
+      onPlayBehavior: 'keep',
+      jvmArgs: mcArgs,
+      javaPath: customJava === '8'
+        ? (installedJavas['8']?.path || undefined)
+        : customJava === '17'
+        ? (installedJavas['17']?.path || undefined)
+        : customJava === '21'
+        ? (installedJavas['21']?.path || undefined)
+        : customJava !== 'auto' && customJava
+        ? customJava
+        : undefined
     }
 
     if (isModpack) {
@@ -797,7 +1021,7 @@ export default function App() {
           <div 
             className="titlebar-downloads" 
             style={{ position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-            onClick={() => setShowDownloadsDropdown(!showDownloadsDropdown)}
+            onClick={handleToggleDownloadsDropdown}
           >
             <div>
               <span style={{ fontSize: 10, color: activeDownloads.length > 0 ? 'var(--pg-yellow)' : 'inherit' }}>■</span> {t("app.downloads")} {activeDownloads.length > 0 && `(${activeDownloads.length})`}
@@ -823,11 +1047,23 @@ export default function App() {
                   zIndex: 2000,
                   maxHeight: '400px',
                   overflowY: 'auto',
-                  cursor: 'default'
+                  cursor: 'default',
+                  opacity: isClosingDownloadsDropdown ? 0 : 1,
+                  transform: isClosingDownloadsDropdown ? 'translateY(-6px)' : 'translateY(0)',
+                  transition: 'opacity 0.25s ease, transform 0.25s ease',
+                  pointerEvents: isClosingDownloadsDropdown ? 'none' : 'auto'
                 }}
               >
                 {activeDownloads.length === 0 ? (
-                  <div style={{ color: '#888', textAlign: 'center', padding: '20px 0', fontSize: '12px' }}>Нет активных загрузок</div>
+                  justCompletedDownloads ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '16px 0' }}>
+                      <div style={{ color: 'var(--pg-yellow)', fontFamily: '"Blocks", sans-serif', fontSize: '13px' }}>
+                        ✓ ВСЕ УСТАНОВКИ ЗАВЕРШЕНЫ
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: '#888', textAlign: 'center', padding: '20px 0', fontSize: '12px' }}>Нет активных загрузок</div>
+                  )
                 ) : (
                   activeDownloads.map(d => (
                     <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: '5px', background: '#1a1a1a', padding: '10px', border: '2px solid #222' }}>
@@ -924,8 +1160,7 @@ export default function App() {
             <div className={`jl-nav-item ${view === 'installations' ? 'active' : ''}`} onClick={() => setView('installations')}>
               <svg viewBox="0 0 16 16" width="22" height="22" style={{
                 filter: 'brightness(0) invert(1)',
-                opacity: view === 'installations' ? 1 : 0.67,
-                transition: 'opacity 0.2s'
+                opacity: view === 'installations' ? 1 : 0.67
               }}>
                 <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAkklEQVR4AZSPgQ6AIAgFq///Z+PcwDdNodabCNxtPlf9a7ZK7Bh/VQB4D2xUFcEWRpMJFNYalnvLBCwSlvUJca8KgIEW2UkAAAhEqLXX652gD6GmIKEV8y9BDNmU0Pe46JoFLMRwgul7YqSCDA5ICxVo3+ud1OfLE2JgRQrbziIA8vBedo7RJwBojqAPVeC9X+cLAAD//3V/9IAAAAAGSURBVAMAkiYeIQXDV5IAAAAASUVORK5CYII=" width="16" height="16" />
               </svg> {t("app.installations")}
@@ -933,8 +1168,7 @@ export default function App() {
             <div className={`jl-nav-item ${view === 'modpacks' ? 'active' : ''}`} onClick={() => setView('modpacks')}>
               <svg viewBox="0 0 16 16" width="22" height="22" style={{
                 filter: 'brightness(0) invert(1)',
-                opacity: view === 'modpacks' ? 1 : 0.67,
-                transition: 'opacity 0.2s'
+                opacity: view === 'modpacks' ? 1 : 0.67
               }}>
                 <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAm0lEQVR4AbSSCw6AIAxD1fvfWftmpgUnifETClvXlZG4TC+/Xw1WDedQel3VBNmEetYGdEzOkwfcwAU0gRBpIwYKWyM3oPgYvUF5i1z76UTtqzeAxQQQ943JUwtUBlHQ5mKPVTrXyOBUDaLPDfzN1b2Xuk/AOwGNCDkdyaEBUXODILRRBNkgKn4eOEB+oDLIImJH8s05MmiEd8kGAAD//6TAe8AAAAAGSURBVAMAv9MaIYD4VE4AAAAASUVORK5CYII=" width="16" height="16" />
               </svg> {t("app.sidebarModpacks")}
@@ -943,8 +1177,7 @@ export default function App() {
               <div className={`jl-nav-item ${view === 'servers' ? 'active' : ''}`} onClick={() => setView('servers')}>
                 <svg viewBox="0 0 16 16" width="22" height="22" style={{
                   filter: 'brightness(0) invert(1)',
-                  opacity: view === 'servers' ? 1 : 0.67,
-                  transition: 'opacity 0.2s'
+                  opacity: view === 'servers' ? 1 : 0.67
                 }}>
                   <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAnUlEQVR4AaxSgQ2AIAwbPq5eru1MTSMqEDV0wa7buoQpPn6/NthgZgSQR8gBC5NAWBtAOk/WqEEyCAVYGqAGkuN4A04my84OcldIe67gAk5weK66u4MZWZ/8dqcW8rh1kIne4A64V0FhD6iFNG4dXK2n8Cm4A+1VIHbgtzrSVg44vfUOqDk7ygEnimT3N0iXNWpAksQIWFOtkORI2AEAAP//kZTYHgAAAAZJREFUAwBWGzYhjQL2qgAAAABJRU5ErkJggg==" width="16" height="16" />
                 </svg> {t("app.sidebarServers")}
@@ -953,16 +1186,13 @@ export default function App() {
             {activeAccount.type === 'pgsync' && (
               <div className={`jl-nav-item ${view === 'wardrobe' ? 'active' : ''}`} onClick={() => setView('wardrobe')}>
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{
-                  opacity: view === 'wardrobe' ? 1 : 0.67,
-                  transition: 'opacity 0.2s'
+                  opacity: view === 'wardrobe' ? 1 : 0.67
                 }}>
                   <path d="M20.38 3.46L16 2a8.5 8.5 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
                 </svg> {t("app.sidebarWardrobe")}
               </div>
             )}
           </div>
-
-          <div className="jl-nav-separator" style={{ height: '8px', background: '#333', margin: '10px 0 0 0', border: '3px solid #111', borderLeft: 'none', borderRight: 'none', boxShadow: 'inset 0 3px 0 0 #555, inset 0 -3px 0 0 #222' }}></div>
 
           <div className="jl-bottom">
             <div className={`jl-nav-item ${view === 'accounts' ? 'active' : ''}`} onClick={() => { setView('accounts'); setSelectedAuthMethod(null); }}>
@@ -991,189 +1221,13 @@ export default function App() {
         </div>
 
         {/* Main Content */}
-        <div className="jl-main" style={view === 'play' ? { backgroundImage: mainBgDataUrl ? `url("${mainBgDataUrl}")` : 'url("./background.jpg")' } : {}}>
-
-          {/* Top Active Downloads Progress Bar */}
-          {activeDownloads.length > 0 && (
-            <div style={{
-              width: '100%',
-              background: 'rgba(18, 18, 18, 0.95)',
-              borderBottom: '2px solid var(--pg-yellow)',
-              boxShadow: '0 4px 15px rgba(0, 0, 0, 0.6)',
-              padding: '10px 24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              zIndex: 100,
-              boxSizing: 'border-box',
-              backdropFilter: 'blur(8px)',
-              flexShrink: 0
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                  <span style={{ 
-                    fontSize: '11px', 
-                    fontFamily: '"MinecraftTen", "Blocks", sans-serif', 
-                    background: 'var(--pg-yellow)', 
-                    color: '#000', 
-                    padding: '2px 8px', 
-                    letterSpacing: '1px',
-                    flexShrink: 0 
-                  }}>
-                    ЗАГРУЗКА {activeDownloads.length > 1 ? `(1 из ${activeDownloads.length})` : ''}
-                  </span>
-                  <span style={{ 
-                    fontSize: '13px', 
-                    fontFamily: '"MinecraftTen", "Blocks", sans-serif', 
-                    color: '#ffffff',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                  }}>
-                    {activeDownloads[0].name}
-                  </span>
-                  <span style={{ 
-                    fontSize: '12px', 
-                    color: '#aaaaaa', 
-                    whiteSpace: 'nowrap', 
-                    overflow: 'hidden', 
-                    textOverflow: 'ellipsis' 
-                  }}>
-                    {activeDownloads[0].text}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexShrink: 0 }}>
-                  <span style={{ fontSize: '13px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', color: 'var(--pg-yellow)' }}>
-                    {activeDownloads[0].progress}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              <div style={{ 
-                width: '100%', 
-                height: '6px', 
-                background: '#0d0d0d', 
-                border: '1px solid #000', 
-                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.8)',
-                overflow: 'hidden' 
-              }}>
-                <div 
-                  style={{ 
-                    width: `${activeDownloads[0].progress}%`, 
-                    height: '100%', 
-                    background: 'linear-gradient(90deg, #f1c40f, #f39c12)', 
-                    boxShadow: '0 0 8px rgba(241, 196, 15, 0.6)', 
-                    transition: 'width 0.2s ease-out' 
-                  }} 
-                />
-              </div>
-            </div>
-          )}
-
-          <style>{`
-          @keyframes progress-bar-stripes {
-            from { background-position: 40px 0; }
-            to { background-position: 0 0; }
-          }
-          .progress-striped {
-            background-image: linear-gradient(
-              45deg,
-              rgba(255, 255, 255, 0.15) 25%,
-              transparent 25%,
-              transparent 50%,
-              rgba(255, 255, 255, 0.15) 50%,
-              rgba(255, 255, 255, 0.15) 75%,
-              transparent 75%,
-              transparent
-            );
-            background-size: 40px 40px;
-            animation: progress-bar-stripes 1s linear infinite;
-          }
-        `}</style>
-
-          {progress && (
-            <div style={{
-              position: 'absolute',
-              top: '20px',
-              right: '20px',
-              background: 'rgba(26,26,26,0.95)',
-              padding: '10px 20px',
-              border: '3px solid #111',
-              boxShadow: 'inset 0 3px 0 0 #444, inset 3px 0 0 0 #333, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #222, 0 8px 16px rgba(0,0,0,0.6)',
-              color: 'white',
-              zIndex: 100,
-              fontSize: '13px',
-              maxWidth: '500px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '15px'
-            }}>
-              <span style={{
-                maxWidth: '300px',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                fontFamily: '"Inter", sans-serif',
-                fontWeight: 500
-              }}>
-                {translatedProgress}
-              </span>
-              {!progress.toLowerCase().includes('установлен') &&
-               !progress.toLowerCase().includes('установлена') &&
-               !progress.toLowerCase().includes('установлены') &&
-               !progress.toLowerCase().includes('завершена') &&
-               !progress.toLowerCase().includes('complete') &&
-               !progress.toLowerCase().includes('installed') &&
-               !progress.toLowerCase().includes('не найден') &&
-               progress !== 'Игра запущена' && (
-                <div style={{
-                  width: '100px',
-                  height: '8px',
-                  background: '#0d0d0d',
-                  border: '2px solid #000',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}>
-                  <div
-                    style={{
-                      width: `${(() => {
-                        const match = progress.match(/\((\d+)%\)/);
-                        if (match) return match[1];
-                        if (progress.toLowerCase().includes('started') || progress.toLowerCase().includes('запущен')) return '100';
-                        return '20'; // Default placeholder width for indeterminate
-                      })()}%`,
-                      height: '100%',
-                      background: 'var(--pg-yellow)',
-                      transition: 'width 0.3s ease-out',
-                    }}
-                    className={!progress.match(/\((\d+)%\)/) && !progress.toLowerCase().includes('запущен') && !progress.toLowerCase().includes('started') ? 'progress-striped' : ''}
-                  />
-                </div>
-              )}
-              <button
-                onClick={() => setProgress('')}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#aaa',
-                  cursor: 'pointer',
-                  fontSize: '15px',
-                  padding: '0 2px',
-                  lineHeight: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  marginLeft: 'auto'
-                }}
-                title="Закрыть"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-
-          {view === 'play' && (
+        <div className="jl-main" style={view === 'play' ? { backgroundImage: mainBgDataUrl ? `url("${mainBgDataUrl}")` : 'url("/faq.png")' } : { backgroundImage: secBgDataUrl ? `url("${secBgDataUrl}")` : 'url("/faq.png")' }}>
+          <div
+            key={view}
+            className={enableTabAnimations ? 'subtle-tab-transition' : ''}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}
+          >
+            {view === 'play' && (
             <div className="jl-content" style={enableNewDesign ? { justifyContent: 'flex-end', height: '100%' } : {}}>
               {!enableNewDesign ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', padding: '0 40px', width: '100%' }}>
@@ -1213,7 +1267,7 @@ export default function App() {
                                 <div
                                   key={mp.name}
                                   className="dropdown-item"
-                                  onClick={() => { setSelectedVersion(`mp:${mp.name}`); handleCloseVersionDropdown(); }}
+                                  onClick={() => { handleSelectVersion(`mp:${mp.name}`); handleCloseVersionDropdown(); }}
                                   style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid #2a2a2a' }}
                                 >
                                   <img src={mp.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png'} width={24} height={24} style={{ objectFit: 'cover' }} />
@@ -1234,7 +1288,7 @@ export default function App() {
                               <React.Fragment key={v}>
                                 <div
                                   className="dropdown-item"
-                                  onClick={() => { setSelectedVersion(v); handleCloseVersionDropdown(); }}
+                                  onClick={() => { handleSelectVersion(v); handleCloseVersionDropdown(); }}
                                   onContextMenu={async (e) => {
                                     e.preventDefault();
                                     if (isVanillaInstalled) {
@@ -1258,7 +1312,7 @@ export default function App() {
                                 {hasForge && (
                                   <div
                                     className="dropdown-item"
-                                    onClick={() => { setSelectedVersion(forgeLabel); handleCloseVersionDropdown(); }}
+                                    onClick={() => { handleSelectVersion(forgeLabel); handleCloseVersionDropdown(); }}
                                     onContextMenu={async (e) => {
                                       e.preventDefault();
                                       if (isForgeInstalled) {
@@ -1380,7 +1434,7 @@ export default function App() {
                               <div
                                 key={mp.name}
                                 className="dropdown-item"
-                                onClick={(e) => { e.stopPropagation(); setSelectedVersion(`mp:${mp.name}`); handleCloseVersionDropdown(); }}
+                                onClick={(e) => { e.stopPropagation(); handleSelectVersion(`mp:${mp.name}`); handleCloseVersionDropdown(); }}
                                 style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid #2a2a2a' }}
                               >
                                 <img src={mp.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png'} width={24} height={24} style={{ objectFit: 'cover' }} />
@@ -1401,7 +1455,7 @@ export default function App() {
                             <React.Fragment key={v}>
                               <div
                                 className="dropdown-item"
-                                onClick={(e) => { e.stopPropagation(); setSelectedVersion(v); handleCloseVersionDropdown(); }}
+                                onClick={(e) => { e.stopPropagation(); handleSelectVersion(v); handleCloseVersionDropdown(); }}
                                 onContextMenu={async (e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -1426,7 +1480,7 @@ export default function App() {
                               {hasForge && (
                                 <div
                                   className="dropdown-item"
-                                  onClick={(e) => { e.stopPropagation(); setSelectedVersion(forgeLabel); handleCloseVersionDropdown(); }}
+                                  onClick={(e) => { e.stopPropagation(); handleSelectVersion(forgeLabel); handleCloseVersionDropdown(); }}
                                   onContextMenu={async (e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -1560,35 +1614,6 @@ export default function App() {
                       </svg>
                     </button>
                   </div>
-
-                  {/* Top-aligned thin Progress Bar */}
-                  {launching && (
-                    <div style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: '4px',
-                      background: '#222',
-                      overflow: 'hidden',
-                      zIndex: 12
-                    }}>
-                      <div
-                        style={{
-                          width: `${(() => {
-                            const match = progress.match(/\((\d+)%\)/);
-                            if (match) return match[1];
-                            if (progress.toLowerCase().includes('started') || progress.toLowerCase().includes('запущен')) return '100';
-                            return '20';
-                          })()}%`,
-                          height: '100%',
-                          background: 'var(--pg-yellow)',
-                          transition: 'width 0.3s ease-out',
-                        }}
-                        className={!progress.match(/\((\d+)%\)/) && !progress.toLowerCase().includes('запущен') && !progress.toLowerCase().includes('started') ? 'progress-striped' : ''}
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -1737,83 +1762,197 @@ export default function App() {
                     </div>
 
                     {/* Section: Кастомные фоны */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Фоновые изображения
                       </div>
-                      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                         {/* Main BG */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '15px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
-                          <span style={{ fontSize: '12px', color: '#ccc', fontWeight: 'bold' }}>Главный экран</span>
-                          {mainBgDataUrl && (
-                            <img src={mainBgDataUrl} style={{ width: '180px', height: '100px', objectFit: 'cover', border: '2px solid #000' }} alt="Main Preview" />
-                          )}
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <label className="mc-btn-primary" style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '12px', color: 'white' }}>
-                              {t('app.selectFile')}
-                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => setMainBgDataUrl(url));
-                                }
-                              }} />
-                            </label>
-                            {mainBgDataUrl && (
-                              <button className="mc-btn-primary" style={{ background: '#c0392b', borderColor: '#e74c3c', padding: '6px 12px', fontSize: '12px' }} onClick={() => { localStorage.removeItem('mc_main_bg_data'); setMainBgDataUrl(null); }}>
-                                Сбросить
-                              </button>
-                            )}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          background: '#141414',
+                          padding: '10px 14px',
+                          border: '1px solid #282828',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+                          minWidth: '270px'
+                        }}>
+                          {/* Mini Preview Thumbnail */}
+                          <div style={{
+                            width: '72px',
+                            height: '44px',
+                            background: '#0d0d0d',
+                            border: '1px solid #333',
+                            borderRadius: '2px',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <img 
+                              src={mainBgDataUrl || '/faq.png'} 
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              alt="Main Preview" 
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                            <span style={{ fontSize: '12px', color: '#ddd', fontWeight: 600 }}>Главный экран</span>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <label className="mc-btn-primary hover-scale-btn" style={{ cursor: 'pointer', padding: '4px 10px', fontSize: '11px', color: '#000', whiteSpace: 'nowrap' }}>
+                                {t('app.selectFile')}
+                                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => {
+                                      setMainBgDataUrl(url);
+                                      window.dispatchEvent(new Event('storage'));
+                                    });
+                                  }
+                                }} />
+                              </label>
+                              {mainBgDataUrl && (
+                                <button 
+                                  type="button" 
+                                  className="mc-btn-danger hover-scale-btn" 
+                                  style={{ padding: '4px 8px', fontSize: '11px' }} 
+                                  title="Сбросить фон" 
+                                  onClick={() => { 
+                                    localStorage.removeItem('mc_main_bg_data'); 
+                                    setMainBgDataUrl(null); 
+                                    window.dispatchEvent(new Event('storage'));
+                                  }}
+                                >
+                                  Сбросить
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
 
                         {/* Secondary BG */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '15px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
-                          <span style={{ fontSize: '12px', color: '#ccc', fontWeight: 'bold' }}>Вторичный экран</span>
-                          {secBgDataUrl && (
-                            <img src={secBgDataUrl} style={{ width: '180px', height: '100px', objectFit: 'cover', border: '2px solid #000' }} alt="Secondary Preview" />
-                          )}
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <label className="mc-btn-primary" style={{ cursor: 'pointer', padding: '6px 12px', fontSize: '12px', color: 'white' }}>
-                              {t('app.selectFile')}
-                              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => setSecBgDataUrl(url));
-                                }
-                              }} />
-                            </label>
-                            {secBgDataUrl && (
-                              <button className="mc-btn-primary" style={{ background: '#c0392b', borderColor: '#e74c3c', padding: '6px 12px', fontSize: '12px' }} onClick={() => { localStorage.removeItem('mc_sec_bg_data'); setSecBgDataUrl(null); }}>
-                                Сбросить
-                              </button>
-                            )}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          background: '#141414',
+                          padding: '10px 14px',
+                          border: '1px solid #282828',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+                          minWidth: '270px'
+                        }}>
+                          {/* Mini Preview Thumbnail */}
+                          <div style={{
+                            width: '72px',
+                            height: '44px',
+                            background: '#0d0d0d',
+                            border: '1px solid #333',
+                            borderRadius: '2px',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            <img 
+                              src={secBgDataUrl || '/faq.png'} 
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              alt="Secondary Preview" 
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                            <span style={{ fontSize: '12px', color: '#ddd', fontWeight: 600 }}>Вторичный экран</span>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <label className="mc-btn-primary hover-scale-btn" style={{ cursor: 'pointer', padding: '4px 10px', fontSize: '11px', color: '#000', whiteSpace: 'nowrap' }}>
+                                {t('app.selectFile')}
+                                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => {
+                                      setSecBgDataUrl(url);
+                                      window.dispatchEvent(new Event('storage'));
+                                    });
+                                  }
+                                }} />
+                              </label>
+                              {secBgDataUrl && (
+                                <button 
+                                  type="button" 
+                                  className="mc-btn-danger hover-scale-btn" 
+                                  style={{ padding: '4px 8px', fontSize: '11px' }} 
+                                  title="Сбросить фон" 
+                                  onClick={() => { 
+                                    localStorage.removeItem('mc_sec_bg_data'); 
+                                    setSecBgDataUrl(null); 
+                                    window.dispatchEvent(new Event('storage'));
+                                  }}
+                                >
+                                  Сбросить
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Section: Сбросить настройки лаунчера */}
-                    <div style={{ marginTop: '10px', paddingTop: '20px', borderTop: '1px solid #282828' }}>
-                      <button 
-                        className="hover-scale-btn"
-                        onClick={() => {
-                          if (confirm('Вы действительно хотите сбросить все настройки лаунчера?')) {
-                            localStorage.clear();
-                            window.location.reload();
-                          }
-                        }}
-                        style={{
-                          padding: '10px 20px',
-                          background: 'rgba(231, 76, 60, 0.15)',
-                          border: '2px solid #e74c3c',
-                          color: '#ff6b6b',
-                          fontSize: '13px',
-                          fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                          letterSpacing: '1px',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 8px rgba(0,0,0,0.4)'
-                        }}
-                      >
-                        Сбросить настройки лаунчера
-                      </button>
+                    {/* Section: Кэш и настройки лаунчера */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Кэш и настройки лаунчера
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                        <button 
+                          className="mc-btn-primary hover-scale-btn" 
+                          style={{ padding: '8px 16px', fontSize: '12px' }} 
+                          onClick={async () => {
+                            try {
+                              // @ts-ignore
+                              const res = await window.electronAPI.clearCache()
+                              if (res.status === 'success') {
+                                alert('Кэш лаунчера успешно очищен!')
+                              } else {
+                                alert('Ошибка очистки кэша: ' + res.error)
+                              }
+                            } catch(e: any) {
+                              alert('Ошибка: ' + e.message)
+                            }
+                          }}
+                        >
+                          Очистить кэш лаунчера
+                        </button>
+                        <span style={{ fontSize: '12px', color: '#888' }}>
+                          Удаляет временные файлы загрузки сборок, кеш OptiFine и текущей сессии.
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                        <button 
+                          className="mc-btn-danger hover-scale-btn"
+                          onClick={async () => {
+                            if (confirm('Вы действительно хотите сбросить все настройки лаунчера?')) {
+                              try {
+                                // @ts-ignore
+                                await window.electronAPI?.resetSettings?.();
+                              } catch {}
+                              localStorage.clear();
+                              window.location.reload();
+                            }
+                          }}
+                          style={{
+                            padding: '8px 16px',
+                            fontSize: '12px'
+                          }}
+                        >
+                          Сбросить настройки лаунчера
+                        </button>
+                        <span style={{ fontSize: '12px', color: '#888' }}>
+                          Сбрасывает все сохраненные параметры лаунчера и аккаунты.
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1850,19 +1989,19 @@ export default function App() {
                       </div>
                       <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '16px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showSnapshots} onChange={e => setShowSnapshots(e.target.checked)} /> {t("app.showSnapshots")}
+                          <input type="checkbox" checked={showSnapshots} onChange={e => handleToggleSnapshots(e.target.checked)} /> {t("app.showSnapshots")}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showModified} onChange={e => setShowModified(e.target.checked)} /> {t("app.showForge")}
+                          <input type="checkbox" checked={showModified} onChange={e => handleToggleModified(e.target.checked)} /> {t("app.showForge")}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showOldReleases} onChange={e => setShowOldReleases(e.target.checked)} /> {t("app.showOldReleases")}
+                          <input type="checkbox" checked={showOldReleases} onChange={e => handleToggleOldReleases(e.target.checked)} /> {t("app.showOldReleases")}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showBeta} onChange={e => setShowBeta(e.target.checked)} /> {t("app.showBeta")}
+                          <input type="checkbox" checked={showBeta} onChange={e => handleToggleBeta(e.target.checked)} /> {t("app.showBeta")}
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showAlpha} onChange={e => setShowAlpha(e.target.checked)} /> {t("app.showAlpha")}
+                          <input type="checkbox" checked={showAlpha} onChange={e => handleToggleAlpha(e.target.checked)} /> {t("app.showAlpha")}
                         </label>
                       </div>
                     </div>
@@ -1880,14 +2019,29 @@ export default function App() {
                       <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Выбор версии Java
                       </div>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <McSelect 
-                          value="default" 
-                          onChange={() => {}} 
-                          options={[{value: 'default', label: t("app.default")}]} 
-                          style={{ width: '300px' }} 
+                          value={customJava} 
+                          onChange={(val: string) => {
+                            setCustomJava(val)
+                            localStorage.setItem('mc_custom_java', val)
+                          }} 
+                          options={[
+                            { value: 'auto', label: 'Автовыбор (рекомендуется)' },
+                            ...(installedJavas['8']?.installed ? [{ value: '8', label: 'Java 8 (для 1.0 — 1.16.5, Alpha, Beta)' }] : []),
+                            ...(installedJavas['17']?.installed ? [{ value: '17', label: 'Java 17 (для 1.17 — 1.20.4)' }] : []),
+                            ...(installedJavas['21']?.installed ? [{ value: '21', label: 'Java 21 (для 1.20.5+)' }] : []),
+                            ...(!['auto', '8', '17', '21'].includes(customJava) && customJava ? [{ value: customJava, label: `Пользовательский: ${customJava}` }] : [])
+                          ]} 
+                          style={{ width: '320px' }} 
                         />
-                        <button className="mc-btn-primary" style={{ padding: '8px 16px', fontSize: '13px' }}>{t("app.change")}</button>
+                        <button 
+                          className="mc-btn-primary" 
+                          onClick={() => { setShowJavaManagerModal(true); refreshInstalledJavas(); }}
+                          style={{ padding: '8px 16px', fontSize: '13px' }}
+                        >
+                          Компоненты Java
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1902,38 +2056,17 @@ export default function App() {
                       </div>
                       <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#141414', padding: '16px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={enableServersTab} onChange={e => setEnableServersTab(e.target.checked)} /> Включить вкладку "Сервера"
+                          <input type="checkbox" checked={enableServersTab} onChange={e => {
+                            setEnableServersTab(e.target.checked);
+                            localStorage.setItem('mc_enable_servers_tab', e.target.checked.toString());
+                          }} /> Включить вкладку "Сервера"
                         </label>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Очистка данных
-                      </div>
-                      <div>
-                        <button 
-                          className="mc-btn-primary" 
-                          style={{ background: '#e74c3c', borderColor: '#c0392b', color: 'white', padding: '10px 18px', fontSize: '13px' }} 
-                          onClick={async () => {
-                            try {
-                              // @ts-ignore
-                              const res = await window.electronAPI.clearCache()
-                              if (res.status === 'success') {
-                                alert('Кэш лаунчера успешно очищен!')
-                              } else {
-                                alert('Ошибка очистки кэша: ' + res.error)
-                              }
-                            } catch(e: any) {
-                              alert('Ошибка: ' + e.message)
-                            }
-                          }}
-                        >
-                          Очистить кэш лаунчера
-                        </button>
-                        <p style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-                          Удаляет временные файлы загрузки сборок, кеш OptiFine и текущей сессии.
-                        </p>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={enableTabAnimations} onChange={e => {
+                            setEnableTabAnimations(e.target.checked);
+                            localStorage.setItem('mc_enable_tab_animations', e.target.checked.toString());
+                          }} /> Плавная анимация переключения вкладок
+                        </label>
                       </div>
                     </div>
                   </div>
@@ -1964,16 +2097,17 @@ export default function App() {
 
           {view === 'accounts' && (
             <div 
-              className="jl-content accounts-tab-view" 
+              className="accounts-tab-view" 
               style={{ 
                 flex: 1, 
                 height: '100%', 
                 display: 'flex', 
                 flexDirection: 'column', 
+                justifyContent: 'flex-start',
                 background: `rgba(18, 18, 18, ${menuOpacity / 100})`, 
-                overflowY: 'auto', 
+                overflow: 'hidden', 
                 boxSizing: 'border-box',
-                padding: '40px 50px'
+                padding: '24px 40px'
               }}
             >
               <div style={{ 
@@ -1981,16 +2115,16 @@ export default function App() {
                 width: '100%', 
                 display: 'flex', 
                 flexDirection: 'column', 
-                gap: '25px', 
-                margin: selectedAuthMethod !== null ? 'auto' : '0 auto' 
+                gap: '16px', 
+                margin: '0 auto' 
               }}>
                 <div>
-                  <h1 style={{ color: '#fff', fontSize: '24px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>
+                  <h1 style={{ color: '#fff', fontSize: '22px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>
                     {selectedAuthMethod === null 
                       ? t("app.chooseAccountType") 
                       : (selectedAuthMethod === 'offline' ? 'Вход без регистрации' : 'Вход в аккаунт')}
                   </h1>
-                  <span style={{ color: '#888', fontSize: '13px', marginTop: '6px', display: 'block' }}>
+                  <span style={{ color: '#888', fontSize: '12px', marginTop: '4px', display: 'block' }}>
                     {selectedAuthMethod === null 
                       ? t("app.chooseAccountDesc") 
                       : (selectedAuthMethod === 'offline' ? 'Укажите никнейм игрока для локального входа' : 'Введите имя пользователя/E-mail и пароль')}
@@ -1999,11 +2133,11 @@ export default function App() {
 
                 {/* Existing accounts list */}
                 {selectedAuthMethod === null && accounts.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '12px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
                       Ваши аккаунты
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', maxHeight: '190px', overflowY: 'auto', paddingRight: '4px' }}>
                       {accounts.map(acc => (
                         <div 
                           key={acc.id} 
@@ -2012,8 +2146,8 @@ export default function App() {
                           style={{ 
                             display: 'flex', 
                             alignItems: 'center', 
-                            gap: '15px', 
-                            padding: '12px 18px', 
+                            gap: '12px', 
+                            padding: '8px 14px', 
                             background: activeAccount.id === acc.id ? 'rgba(241, 196, 15, 0.12)' : '#141414', 
                             border: '2px solid', 
                             borderColor: activeAccount.id === acc.id ? 'var(--pg-yellow)' : '#262626', 
@@ -2021,13 +2155,13 @@ export default function App() {
                             transition: 'all 0.15s ease'
                           }}
                         >
-                          <MinecraftFace acc={acc} size={36} />
+                          <MinecraftFace acc={acc} size={34} />
                           <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                            <span style={{ color: 'white', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '15px', fontFamily: '"Blocks", sans-serif' }}>{acc.name}</span>
-                            <span style={{ color: '#888', fontSize: '11px', textTransform: 'uppercase', marginTop: '2px' }}>{acc.type === 'offline' ? t("app.typeOffline") : acc.type}</span>
+                            <span style={{ color: 'white', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '14px', fontFamily: '"Blocks", sans-serif' }}>{acc.name}</span>
+                            <span style={{ color: '#888', fontSize: '10px', textTransform: 'uppercase', marginTop: '1px' }}>{acc.type === 'offline' ? t("app.typeOffline") : acc.type}</span>
                           </div>
                           {activeAccount.id === acc.id && (
-                            <span style={{ fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', color: 'var(--pg-yellow)', padding: '3px 8px', background: 'rgba(241,196,15,0.2)', border: '1px solid var(--pg-yellow)' }}>
+                            <span style={{ fontSize: '10px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', color: 'var(--pg-yellow)', padding: '2px 6px', background: 'rgba(241,196,15,0.2)', border: '1px solid var(--pg-yellow)' }}>
                               АКТИВЕН
                             </span>
                           )}
@@ -2035,10 +2169,10 @@ export default function App() {
                             <button 
                               onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }} 
                               className="mc-btn-danger" 
-                              style={{ padding: '6px 12px', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
+                              style={{ padding: '5px 10px', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
                               title="Удалить аккаунт"
                             >
-                              <Trash size={16} />
+                              <Trash size={14} />
                             </button>
                           )}
                         </div>
@@ -2048,24 +2182,24 @@ export default function App() {
                 )}
 
                 {/* Add new account section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', borderTop: selectedAuthMethod === null ? '1px solid #282828' : 'none', paddingTop: selectedAuthMethod === null ? '20px' : '0px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: selectedAuthMethod === null ? '1px solid #282828' : 'none', paddingTop: selectedAuthMethod === null ? '12px' : '0px' }}>
                   {selectedAuthMethod === null ? (
                     /* Step 1: Method selection cards */
                     <>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '12px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Добавить новый аккаунт
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div 
                           className="mc-acc-type-btn" 
                           onClick={() => { setSelectedAuthMethod('elyby'); setAuthType('elyby'); setAuthError(''); }}
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
-                          <div className="mc-acc-icon-box"><img src="https://ely.by/favicon.ico" width={24} /></div>
+                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://ely.by/favicon.ico" width={22} /></div>
                           <div className="mc-acc-text">
-                            <span className="subtitle">{t("app.licenseTitle")}</span>
-                            <span className="title">{t("app.elybyAccount")}</span>
+                            <span className="subtitle" style={{ fontSize: '11px' }}>{t("app.licenseTitle")}</span>
+                            <span className="title" style={{ fontSize: '14px' }}>{t("app.elybyAccount")}</span>
                           </div>
                           <div className="mc-acc-arrow">{'>'}</div>
                         </div>
@@ -2073,12 +2207,12 @@ export default function App() {
                         <div 
                           className="mc-acc-type-btn" 
                           onClick={() => { setSelectedAuthMethod('pgsync'); setAuthType('pgsync'); setAuthError(''); }}
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
-                          <div className="mc-acc-icon-box"><img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={24} /></div>
+                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={22} /></div>
                           <div className="mc-acc-text">
-                            <span className="subtitle">PG-SYNC</span>
-                            <span className="title">{t("app.pgsyncAccount")}</span>
+                            <span className="subtitle" style={{ fontSize: '11px' }}>PG-SYNC</span>
+                            <span className="title" style={{ fontSize: '14px' }}>{t("app.pgsyncAccount")}</span>
                           </div>
                           <div className="mc-acc-arrow">{'>'}</div>
                         </div>
@@ -2086,12 +2220,12 @@ export default function App() {
                         <div 
                           className="mc-acc-type-btn" 
                           onClick={() => { setSelectedAuthMethod('offline'); setAuthType('offline'); setAuthError(''); }}
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
-                          <div className="mc-acc-icon-box"><img src="https://minotar.net/helm/Steve/40.png" width={24} style={{ imageRendering: 'pixelated' }} /></div>
+                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://minotar.net/helm/Steve/40.png" width={22} style={{ imageRendering: 'pixelated' }} /></div>
                           <div className="mc-acc-text">
-                            <span className="subtitle">{t("app.offlineTitle")}</span>
-                            <span className="title">{t("app.offlineAccount")}</span>
+                            <span className="subtitle" style={{ fontSize: '11px' }}>{t("app.offlineTitle")}</span>
+                            <span className="title" style={{ fontSize: '14px' }}>{t("app.offlineAccount")}</span>
                           </div>
                           <div className="mc-acc-arrow">{'>'}</div>
                         </div>
@@ -2102,9 +2236,9 @@ export default function App() {
                     <div className="mc-acc-form-panel" style={{ 
                       display: 'flex', 
                       flexDirection: 'column', 
-                      gap: '16px', 
+                      gap: '12px', 
                       background: '#121212', 
-                      padding: '28px 30px', 
+                      padding: '18px 24px', 
                       border: '2px solid #2d2d2d',
                       boxShadow: '0 8px 25px rgba(0,0,0,0.6)'
                     }}>
@@ -2217,7 +2351,7 @@ export default function App() {
               </div>
             </div>
           )}
-
+          </div>
         </div>
       </div>
 
@@ -2328,6 +2462,123 @@ export default function App() {
                 </button>
                 <button className="mc-btn-primary" onClick={handleSavePlayEdit} style={{ flex: 1, padding: '10px' }}>Сохранить</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Java Manager Modal */}
+      {showJavaManagerModal && (
+        <div className="modal-overlay" onClick={() => setShowJavaManagerModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1c1c1c', border: '2px solid #2a2a2a', padding: '24px', width: '580px', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '18px', color: '#f1c40f', fontFamily: '"MinecraftTen", "Blocks", sans-serif' }}>☕ Компоненты Java Runtime</span>
+              <button onClick={() => setShowJavaManagerModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+            </div>
+
+            <p style={{ margin: 0, fontSize: '12px', color: '#bbb', lineHeight: '1.5' }}>
+              Лаунчер автоматически выбирает нужную версию Java для каждой версии игры. Вы можете установить недостающие версии вручную:
+            </p>
+
+            {javaError && (
+              <div style={{ padding: '8px 12px', backgroundColor: '#4a1515', border: '1px solid #e74c3c', color: '#ffb3b3', fontSize: '12px' }}>
+                {javaError}
+              </div>
+            )}
+
+            {[
+              {
+                version: '8' as const,
+                title: 'Java 8 (JRE 8)',
+                desc: 'Для старых и классических версий (1.0 — 1.16.5, Alpha, Beta, Classic)',
+                badge: '<= 1.16.5'
+              },
+              {
+                version: '17' as const,
+                title: 'Java 17 (JRE 17)',
+                desc: 'Для версий Minecraft 1.17 — 1.20.4',
+                badge: '1.17 — 1.20.4'
+              },
+              {
+                version: '21' as const,
+                title: 'Java 21 (JRE 21)',
+                desc: 'Для современных версий игры (1.20.5 — 1.21+)',
+                badge: '1.20.5+'
+              }
+            ].map(item => {
+              const isInst = !!installedJavas[item.version]?.installed
+              const isThisInstalling = installingJava === item.version
+              const pct = isThisInstalling ? (javaProgress?.progress || 10) : 0
+
+              return (
+                <div key={item.version} style={{
+                  backgroundColor: '#141414', border: `1px solid ${isInst ? '#27ae60' : '#333'}`,
+                  padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <strong style={{ color: '#fff', fontSize: '14px' }}>{item.title}</strong>
+                        <span style={{ fontSize: '10px', background: '#282828', color: '#aaa', padding: '2px 6px', borderRadius: '3px' }}>{item.badge}</span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.desc}</div>
+                    </div>
+
+                    <div>
+                      {isInst ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2ecc71', fontSize: '12px', fontWeight: 'bold' }}>
+                          <span>✓</span> Установлена
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={!!installingJava}
+                          onClick={() => handleInstallJava(item.version)}
+                          className="mc-btn-primary"
+                          style={{ padding: '6px 14px', fontSize: '11px', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                        >
+                          {isThisInstalling ? 'Установка...' : 'Установить'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {isThisInstalling && (
+                    <div style={{ marginTop: '4px' }}>
+                      <div style={{ width: '100%', height: '12px', backgroundColor: '#000', border: '1px solid #333', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', width: `${pct}%`,
+                          background: 'linear-gradient(to right, #f39c12, #f1c40f)',
+                          transition: 'width 0.2s'
+                        }}></div>
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#f1c40f', marginTop: '4px', fontFamily: 'monospace' }}>
+                        {javaProgress?.status || 'Загрузка...'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+              <button
+                type="button"
+                disabled={!!installingJava || Object.values(installedJavas).every(j => j.installed)}
+                onClick={handleInstallAllRecommended}
+                className="mc-btn-primary"
+                style={{ padding: '8px 16px', fontSize: '12px' }}
+              >
+                Установить все
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowJavaManagerModal(false)}
+                className="mc-btn-primary"
+                style={{ padding: '8px 24px', fontSize: '12px' }}
+              >
+                Закрыть
+              </button>
             </div>
           </div>
         </div>

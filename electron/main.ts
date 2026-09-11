@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import crypto from 'node:crypto'
 import https from 'node:https'
+import { execFile, execSync, spawnSync, execFileSync } from 'node:child_process'
 import extract from 'extract-zip'
 // @ts-ignore
 import { Client } from 'minecraft-launcher-core'
@@ -119,7 +120,12 @@ app.whenReady().then(() => {
 
 ipcMain.on('window-minimize', () => win?.minimize())
 ipcMain.on('window-maximize', () => win?.isMaximized() ? win?.unmaximize() : win?.maximize())
-ipcMain.on('window-close', () => win?.close())
+ipcMain.on('window-close', async () => {
+  try {
+    await win?.webContents.session.flushStorageData()
+  } catch {}
+  win?.close()
+})
 ipcMain.on('window-hide', () => win?.hide())
 ipcMain.on('window-show', () => win?.show())
 ipcMain.handle('open-external', (_, url) => shell.openExternal(url))
@@ -128,6 +134,46 @@ ipcMain.handle('open-external', (_, url) => shell.openExternal(url))
 const rootPath = path.join(app.getPath('userData'), 'minecraft_data')
 const modpacksFile = path.join(app.getPath('userData'), 'modpacks.json')
 const accountsFile = path.join(app.getPath('userData'), 'accounts.json')
+const settingsFile = path.join(app.getPath('userData'), 'settings.json')
+
+// --- SETTINGS PERSISTENCE ---
+ipcMain.handle('get-settings', () => {
+  try {
+    if (fs.existsSync(settingsFile)) {
+      return JSON.parse(fs.readFileSync(settingsFile, 'utf-8'))
+    }
+  } catch (e) { console.error('Failed to read settings:', e) }
+  return null
+})
+
+ipcMain.handle('save-settings', (_, settings) => {
+  try {
+    let existing: any = {}
+    if (fs.existsSync(settingsFile)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'))
+      } catch {}
+    }
+    const updated = { ...existing, ...settings }
+    fs.writeFileSync(settingsFile, JSON.stringify(updated, null, 2), 'utf-8')
+    return { status: 'ok' }
+  } catch (e: any) {
+    console.error('Failed to save settings:', e)
+    return { status: 'error', error: e.message }
+  }
+})
+
+ipcMain.handle('reset-settings', () => {
+  try {
+    if (fs.existsSync(settingsFile)) {
+      fs.unlinkSync(settingsFile)
+    }
+    return { status: 'ok' }
+  } catch (e: any) {
+    console.error('Failed to reset settings:', e)
+    return { status: 'error', error: e.message }
+  }
+})
 
 // --- ACCOUNTS PERSISTENCE ---
 ipcMain.handle('get-accounts', () => {
@@ -526,10 +572,15 @@ ipcMain.handle('search-mods', async (_, query, loader, version, offset = 0, proj
   }
 })
 
-ipcMain.handle('get-popular-modpacks', async (_, version, offset = 0) => {
+ipcMain.handle('get-popular-modpacks', async (_, version, offset = 0, category = 'all', loader = 'all', sort = 'downloads') => {
   try {
-    const versionFacet = version ? `,["versions:${version}"]` : ''
-    const url = `https://api.modrinth.com/v2/search?facets=[["project_type:modpack"]${versionFacet}]&index=downloads&limit=20&offset=${offset}`
+    const facetList: any[] = [["project_type:modpack"]]
+    if (version && version !== 'all') facetList.push([`versions:${version}`])
+    if (loader && loader !== 'all') facetList.push([`categories:${loader}`])
+    if (category && category !== 'all') facetList.push([`categories:${category}`])
+    const facets = encodeURIComponent(JSON.stringify(facetList))
+    const sortIndex = sort || 'downloads'
+    const url = `https://api.modrinth.com/v2/search?facets=${facets}&index=${sortIndex}&limit=20&offset=${offset}`
     const res = await fetch(url)
     if (!res.ok) throw new Error("API error")
     const data: any = await res.json()
@@ -540,10 +591,16 @@ ipcMain.handle('get-popular-modpacks', async (_, version, offset = 0) => {
   }
 })
 
-ipcMain.handle('search-modpacks', async (_, query, version, offset = 0) => {
+ipcMain.handle('search-modpacks', async (_, query, version, offset = 0, category = 'all', loader = 'all', sort = 'relevance') => {
   try {
-    const versionFacet = version ? `,["versions:${version}"]` : ''
-    const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=[["project_type:modpack"]${versionFacet}]&limit=20&offset=${offset}`
+    const facetList: any[] = [["project_type:modpack"]]
+    if (version && version !== 'all') facetList.push([`versions:${version}`])
+    if (loader && loader !== 'all') facetList.push([`categories:${loader}`])
+    if (category && category !== 'all') facetList.push([`categories:${category}`])
+    const facets = encodeURIComponent(JSON.stringify(facetList))
+    const queryParam = query ? `query=${encodeURIComponent(query)}&` : ''
+    const sortIndex = sort || 'relevance'
+    const url = `https://api.modrinth.com/v2/search?${queryParam}facets=${facets}&index=${sortIndex}&limit=20&offset=${offset}`
     const res = await fetch(url)
     if (!res.ok) throw new Error("API error")
     const data: any = await res.json()
@@ -654,101 +711,165 @@ ipcMain.handle('delete-modpack-folder', async (_, instanceId) => {
 
 ipcMain.handle('install-optifine', async (_, gameVersion, instanceId) => {
   const sendStatus = (msg: string) => win?.webContents.send('launch-progress', msg)
+  const sendDownload = (text: string, progress: number) => {
+    win?.webContents.send('download-update', {
+      id: 'optifine',
+      name: 'OptiFine',
+      text,
+      progress
+    })
+  }
+
   sendStatus('Поиск OptiFine...')
+  sendDownload('Поиск подходящей версии OptiFine...', 10)
   
   try {
-    const res = await fetch('https://bmclapi2.bangbang93.com/optifine/versionList')
-    if (!res.ok) throw new Error("Failed to fetch OptiFine list")
-    const versions = await res.json() as any[]
-    
-    const compatible = versions.filter(v => v.mcversion === gameVersion)
-    if (compatible.length === 0) {
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    let filename = ''
+    let target: any = null
+
+    // Method 1: BMCLAPI2 / BMCLAPI version list
+    const bmclHosts = ['https://bmclapi2.bangbang93.com', 'https://bmclapi.bangbang93.com']
+    for (const host of bmclHosts) {
+      try {
+        const res = await fetch(`${host}/optifine/versionList`, { headers: { 'User-Agent': userAgent } })
+        if (res.ok) {
+          const list = await res.json() as any[]
+          const compatible = list.filter(v => v.mcversion === gameVersion)
+          if (compatible.length > 0) {
+            const stable = compatible.filter(v => !v.filename?.startsWith('preview_'))
+            target = stable.length > 0 ? stable[stable.length - 1] : compatible[compatible.length - 1]
+            filename = target.filename || `OptiFine_${target.mcversion}_${target.type}_${target.patch}.jar`
+            break
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Method 2: Scrape optifine.net/downloads if not found
+    if (!filename) {
+      try {
+        const res = await fetch('https://optifine.net/downloads', { headers: { 'User-Agent': userAgent } })
+        if (res.ok) {
+          const html = await res.text()
+          const regex = /href=['"][^'"]*(?:adloadx\?f=)([^'"&]+)[^'"]*/g
+          let m: RegExpExecArray | null
+          const matched: string[] = []
+          while ((m = regex.exec(html)) !== null) {
+            const fn = m[1]
+            const vMatch = fn.match(/(?:preview_)?OptiFine_([0-9.]+)_/i)
+            if (vMatch && vMatch[1] === gameVersion) {
+              matched.push(fn)
+            }
+          }
+          if (matched.length > 0) {
+            const stable = matched.filter(f => !f.startsWith('preview_'))
+            filename = stable.length > 0 ? stable[0] : matched[0]
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!filename) {
       sendStatus('OptiFine для этой версии не найден!')
-      setTimeout(() => sendStatus(''), 3000)
+      sendDownload('OptiFine для этой версии не найден', 100)
+      setTimeout(() => {
+        sendStatus('')
+        win?.webContents.send('download-finish', 'optifine')
+      }, 3000)
       return { status: 'not_found' }
     }
-    
-    const target = compatible[compatible.length - 1]
-    const filename = target.filename || `OptiFine_${target.mcversion}_${target.type}_${target.patch}.jar`
     
     const modsDir = path.join(rootPath, 'versions', instanceId, 'mods')
     if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true })
     
     const zipPath = path.join(modsDir, filename)
     if (!fs.existsSync(zipPath)) {
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      let success = false
+      sendDownload(`Скачивание ${filename}...`, 30)
+      sendStatus(`Скачивание ${filename}...`)
+
+      let downloadedBuffer: Buffer | null = null
       let lastError = ''
       
-      // Source 1: BMCLAPI Primary
+      // Source 1: OptiFine.net official mirror
       try {
-        sendStatus(`Скачивание ${filename} (Источник 1)...`)
-        const dlUrl = `https://bmclapi.bangbang93.com/optifine/${target.mcversion}/${target.type}/${target.patch}`
-        const dlRes = await fetch(dlUrl, { headers: { 'User-Agent': userAgent } })
-        if (dlRes.ok) {
-          const buffer = await dlRes.arrayBuffer()
-          fs.writeFileSync(zipPath, Buffer.from(buffer))
-          success = true
-        } else {
-          lastError = `BMCLAPI returned ${dlRes.status} ${dlRes.statusText}`
+        const adloadUrl = `https://optifine.net/adloadx?f=${filename}`
+        const adRes = await fetch(adloadUrl, {
+          headers: { 'User-Agent': userAgent, 'Referer': 'https://optifine.net/downloads' }
+        })
+        if (adRes.ok) {
+          const html = await adRes.text()
+          const match = html.match(/downloadx\?f=[^'"]+/)
+          if (match) {
+            const dlUrl = `https://optifine.net/${match[0]}`
+            const dlRes = await fetch(dlUrl, {
+              headers: { 'User-Agent': userAgent, 'Referer': adloadUrl }
+            })
+            if (dlRes.ok) {
+              const buf = Buffer.from(await dlRes.arrayBuffer())
+              if (buf.length > 100000 && buf[0] === 0x50 && buf[1] === 0x4B) {
+                downloadedBuffer = buf
+              }
+            }
+          }
         }
       } catch (e: any) {
         lastError = e.message
       }
-      
-      // Source 2: FastMinecraftMirror
-      if (!success) {
+
+      // Source 2: BMCLAPI2
+      if (!downloadedBuffer && target) {
         try {
-          sendStatus(`Скачивание ${filename} (Источник 2)...`)
-          const dlUrl = `https://optifine.fastmcmirror.org/${filename}`
+          const dlUrl = `https://bmclapi2.bangbang93.com/optifine/${target.mcversion}/${target.type}/${target.patch}`
           const dlRes = await fetch(dlUrl, { headers: { 'User-Agent': userAgent } })
           if (dlRes.ok) {
-            const buffer = await dlRes.arrayBuffer()
-            fs.writeFileSync(zipPath, Buffer.from(buffer))
-            success = true
-          } else {
-            lastError = `FastMinecraftMirror returned ${dlRes.status} ${dlRes.statusText}`
-          }
-        } catch (e: any) {
-          lastError = e.message
-        }
-      }
-      
-      // Source 3: OptiFine.net Scraping
-      if (!success) {
-        try {
-          sendStatus(`Скачивание ${filename} (Источник 3)...`)
-          const adloadRes = await fetch(`https://optifine.net/adloadx?f=${filename}`, { headers: { 'User-Agent': userAgent } })
-          const html = await adloadRes.text()
-          const match = html.match(/downloadx\?f=OptiFine[^']+/)
-          if (match) {
-            const dlUrl = `https://optifine.net/${match[0]}`
-            const dlRes = await fetch(dlUrl, { headers: { 'User-Agent': userAgent } })
-            if (dlRes.ok) {
-              const buffer = await dlRes.arrayBuffer()
-              fs.writeFileSync(zipPath, Buffer.from(buffer))
-              success = true
-            } else {
-              lastError = `OptiFine.net returned ${dlRes.status} ${dlRes.statusText}`
+            const buf = Buffer.from(await dlRes.arrayBuffer())
+            if (buf.length > 100000 && buf[0] === 0x50 && buf[1] === 0x4B) {
+              downloadedBuffer = buf
             }
-          } else {
-            lastError = 'Could not parse download link from OptiFine.net'
+          }
+        } catch (e: any) {
+          lastError = e.message
+        }
+      }
+
+      // Source 3: BMCLAPI Primary
+      if (!downloadedBuffer && target) {
+        try {
+          const dlUrl = `https://bmclapi.bangbang93.com/optifine/${target.mcversion}/${target.type}/${target.patch}`
+          const dlRes = await fetch(dlUrl, { headers: { 'User-Agent': userAgent } })
+          if (dlRes.ok) {
+            const buf = Buffer.from(await dlRes.arrayBuffer())
+            if (buf.length > 100000 && buf[0] === 0x50 && buf[1] === 0x4B) {
+              downloadedBuffer = buf
+            }
           }
         } catch (e: any) {
           lastError = e.message
         }
       }
       
-      if (!success) {
+      if (!downloadedBuffer) {
         throw new Error(lastError || 'Не удалось скачать ни с одного источника')
       }
+
+      fs.writeFileSync(zipPath, downloadedBuffer)
     }
     
     sendStatus('OptiFine успешно установлен!')
+    sendDownload('Установка завершена', 100)
+    setTimeout(() => {
+      win?.webContents.send('download-finish', 'optifine')
+    }, 2000)
+
     return { status: 'success', filenames: [filename] }
   } catch (e: any) {
     sendStatus('Ошибка установки OptiFine: ' + e.message)
-    setTimeout(() => sendStatus(''), 3000)
+    sendDownload('Ошибка установки: ' + e.message, 100)
+    setTimeout(() => {
+      sendStatus('')
+      win?.webContents.send('download-finish', 'optifine')
+    }, 3000)
     return { status: 'error', error: e.message }
   }
 })
@@ -1044,13 +1165,15 @@ async function ensureForge(gameVersion: string, sendStatus: (msg: string) => voi
   
   if (isModernForge()) {
     sendStatus(`Installing Forge ${forgeVersion} locally (this will take a minute)...`)
-    const javaPath = await ensureJava(gameVersion, sendStatus)
+    const { javaPath } = await ensureJava(gameVersion, sendStatus)
     const profilesPath = path.join(rootPath, 'launcher_profiles.json')
     if (!fs.existsSync(profilesPath)) {
       fs.writeFileSync(profilesPath, JSON.stringify({profiles: {}}))
     }
-    const { execSync } = require('child_process')
     try {
+      if (process.platform !== 'win32') {
+        try { fs.chmodSync(javaPath, 0o755) } catch {}
+      }
       execSync(`"${javaPath}" -jar "${installerPath}" --installClient "${rootPath}"`, { stdio: 'ignore' })
     } catch (e: any) {
       throw new Error(`Forge installation failed: ${e.message}`)
@@ -1062,86 +1185,599 @@ async function ensureForge(gameVersion: string, sendStatus: (msg: string) => voi
   return installerPath
 }
 
-// Auto-download Java logic
-async function ensureJava(gameVersion: string, sendStatus: (msg: string) => void): Promise<string> {
-  // Determine Java version based on Minecraft version
-  let javaVersion = '21' // default modern
-  const parts = gameVersion.split('.')
-  const major = parseInt(parts[0]) || 1
-  const minor = parseInt(parts[1]) || 0
-  const patch = parseInt(parts[2]) || 0
+// --- Java Runtime Resolution and Management --- //
 
-  if (major === 1) {
-    if (minor <= 16) javaVersion = '8'
-    else if (minor === 17) javaVersion = '16'
-    else if (minor >= 18 && minor <= 19) javaVersion = '17'
-    else if (minor === 20 && patch <= 4) javaVersion = '17'
-    else javaVersion = '21'
-  } else if (major >= 26) {
-    javaVersion = '25'
+// Helper to determine the required Java major version
+function getRequiredJavaMajor(gameVersion: string, versionData?: any): '8' | '17' | '21' | '25' {
+  // 1. Check versionData (from official Minecraft version JSON) if available
+  if (versionData) {
+    const major = versionData.javaVersion?.majorVersion
+    if (major) {
+      if (major <= 8) return '8'
+      if (major === 16 || major === 17) return '17' // Adoptium has no 16; 17 runs 1.17 flawlessly
+      if (major <= 21) return '21'
+      return '25'
+    }
+
+    const comp = versionData.javaVersion?.component
+    if (comp) {
+      if (comp.includes('legacy')) return '8'
+      if (comp.includes('alpha') || comp.includes('beta') || comp.includes('gamma')) return '17'
+      if (comp.includes('delta')) return '21'
+    }
   }
 
-  const javaDir = path.join(app.getPath('userData'), `java-runtime-${javaVersion}`)
+  const vStr = (gameVersion || '').trim()
 
-  const findJava = (dir: string): string | null => {
-    if (!fs.existsSync(dir)) return null
-    const files = fs.readdirSync(dir)
-    for (const file of files) {
-      const fullPath = path.join(dir, file)
-      if (fs.statSync(fullPath).isDirectory()) {
-        const res = findJava(fullPath)
-        if (res) return res
-      } else if (file === 'java.exe') {
-        return fullPath
+  // 2. Alpha, Beta, Classic, Infdev, In-dev, Cave game (always Java 8)
+  if (/^(?:[abc]|inf-|rd-|in-)/i.test(vStr) || /alpha|beta|classic|infdev/i.test(vStr)) {
+    return '8'
+  }
+
+  // 3. Snapshot format (e.g. 13w02a, 20w14a, 24w10a)
+  const snapMatch = vStr.match(/^(\d{2})w/i)
+  if (snapMatch) {
+    const snapYear = parseInt(snapMatch[1], 10)
+    if (snapYear <= 20) return '8'
+    if (snapYear < 24) return '17'
+    return '21'
+  }
+
+  // 4. Standard semantic version parsing (e.g. 1.12.2, 1.16.5, 1.20.4, 1.21, 26.1)
+  const numMatch = vStr.match(/(?:^|[^\d])(1|2)\.(\d+)(?:\.(\d+))?/)
+  if (numMatch) {
+    const major = parseInt(numMatch[1], 10)
+    const minor = parseInt(numMatch[2], 10)
+    const patch = parseInt(numMatch[3] || '0', 10)
+
+    if (major === 1) {
+      if (minor <= 16) return '8'
+      if (minor === 17) return '17' // Java 17 for 1.17
+      if (minor >= 18 && minor <= 19) return '17'
+      if (minor === 20 && patch <= 4) return '17'
+      return '21' // 1.20.5+ and 1.21+
+    }
+  }
+
+  // Check modern versions without 1. prefix (e.g. 26.0+)
+  const modernMatch = vStr.match(/(?:^|[^\d])(\d{2,})\.(\d+)/)
+  if (modernMatch) {
+    const val = parseInt(modernMatch[1], 10)
+    if (val >= 26) return '25'
+  }
+
+  // Check if string contains legacy markers
+  if (/1\.(?:0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16)/.test(vStr)) {
+    return '8'
+  }
+
+  // Default to 21 for modern releases
+  return '21'
+}
+
+// Recursively look for java binary with depth limit to stay fast
+function findJavaBinary(dir: string, depth = 0): string | null {
+  if (!fs.existsSync(dir) || depth > 6) return null
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    const isWin = process.platform === 'win32'
+
+    // First check files in current directory
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const lower = entry.name.toLowerCase()
+        if (isWin) {
+          if (lower === 'javaw.exe' || lower === 'java.exe') {
+            return path.join(dir, entry.name)
+          }
+        } else {
+          if (entry.name === 'java' || lower === 'java') {
+            return path.join(dir, entry.name)
+          }
+        }
       }
     }
-    return null
-  }
 
-  const existingJava = findJava(javaDir)
-  if (existingJava) {
-    sendStatus(`Java ${javaVersion} is already installed!`)
-    return existingJava
-  }
+    // Then recurse into subdirectories
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const full = path.join(dir, entry.name)
+        const res = findJavaBinary(full, depth + 1)
+        if (res) return res
+      }
+    }
+  } catch {}
+  return null
+}
 
-  sendStatus(`Downloading Java ${javaVersion} Runtime...`)
-  if (fs.existsSync(javaDir)) {
-    fs.rmSync(javaDir, { recursive: true, force: true })
-  }
-  fs.mkdirSync(javaDir, { recursive: true })
-  const zipPath = path.join(javaDir, 'java.zip')
-
-  // Adoptium Eclipse Temurin
-  const url = `https://api.adoptium.net/v3/binary/latest/${javaVersion}/ga/windows/x64/jre/hotspot/normal/eclipse`
-
+// Read release file or execute java -version to get exact Java major version
+function getJavaMajorFromExe(javaExe: string): number | null {
   try {
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`Failed to download Java: ${response.statusText}`)
-    const arrayBuffer = await response.arrayBuffer()
-    fs.writeFileSync(zipPath, Buffer.from(arrayBuffer))
-  } catch (err) {
-    // Fallback to JDK if JRE is missing for some versions
-    try {
-      const jdkUrl = `https://api.adoptium.net/v3/binary/latest/${javaVersion}/ga/windows/x64/jdk/hotspot/normal/eclipse`
-      const response = await fetch(jdkUrl)
-      if (!response.ok) throw new Error(`Failed to download Java JDK: ${response.statusText}`)
-      const arrayBuffer = await response.arrayBuffer()
-      fs.writeFileSync(zipPath, Buffer.from(arrayBuffer))
-    } catch (err2) {
-      throw new Error(`Java download failed: ${err2}`)
+    const binDir = path.dirname(javaExe)
+    const candidateDirs = [
+      path.dirname(binDir), // e.g. /Contents/Home or /jdk-17
+      binDir,
+      path.dirname(path.dirname(binDir)) // e.g. /Contents
+    ]
+    for (const d of candidateDirs) {
+      const releaseFile = path.join(d, 'release')
+      if (fs.existsSync(releaseFile)) {
+        const content = fs.readFileSync(releaseFile, 'utf8')
+        const match = content.match(/JAVA_VERSION="?(?:1\.)?(\d+)/)
+        if (match) {
+          return parseInt(match[1], 10)
+        }
+      }
+    }
+
+    // Fallback: run java -version
+    const res = spawnSync(javaExe, ['-version'], { encoding: 'utf8', timeout: 3000 })
+    const output = (res.stderr || '') + (res.stdout || '')
+    const match = output.match(/(?:version|version\s*")(?:\s*1\.)?(\d+)/i)
+    if (match) {
+      return parseInt(match[1], 10)
+    }
+  } catch {}
+  return null
+}
+
+// Search for already installed Java runtimes across all known locations
+function findInstalledJava(targetMajor: '8' | '17' | '21' | '25'): string | null {
+  const targetNum = parseInt(targetMajor, 10)
+
+  // 1. Check userData/java-runtime-<major> and userData/java-runtime
+  const candidateDirs = [
+    path.join(app.getPath('userData'), `java-runtime-${targetMajor}`),
+    path.join(app.getPath('userData'), 'java-runtime'),
+  ]
+
+  for (const dir of candidateDirs) {
+    const bin = findJavaBinary(dir)
+    if (bin) {
+      const detectedMajor = getJavaMajorFromExe(bin)
+      if (detectedMajor === targetNum || (!detectedMajor && dir.endsWith(`-${targetMajor}`))) {
+        if (process.platform !== 'win32') {
+          try { fs.chmodSync(bin, 0o755) } catch {}
+        }
+        return bin
+      }
     }
   }
 
-  sendStatus('Extracting Java Runtime...')
-  try {
-    await extract(zipPath, { dir: javaDir })
-    fs.unlinkSync(zipPath)
-  } catch (err) {
-    fs.rmSync(javaDir, { recursive: true, force: true })
-    throw new Error(`Failed to extract Java: ${err}`)
+  // 2. Check Mojang launcher runtimes in .minecraft/runtime across platforms
+  const mojangRuntimeCandidates = [
+    path.join(rootPath, 'runtime'),
+    process.env['APPDATA'] ? path.join(process.env['APPDATA'], '.minecraft', 'runtime') : '',
+    process.env['HOME'] ? path.join(process.env['HOME'], 'Library', 'Application Support', 'minecraft', 'runtime') : '',
+    process.env['HOME'] ? path.join(process.env['HOME'], '.minecraft', 'runtime') : ''
+  ].filter(Boolean)
+
+  const mojangDirs = targetMajor === '8'
+    ? ['jre-legacy']
+    : targetMajor === '17'
+    ? ['java-runtime-gamma', 'java-runtime-beta', 'java-runtime-alpha']
+    : targetMajor === '21'
+    ? ['java-runtime-delta']
+    : []
+
+  for (const mBase of mojangRuntimeCandidates) {
+    if (!fs.existsSync(mBase)) continue
+    for (const sub of mojangDirs) {
+      const dir = path.join(mBase, sub)
+      const bin = findJavaBinary(dir)
+      if (bin) {
+        if (process.platform !== 'win32') {
+          try { fs.chmodSync(bin, 0o755) } catch {}
+        }
+        return bin
+      }
+    }
   }
 
-  return findJava(javaDir) || 'java'
+  // 3. Check OS-specific system installations
+  if (process.platform === 'win32') {
+    const winCandidateRoots = [
+      process.env['ProgramFiles'] ? path.join(process.env['ProgramFiles'], 'Java') : '',
+      process.env['ProgramFiles'] ? path.join(process.env['ProgramFiles'], 'Eclipse Adoptium') : '',
+      process.env['ProgramFiles'] ? path.join(process.env['ProgramFiles'], 'BellSoft') : '',
+      process.env['ProgramFiles'] ? path.join(process.env['ProgramFiles'], 'Microsoft') : '',
+      process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'Java') : ''
+    ].filter(Boolean)
+
+    for (const root of winCandidateRoots) {
+      if (!fs.existsSync(root)) continue
+      try {
+        const subdirs = fs.readdirSync(root)
+        for (const sub of subdirs) {
+          const bin = findJavaBinary(path.join(root, sub))
+          if (bin) {
+            const detectedMajor = getJavaMajorFromExe(bin)
+            if (detectedMajor === targetNum) return bin
+          }
+        }
+      } catch {}
+    }
+  } else if (process.platform === 'darwin') {
+    // macOS: First query standard /usr/libexec/java_home
+    try {
+      const vArg = targetMajor === '8' ? '1.8' : targetMajor
+      const out = execFileSync('/usr/libexec/java_home', ['-v', vArg], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      if (out && fs.existsSync(out)) {
+        const bin = path.join(out, 'bin', 'java')
+        if (fs.existsSync(bin)) {
+          try { fs.chmodSync(bin, 0o755) } catch {}
+          return bin
+        }
+      }
+    } catch {}
+
+    // macOS: Check standard JVM locations
+    const macRoots = [
+      '/Library/Java/JavaVirtualMachines',
+      process.env['HOME'] ? path.join(process.env['HOME'], 'Library', 'Java', 'JavaVirtualMachines') : '',
+      '/System/Library/Java/JavaVirtualMachines',
+      '/Library/Internet Plug-Ins/JavaAppletPlugin.plugin/Contents/Home'
+    ].filter(Boolean)
+
+    for (const root of macRoots) {
+      if (!fs.existsSync(root)) continue
+      try {
+        if (fs.statSync(root).isDirectory()) {
+          const subdirs = fs.readdirSync(root)
+          for (const sub of subdirs) {
+            const bin = findJavaBinary(path.join(root, sub))
+            if (bin) {
+              const detectedMajor = getJavaMajorFromExe(bin)
+              if (detectedMajor === targetNum) {
+                try { fs.chmodSync(bin, 0o755) } catch {}
+                return bin
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  } else {
+    // Linux: Check standard JVM directories
+    const linuxRoots = [
+      '/usr/lib/jvm',
+      '/usr/java',
+      '/opt/java',
+      '/opt/jdk'
+    ]
+    for (const root of linuxRoots) {
+      if (!fs.existsSync(root)) continue
+      try {
+        const subdirs = fs.readdirSync(root)
+        for (const sub of subdirs) {
+          const bin = findJavaBinary(path.join(root, sub))
+          if (bin) {
+            const detectedMajor = getJavaMajorFromExe(bin)
+            if (detectedMajor === targetNum) {
+              try { fs.chmodSync(bin, 0o755) } catch {}
+              return bin
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 4. Check JAVA_HOME if set
+  if (process.env.JAVA_HOME && fs.existsSync(process.env.JAVA_HOME)) {
+    const bin = findJavaBinary(process.env.JAVA_HOME)
+    if (bin) {
+      const detectedMajor = getJavaMajorFromExe(bin)
+      if (detectedMajor === targetNum) {
+        if (process.platform !== 'win32') {
+          try { fs.chmodSync(bin, 0o755) } catch {}
+        }
+        return bin
+      }
+    }
+  }
+
+  return null
+}
+
+// Download and extract Java runtime from Adoptium with full cross-platform (macOS x64/arm64, Linux, Windows) support
+async function downloadAndInstallJava(
+  targetMajor: '8' | '17' | '21' | '25',
+  onProgress?: (status: string, percent?: number) => void
+): Promise<string> {
+  const javaDir = path.join(app.getPath('userData'), `java-runtime-${targetMajor}`)
+  if (fs.existsSync(javaDir)) {
+    try {
+      fs.rmSync(javaDir, { recursive: true, force: true })
+    } catch {}
+  }
+  fs.mkdirSync(javaDir, { recursive: true })
+
+  onProgress?.(`Подготовка к загрузке Java ${targetMajor}...`, 5)
+
+  const isWin = process.platform === 'win32'
+  const isMac = process.platform === 'darwin'
+
+  const osName = isWin ? 'windows' : isMac ? 'mac' : 'linux'
+  // On macOS Apple Silicon (arm64), Java 8 is only available as x64 (which runs seamlessly via Rosetta 2)
+  let archName = process.arch === 'arm64' ? 'aarch64' : 'x64'
+  if (isMac && targetMajor === '8') {
+    archName = 'x64'
+  }
+
+  const archiveExt = isWin ? 'zip' : 'tar.gz'
+  const archivePath = path.join(javaDir, `java.${archiveExt}`)
+
+  const jreUrl = `https://api.adoptium.net/v3/binary/latest/${targetMajor}/ga/${osName}/${archName}/jre/hotspot/normal/eclipse`
+  const jdkUrl = `https://api.adoptium.net/v3/binary/latest/${targetMajor}/ga/${osName}/${archName}/jdk/hotspot/normal/eclipse`
+
+  let response: Response
+  try {
+    response = await fetch(jreUrl)
+    if (!response.ok) throw new Error(`JRE status: ${response.status}`)
+  } catch {
+    response = await fetch(jdkUrl)
+    if (!response.ok) throw new Error(`Не удалось скачать Java ${targetMajor}: ${response.statusText}`)
+  }
+
+  const contentLength = Number(response.headers.get('content-length')) || 0
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('Не удалось прочитать поток ответа при скачивании Java')
+
+  const fileStream = fs.createWriteStream(archivePath)
+  let downloadedBytes = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      downloadedBytes += value.length
+      fileStream.write(value)
+      if (contentLength > 0) {
+        const pct = Math.min(90, Math.round((downloadedBytes / contentLength) * 85) + 5)
+        const mbDown = (downloadedBytes / (1024 * 1024)).toFixed(1)
+        const mbTotal = (contentLength / (1024 * 1024)).toFixed(1)
+        onProgress?.(`Скачивание Java ${targetMajor}... (${mbDown} / ${mbTotal} МБ)`, pct)
+      }
+    }
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    fileStream.end(() => resolve())
+    fileStream.on('error', reject)
+  })
+
+  onProgress?.(`Распаковка Java ${targetMajor}...`, 92)
+  try {
+    if (isWin) {
+      await extract(archivePath, { dir: javaDir })
+    } else {
+      // macOS and Linux tar extract
+      await new Promise<void>((resolve, reject) => {
+        execFile('tar', ['-xzf', archivePath, '-C', javaDir], (err) => {
+          if (err) reject(new Error(`Ошибка распаковки tar.gz: ${err.message}`))
+          else resolve()
+        })
+      })
+    }
+    if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath)
+  } catch (err: any) {
+    try { fs.rmSync(javaDir, { recursive: true, force: true }) } catch {}
+    throw new Error(`Ошибка распаковки Java: ${err.message || err}`)
+  }
+
+  onProgress?.(`Java ${targetMajor} успешно установлена!`, 100)
+  const installedBin = findJavaBinary(javaDir)
+  if (!installedBin) throw new Error(`Java ${targetMajor} распакована, но исполняемый файл не найден`)
+
+  if (!isWin) {
+    try {
+      fs.chmodSync(installedBin, 0o755)
+      const binDir = path.dirname(installedBin)
+      const binFiles = fs.readdirSync(binDir)
+      for (const bf of binFiles) {
+        try { fs.chmodSync(path.join(binDir, bf), 0o755) } catch {}
+      }
+    } catch {}
+  }
+
+  return installedBin
+}
+
+// Ensures the correct Java version is ready without redownloading if already present
+async function ensureJava(
+  gameVersion: string,
+  sendStatus: (msg: string) => void,
+  versionData?: any,
+  overrideJavaPath?: string
+): Promise<{ javaPath: string; major: number }> {
+  // If user specified custom Java path in settings
+  if (overrideJavaPath && fs.existsSync(overrideJavaPath)) {
+    const detectedMajor = getJavaMajorFromExe(overrideJavaPath) || 21
+    return { javaPath: overrideJavaPath, major: detectedMajor }
+  }
+
+  const targetMajor = getRequiredJavaMajor(gameVersion, versionData)
+  const targetNum = parseInt(targetMajor, 10)
+
+  // Check if Java is already installed anywhere on the machine
+  const existing = findInstalledJava(targetMajor)
+  if (existing) {
+    sendStatus(`Java ${targetMajor} готова к запуску!`)
+    return { javaPath: existing, major: targetNum }
+  }
+
+  // Not installed: download runtime once
+  sendStatus(`Java ${targetMajor} не найдена. Начинаем загрузку...`)
+  const downloaded = await downloadAndInstallJava(targetMajor, (msg, pct) => {
+    sendStatus(pct ? `${msg} [${pct}%]` : msg)
+  })
+
+  return { javaPath: downloaded, major: targetNum }
+}
+
+ipcMain.handle('get-installed-javas', async () => {
+  const versions: ('8' | '17' | '21')[] = ['8', '17', '21']
+  const result: Record<string, { installed: boolean; path: string | null }> = {}
+  for (const v of versions) {
+    const p = findInstalledJava(v)
+    result[v] = {
+      installed: !!p,
+      path: p
+    }
+  }
+  return result
+})
+
+ipcMain.handle('install-java', async (_event, version: '8' | '17' | '21') => {
+  if (!['8', '17', '21'].includes(version)) {
+    throw new Error(`Неподдерживаемая версия Java: ${version}`)
+  }
+  const installedPath = await downloadAndInstallJava(version, (status, progress) => {
+    win?.webContents.send('java-install-progress', {
+      version,
+      status,
+      progress: progress || 0
+    })
+  })
+  return { success: true, path: installedPath }
+})
+
+// Helper to analyze Minecraft / JVM crashes and format diagnostics
+function formatCrashReport(gameDir: string, launcherLogPath: string, exitCode: number): string {
+  let crashReportPath: string | null = null
+  let crashReportContent = ''
+
+  // 1. Check crash-reports folder in game directory
+  try {
+    const crashReportsDir = path.join(gameDir, 'crash-reports')
+    if (fs.existsSync(crashReportsDir)) {
+      const files = fs.readdirSync(crashReportsDir)
+        .filter(f => f.startsWith('crash-') && f.endsWith('.txt'))
+        .map(f => {
+          const fullPath = path.join(crashReportsDir, f)
+          return { fullPath, name: f, mtime: fs.statSync(fullPath).mtimeMs }
+        })
+        .sort((a, b) => b.mtime - a.mtime)
+
+      if (files.length > 0) {
+        const latest = files[0]
+        if (Date.now() - latest.mtime < 5 * 60 * 1000) {
+          crashReportPath = latest.fullPath
+          crashReportContent = fs.readFileSync(latest.fullPath, 'utf8')
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error scanning crash-reports:', e)
+  }
+
+  // 2. If no crash report, check for hs_err_pid*.log (JVM Fatal Crash)
+  if (!crashReportContent) {
+    try {
+      const candidateDirs = [gameDir, rootPath]
+      for (const d of candidateDirs) {
+        if (!fs.existsSync(d)) continue
+        const hsFiles = fs.readdirSync(d)
+          .filter(f => f.startsWith('hs_err_pid') && f.endsWith('.log'))
+          .map(f => {
+            const fullPath = path.join(d, f)
+            return { fullPath, name: f, mtime: fs.statSync(fullPath).mtimeMs }
+          })
+          .sort((a, b) => b.mtime - a.mtime)
+
+        if (hsFiles.length > 0 && (Date.now() - hsFiles[0].mtime < 5 * 60 * 1000)) {
+          crashReportPath = hsFiles[0].fullPath
+          crashReportContent = fs.readFileSync(hsFiles[0].fullPath, 'utf8')
+          break
+        }
+      }
+    } catch (e) {
+      console.error('Error scanning hs_err_pid:', e)
+    }
+  }
+
+  // 3. Read launcher log tail
+  let launcherLogTail = ''
+  try {
+    if (fs.existsSync(launcherLogPath)) {
+      const fullLog = fs.readFileSync(launcherLogPath, 'utf8')
+      const lines = fullLog.split('\n')
+      launcherLogTail = lines.slice(-80).join('\n')
+    }
+  } catch {}
+
+  // 4. Intelligent Diagnostics
+  const combinedText = (crashReportContent + '\n' + launcherLogTail).toLowerCase()
+  let diagnosis = ''
+  let recommendation = ''
+
+  if (combinedText.includes('outofmemoryerror') || combinedText.includes('java heap space') || combinedText.includes('gc overhead limit exceeded')) {
+    diagnosis = 'Недостаточно выделенной оперативной памяти (OutOfMemoryError).'
+    recommendation = 'Перейдите в Настройки лаунчера (вкладка Minecraft) и увеличьте значение ОЗУ (рекомендуется от 3072 до 6144 MB для модов).'
+  } else if (
+    combinedText.includes('nvoglv64.dll') || 
+    combinedText.includes('atio6axx.dll') || 
+    combinedText.includes('atig6pxx.dll') || 
+    combinedText.includes('ig9ic64.dll') || 
+    combinedText.includes('ig10ic64.dll') ||
+    (combinedText.includes('exception_access_violation') && (combinedText.includes('opengl') || combinedText.includes('d3d')))
+  ) {
+    diagnosis = 'Критический сбой видеодрайвера графического процессора (EXCEPTION_ACCESS_VIOLATION).'
+    recommendation = 'Обновите драйвер видеокарты (NVIDIA / AMD / Intel), проверьте совместимость установленных шейдеров или отключите несовместимые моды графики.'
+  } else if (combinedText.includes('unsatisfiedlinkerror') || combinedText.includes('can\'t find dependent libraries') || combinedText.includes('vcruntime140')) {
+    diagnosis = 'Отсутствуют системные библиотеки или повреждены файлы нативных модулей (UnsatisfiedLinkError).'
+    recommendation = 'Установите Microsoft Visual C++ 2015-2022 Redistributable (x64) и убедитесь, что путь к игре не содержит запрещенных символов.'
+  } else if (combinedText.includes('mixin apply failed') || combinedText.includes('mixintransformererror') || combinedText.includes('mixin post transform')) {
+    diagnosis = 'Конфликт модов при внедрении Mixin.'
+    recommendation = 'Один из установленных модов несовместим с текущей версией игры или другим модом. Проверьте последние добавленные моды.'
+  } else if (combinedText.includes('nosuchmethoderror') || combinedText.includes('nosuchfielderror') || combinedText.includes('classnotfoundexception')) {
+    diagnosis = 'Несовместимость библиотек или версий модов (NoSuchMethodError / ClassNotFoundException).'
+    recommendation = 'Убедитесь, что установлены все требуемые модами библиотеки (например, Fabric API, Cloth Config, Architectury) и версии соответствуют игре.'
+  } else if (combinedText.includes('duplicatemodsfoundexception') || combinedText.includes('duplicate mods')) {
+    diagnosis = 'Обнаружены дубликаты модов.'
+    recommendation = 'В папке mods присутствуют несколько версий одного и того же мода. Удалите повторяющиеся файлы.'
+  } else if (exitCode === -1073740791) {
+    diagnosis = 'Сбой процесса игры (STATUS_STACK_BUFFER_OVERRUN / Код -1073740791).'
+    recommendation = 'Чаще всего вызван сбоем видеодрайвера, оверлеями (Discord / RivaTuner / Geforce Experience) или конфликтом памяти.'
+  } else if (exitCode === -1073741819) {
+    diagnosis = 'Нарушение прав доступа к памяти (STATUS_ACCESS_VIOLATION / Код -1073741819).'
+    recommendation = 'Проверьте стабильность видеодрайвера и отключите сторонние оверлеи.'
+  } else if (exitCode !== 0) {
+    diagnosis = `Игра аварийно завершилась с кодом ${exitCode}.`
+    recommendation = 'Ознакомьтесь с деталями ниже для выяснения точной причины ошибки.'
+  }
+
+  const divider = '='.repeat(70)
+  const header = [
+    divider,
+    '                    [ АНАЛИЗАТОР ОШИБОК КРАША ]',
+    divider,
+    `Код завершения игры: ${exitCode}`,
+    `Время сбоя: ${new Date().toLocaleString()}`,
+    ...(diagnosis ? [`\n[ДИАГНОЗ]: ${diagnosis}`] : []),
+    ...(recommendation ? [`[РЕШЕНИЕ]: ${recommendation}`] : []),
+    divider
+  ].join('\n')
+
+  let reportBody = ''
+  if (crashReportPath && crashReportContent) {
+    reportBody = [
+      `\n>>> НАЙДЕН ДЕТАЛЬНЫЙ ОТЧЕТ ОБ ОШИБКЕ:`,
+      `>>> Путь: ${crashReportPath}\n`,
+      crashReportContent.trim(),
+      `\n${divider}`,
+      `>>> ХВОСТ ЛОГА ЗАПУСКА ЛАУНЧЕРА:\n`,
+      launcherLogTail.trim()
+    ].join('\n')
+  } else {
+    reportBody = [
+      `\n>>> ДЕТАЛЬНЫЙ ЛОГ ЗАПУСКА MINECRAFT:\n`,
+      launcherLogTail.trim() || '(Лог пуст)'
+    ].join('\n')
+  }
+
+  return `${header}\n${reportBody}\n`
 }
 
 ipcMain.handle('launch-game', async (_event, options) => {
@@ -1152,20 +1788,43 @@ ipcMain.handle('launch-game', async (_event, options) => {
     
     let actualMcVersion = options.version
     let versionType = 'release'
+    let vJson: any = null
     const versionJsonPath = path.join(rootPath, 'versions', options.version, `${options.version}.json`)
     if (fs.existsSync(versionJsonPath)) {
       try {
-        const vJson = JSON.parse(fs.readFileSync(versionJsonPath, 'utf8'))
-        if (vJson.inheritsFrom) actualMcVersion = vJson.inheritsFrom
-        else if (vJson.clientVersion) actualMcVersion = vJson.clientVersion
+        vJson = JSON.parse(fs.readFileSync(versionJsonPath, 'utf8'))
+        if (vJson.inheritsFrom) {
+          actualMcVersion = vJson.inheritsFrom
+          const parentPath = path.join(rootPath, 'versions', vJson.inheritsFrom, `${vJson.inheritsFrom}.json`)
+          if (fs.existsSync(parentPath)) {
+            try {
+              const parentJson = JSON.parse(fs.readFileSync(parentPath, 'utf8'))
+              if (!vJson.javaVersion && parentJson.javaVersion) {
+                vJson.javaVersion = parentJson.javaVersion
+              }
+            } catch {}
+          }
+        } else if (vJson.clientVersion) {
+          actualMcVersion = vJson.clientVersion
+        }
         if (vJson.type) versionType = vJson.type
       } catch (e) {}
     }
     
-    const javaPath = await ensureJava(actualMcVersion, sendStatus)
+    const { javaPath, major: javaMajor } = await ensureJava(actualMcVersion, sendStatus, vJson, options.javaPath)
     
+    // Ensure executable permissions on non-Windows
+    if (process.platform !== 'win32' && javaPath !== 'java') {
+      try { fs.chmodSync(javaPath, 0o755) } catch {}
+    }
+
     sendStatus('Initializing Minecraft Core...')
     
+    let javaHome = path.dirname(path.dirname(javaPath))
+    if (process.platform === 'darwin' && javaPath.includes('/Contents/Home/bin/java')) {
+      javaHome = javaPath.replace(/\/bin\/java$/, '')
+    }
+
     const totalSystemMem = Math.floor(os.totalmem() / (1024 * 1024))
     
     // Parse memory constraints
@@ -1220,6 +1879,38 @@ ipcMain.handle('launch-game', async (_event, options) => {
       }
     }
 
+    const gameDir = options.modpackName ? path.join(rootPath, 'versions', options.instanceId) : rootPath
+
+    const envOverrides: Record<string, string> = {
+      ...(process.env as Record<string, string>),
+      ...(javaPath !== 'java' ? { JAVA_HOME: javaHome } : {})
+    }
+    if (process.platform === 'win32') {
+      // Compatibility Shims to force High-Performance Discrete GPU for Minecraft Java on Windows
+      envOverrides['SHIM_MCCOMPAT'] = '0x800000001'
+      envOverrides['__NV_PRIME_RENDER_OFFLOAD'] = '1'
+      envOverrides['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
+    }
+
+    // Default JVM args: UTF-8 & Cyrillic path support, IPv4 preference, and hardware OpenGL
+    const defaultJvmArgs: string[] = [
+      '-Dfile.encoding=UTF-8',
+      '-Dsun.jnu.encoding=UTF-8',
+      '-Djava.net.preferIPv4Stack=true',
+      '-Dorg.lwjgl.opengl.Display.allowSoftwareOpenGL=false'
+    ]
+
+    // Parse user custom JVM arguments from settings (mc_args)
+    let userCustomArgs: string[] = []
+    if (typeof options.jvmArgs === 'string' && options.jvmArgs.trim()) {
+      const tokens = options.jvmArgs.trim().match(/(?:[^\s"]+|"[^"]*")+/g)
+      if (tokens) {
+        userCustomArgs = tokens.map((t: string) => t.replace(/^"|"$/g, ''))
+      }
+    } else if (Array.isArray(options.jvmArgs)) {
+      userCustomArgs = options.jvmArgs.filter((a: any) => typeof a === 'string' && a.trim())
+    }
+
     const opts: any = {
       clientPackage: undefined,
       authorization: {
@@ -1243,13 +1934,11 @@ ipcMain.handle('launch-game', async (_event, options) => {
         min: `${minRam}M`
       },
       javaPath: javaPath,
+      customArgs: [...defaultJvmArgs],
       overrides: {
         detached: false,
-        env: {
-          ...process.env,
-          ...(javaPath !== 'java' ? { JAVA_HOME: path.dirname(path.dirname(javaPath)) } : {})
-        },
-        gameDirectory: options.modpackName ? path.join(rootPath, 'versions', options.instanceId) : rootPath
+        env: envOverrides,
+        gameDirectory: gameDir
       }
     }
 
@@ -1274,16 +1963,19 @@ ipcMain.handle('launch-game', async (_event, options) => {
           `-javaagent:${injectorPath}=${yggdrasilUrl}`,
           '-Dauthlibinjector.side=client'
         ]
-        jvmArgs.push(
-          '--add-opens=java.base/java.net=ALL-UNNAMED',
-          '--add-opens=java.base/sun.security.util=ALL-UNNAMED',
-          '--add-opens=java.base/java.util.jar=ALL-UNNAMED',
-          '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
-          '--add-opens=java.base/java.lang=ALL-UNNAMED',
-          '--add-opens=java.base/java.util=ALL-UNNAMED',
-          '--add-exports=java.base/sun.security.util=ALL-UNNAMED',
-          '--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED'
-        )
+        // Only pass modular JVM arguments on Java 9+ (Java 8 will crash with Unrecognized option: --add-opens)
+        if (javaMajor > 8) {
+          jvmArgs.push(
+            '--add-opens=java.base/java.net=ALL-UNNAMED',
+            '--add-opens=java.base/sun.security.util=ALL-UNNAMED',
+            '--add-opens=java.base/java.util.jar=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED',
+            '--add-opens=java.base/java.util=ALL-UNNAMED',
+            '--add-exports=java.base/sun.security.util=ALL-UNNAMED',
+            '--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED'
+          )
+        }
         opts.customArgs = [
           ...jvmArgs,
           ...(opts.customArgs || [])
@@ -1319,10 +2011,21 @@ ipcMain.handle('launch-game', async (_event, options) => {
       throw new Error("NeoForge пока не поддерживается ядром лаунчера (MCLC). Пожалуйста, выберите Forge, Fabric или Quilt.");
     }
 
+    // Append user custom JVM arguments last so user options take priority
+    if (userCustomArgs.length > 0) {
+      opts.customArgs = [
+        ...(opts.customArgs || []),
+        ...userCustomArgs
+      ]
+    }
+
     const logPath = path.join(app.getPath('userData'), 'minecraft_launcher.log')
     fs.writeFileSync(logPath, `--- Launching Game ${options.version} (${options.loader || 'vanilla'}) ---\n`)
 
     let gameStarted = false;
+
+    // Remove any previous event listeners to eliminate EventEmitter memory leaks and duplicate handlers
+    launcher.removeAllListeners()
 
     launcher.on('debug', (e: any) => {
       fs.appendFileSync(logPath, `[DEBUG] ${e}\n`)
@@ -1359,9 +2062,14 @@ ipcMain.handle('launch-game', async (_event, options) => {
       if (e !== 0) {
         win?.webContents.send('launch-progress', `Error: Game crashed (Code ${e}). Check logs!`)
         try {
-          const crashLog = fs.readFileSync(logPath, 'utf8')
-          win?.webContents.send('game-crashed', crashLog)
-        } catch(err) {}
+          const formattedLog = formatCrashReport(gameDir, logPath, e)
+          win?.webContents.send('game-crashed', formattedLog)
+        } catch(err) {
+          try {
+            const rawLog = fs.readFileSync(logPath, 'utf8')
+            win?.webContents.send('game-crashed', rawLog)
+          } catch {}
+        }
       }
       win?.webContents.send('game-closed')
       win?.show()
@@ -1400,7 +2108,13 @@ function getSavedInstallPath(): string {
       }
     }
   } catch (e) {}
-  return path.join(app.getPath('appData'), '..', 'Local', 'pagrysha-launcher');
+  if (process.platform === 'win32') {
+    return path.join(app.getPath('appData'), '..', 'Local', 'pagrysha-launcher');
+  } else if (process.platform === 'darwin') {
+    return path.join(app.getPath('home'), 'Applications', 'Pagrysha Launcher');
+  } else {
+    return path.join(app.getPath('home'), '.local', 'share', 'pagrysha-launcher');
+  }
 }
 
 function saveInstallPath(targetPath: string) {
@@ -1470,6 +2184,8 @@ ipcMain.handle('create-shortcuts', async (_, targetPath: string) => {
     const shortcutPath = path.join(desktopDir, 'Pagrysha Launcher.lnk');
     shell.writeShortcutLink(shortcutPath, 'create', {
       target: finalExePath,
+      icon: finalExePath,
+      iconIndex: 0,
       description: 'Minecraft Launcher'
     });
 
@@ -1477,7 +2193,9 @@ ipcMain.handle('create-shortcuts', async (_, targetPath: string) => {
     if (!fs.existsSync(startMenuDir)) fs.mkdirSync(startMenuDir, { recursive: true });
     const startMenuShortcutPath = path.join(startMenuDir, 'Pagrysha Launcher.lnk');
     shell.writeShortcutLink(startMenuShortcutPath, 'create', {
-      target: finalExePath
+      target: finalExePath,
+      icon: finalExePath,
+      iconIndex: 0
     });
     return true;
   } catch (e: any) {
@@ -1505,19 +2223,81 @@ ipcMain.handle('check-is-installed', (_, targetPath: string) => {
   return fs.existsSync(finalExePath);
 });
 
-ipcMain.handle('uninstall-app', async (_, targetPath: string) => {
+async function purgeAllLauncherData(targetPath?: string) {
+  const pathsToRemove: string[] = [];
+
+  if (targetPath && typeof targetPath === 'string' && targetPath.trim().length > 0) {
+    pathsToRemove.push(path.normalize(targetPath));
+  }
+
+  const appData = app.getPath('appData');
+  const localAppData = path.join(appData, '..', 'Local');
+
   try {
-    if (fs.existsSync(targetPath)) {
-      await fs.promises.rm(targetPath, { recursive: true, force: true });
+    pathsToRemove.push(path.normalize(app.getPath('userData')));
+  } catch (e) {}
+  pathsToRemove.push(path.join(appData, 'pagrysha-launcher'));
+  pathsToRemove.push(path.join(appData, 'Pagrysha Launcher'));
+  pathsToRemove.push(path.join(appData, 'pagrysha-launcher-data'));
+
+  pathsToRemove.push(path.join(localAppData, 'pagrysha-launcher'));
+  pathsToRemove.push(path.join(localAppData, 'Pagrysha Launcher'));
+  pathsToRemove.push(path.join(localAppData, 'pagrysha-launcher-updater'));
+  pathsToRemove.push(path.join(localAppData, 'pagrysha-launcher-updater-temp'));
+
+  const userHome = os.homedir();
+  const systemDrive = process.env.SystemDrive || 'C:';
+
+  for (const p of pathsToRemove) {
+    const normalized = path.normalize(p);
+    if (
+      !normalized ||
+      normalized === systemDrive ||
+      normalized === systemDrive + '\\' ||
+      normalized === userHome ||
+      normalized === path.normalize(appData) ||
+      normalized === path.normalize(localAppData)
+    ) {
+      continue;
     }
+
+    try {
+      if (fs.existsSync(normalized)) {
+        await fs.promises.rm(normalized, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.error(`Error purging path ${normalized}:`, e);
+    }
+  }
+
+  try {
+    const tempDir = app.getPath('temp');
+    if (fs.existsSync(tempDir)) {
+      const files = fs.readdirSync(tempDir);
+      for (const f of files) {
+        if (f.startsWith('mrpack_') || f.startsWith('pagrysha-')) {
+          try {
+            fs.rmSync(path.join(tempDir, f), { recursive: true, force: true });
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {}
+
+  try {
     const desktopDir = app.getPath('desktop');
     const shortcutPath = path.join(desktopDir, 'Pagrysha Launcher.lnk');
     if (fs.existsSync(shortcutPath)) fs.unlinkSync(shortcutPath);
-    
-    const startMenuDir = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+
+    const startMenuDir = path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs');
     const startMenuShortcutPath = path.join(startMenuDir, 'Pagrysha Launcher.lnk');
     if (fs.existsSync(startMenuShortcutPath)) fs.unlinkSync(startMenuShortcutPath);
-    
+  } catch (e) {}
+}
+
+ipcMain.handle('uninstall-app', async (_, targetPath: string) => {
+  try {
+    await purgeAllLauncherData(targetPath);
     return true;
   } catch (e: any) {
     throw new Error('Ошибка удаления: ' + e.message);

@@ -156,18 +156,14 @@ export default function ModsMenu({
     }
     load()
 
-    const customBg = localStorage.getItem('mc_sec_bg_data')
-    if (customBg) {
-      setBgImage(customBg)
-    } else {
-      // @ts-ignore
-      if (window.electronAPI && window.electronAPI.readLocalImage) {
-        // @ts-ignore
-        window.electronAPI.readLocalImage('C:\\Users\\Kiirr12il\\Pictures\\2026-07-25_15.19.11.png')
-          .then((dataUrl: string) => { if (dataUrl) setBgImage(dataUrl) })
-          .catch(console.error)
-      }
+    const updateBg = () => {
+      const customBg = localStorage.getItem('mc_sec_bg_data')
+      setBgImage(customBg || null)
     }
+    updateBg()
+    window.addEventListener('storage', updateBg)
+
+    return () => window.removeEventListener('storage', updateBg)
   }, [])
 
   useEffect(() => {
@@ -500,7 +496,7 @@ export default function ModsMenu({
   }
 
   return (
-    <div className="mods-menu" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: `rgba(23, 21, 19, ${opacity / 100})`, backgroundImage: bgImage ? `url("${bgImage}")` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden', position: 'relative' }}>
+    <div className="mods-menu" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: `rgba(23, 21, 19, ${opacity / 100})`, backgroundImage: bgImage ? `url("${bgImage}")` : 'url("/faq.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden', position: 'relative' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Settings row for modpacks (Custom wrapper for previous top bar logic) */}

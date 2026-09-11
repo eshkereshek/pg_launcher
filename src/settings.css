@@ -86,6 +86,7 @@
 .settings-checkbox-group input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
+  pointer-events: none;
   width: 2px;
   height: 2px;
   background: var(--pg-yellow);

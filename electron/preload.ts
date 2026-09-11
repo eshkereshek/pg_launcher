@@ -19,8 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchMods: (query: string, loader: string, version: string, offset?: number, projectType?: string, sort?: string) => ipcRenderer.invoke('search-mods', query, loader, version, offset || 0, projectType || 'mod', sort || 'relevance'),
   getPopularMods: (loader: string, version: string, offset?: number) => ipcRenderer.invoke('get-popular-mods', loader, version, offset || 0),
   searchCurseforgeMods: (query: string, loader: string, version: string, offset?: number) => ipcRenderer.invoke('search-curseforge-mods', query, loader, version, offset || 0),
-  getPopularModpacks: (loader: string, version: string, offset?: number) => ipcRenderer.invoke('get-popular-modpacks', loader, version, offset || 0),
-  searchModpacks: (query: string, version?: string, offset?: number) => ipcRenderer.invoke('search-modpacks', query, version, offset || 0),
+  getPopularModpacks: (version?: string, offset?: number, category?: string, loader?: string, sort?: string) => ipcRenderer.invoke('get-popular-modpacks', version, offset || 0, category, loader, sort),
+  searchModpacks: (query: string, version?: string, offset?: number, category?: string, loader?: string, sort?: string) => ipcRenderer.invoke('search-modpacks', query, version, offset || 0, category, loader, sort),
   downloadMod: (projectId: string, version: string, loader: string, instanceId: string, projectType?: string) => ipcRenderer.invoke('download-mod', projectId, version, loader, instanceId, projectType || 'mod'),
   uninstallMod: (filename: string, instanceId: string) => ipcRenderer.invoke('uninstall-mod', filename, instanceId),
   toggleMod: (filename: string, instanceId: string, enable: boolean) => ipcRenderer.invoke('toggle-mod', filename, instanceId, enable),
@@ -76,5 +76,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadAndRunUpdate: (url: string) => ipcRenderer.invoke('download-and-run-update', url),
   onUpdateProgress: (callback: (progress: number) => void) => {
     ipcRenderer.on('update-progress', (_, progress) => callback(progress))
+  },
+
+  // Settings Persistence
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings),
+  resetSettings: () => ipcRenderer.invoke('reset-settings'),
+
+  // Java Runtime Management
+  getInstalledJavas: () => ipcRenderer.invoke('get-installed-javas'),
+  installJava: (version: string) => ipcRenderer.invoke('install-java', version),
+  onJavaInstallProgress: (callback: (data: { version: string, status: string, progress: number }) => void) => {
+    ipcRenderer.on('java-install-progress', (_, data) => callback(data))
   }
 })

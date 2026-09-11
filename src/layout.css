@@ -39,9 +39,8 @@
   padding: 0 15px;
   height: 100%;
   cursor: pointer;
-  border-right: 3px solid #111;
   border-left: 3px solid #111;
-  box-shadow: inset 3px 0 0 0 #555, inset -3px 0 0 0 #222;
+  box-shadow: inset 3px 0 0 0 #555;
   transition: background 0.2s;
 }
 .titlebar-downloads:hover {
@@ -82,6 +81,7 @@
 /* Sidebar */
 .jl-sidebar {
   width: 250px;
+  flex-shrink: 0;
   background-color: #1b1b1b;
   display: flex;
   flex-direction: column;
@@ -135,7 +135,6 @@
   background-color: transparent;
   border: none;
   font-size: 14px;
-  transition: all 0.2s ease;
 }
 .jl-nav-item:hover {
   background-color: rgba(255, 255, 255, 0.05);
@@ -152,8 +151,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  background-color: var(--pg-dark2);
-  box-shadow: inset -3px 0 0 0 #000;
+  border-top: 1px solid var(--pg-dark3);
 }
 .jl-bottom-btn {
   padding: 10px 15px;
@@ -199,7 +197,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  background-image: url('/faq.png') !important;
+  background-image: url('/faq.png');
   background-size: cover;
   background-position: center;
   background-color: var(--pg-dark);
@@ -231,6 +229,24 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+}
+
+.accounts-tab-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start !important;
+  overflow: hidden !important;
+}
+
+.accounts-tab-view .mc-acc-type-btn {
+  padding: 9px 16px !important;
+  gap: 14px !important;
+}
+
+.accounts-tab-view .mc-acc-icon-box {
+  width: 42px !important;
+  height: 42px !important;
 }
 
 .jl-play-bar {
@@ -335,7 +351,7 @@
 /* Modpacks Page Styles */
 .modpacks-menu {
   flex: 1;
-  background: var(--pg-black);
+  background: transparent;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -444,10 +460,11 @@
   animation: dropdown-slide-down 0.2s ease-in forwards;
 }
 
-@keyframes pageFadeIn {
+/* Subtle Tab Switch Transition */
+@keyframes subtleTabFade {
   from {
-    opacity: 0;
-    transform: translateY(12px);
+    opacity: 0.85;
+    transform: translateY(3px);
   }
   to {
     opacity: 1;
@@ -455,6 +472,7 @@
   }
 }
 
-.mods-menu, .modpacks-menu {
-  animation: pageFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.subtle-tab-transition {
+  animation: subtleTabFade 0.16s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
+
