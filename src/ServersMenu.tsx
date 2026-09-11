@@ -66,7 +66,7 @@ export function ServersMenu({ opacity = 95 }: { opacity?: number }) {
     display: 'flex', 
     flexDirection: 'column', 
     backgroundColor: 'transparent', 
-    backgroundImage: bgImage ? `url("${bgImage}")` : 'none', 
+    backgroundImage: bgImage ? `url("${bgImage}")` : 'url("./bg-minecraft.png")', 
     backgroundSize: 'cover', 
     backgroundPosition: 'center', 
     backgroundRepeat: 'no-repeat', 

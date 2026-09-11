@@ -1221,7 +1221,7 @@ export default function App() {
         </div>
 
         {/* Main Content */}
-        <div className="jl-main" style={view === 'play' ? { backgroundImage: mainBgDataUrl ? `url("${mainBgDataUrl}")` : 'url("/faq.png")' } : { backgroundImage: secBgDataUrl ? `url("${secBgDataUrl}")` : 'url("/faq.png")' }}>
+        <div className="jl-main" style={view === 'play' ? { backgroundImage: mainBgDataUrl ? `url("${mainBgDataUrl}")` : 'url("./faq.png")' } : { backgroundImage: secBgDataUrl ? `url("${secBgDataUrl}")` : 'url("./bg-minecraft.png")' }}>
           <div
             key={view}
             className={enableTabAnimations ? 'subtle-tab-transition' : ''}
@@ -1792,7 +1792,7 @@ export default function App() {
                             flexShrink: 0
                           }}>
                             <img 
-                              src={mainBgDataUrl || '/faq.png'} 
+                              src={mainBgDataUrl || './faq.png'} 
                               onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                               alt="Main Preview" 
@@ -1857,8 +1857,8 @@ export default function App() {
                             flexShrink: 0
                           }}>
                             <img 
-                              src={secBgDataUrl || '/faq.png'} 
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
+                              src={secBgDataUrl || './bg-minecraft.png'} 
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).src = './bg-minecraft.png'; }}
                               style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                               alt="Secondary Preview" 
                             />

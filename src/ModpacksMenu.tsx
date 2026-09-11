@@ -120,7 +120,7 @@ export default function ModpacksMenu({ currentVersion, opacity = 95 }: { current
   }
 
   return (
-    <div className="modpacks-menu" style={{ backgroundColor: 'transparent', backgroundImage: bgImage ? `url("${bgImage}")` : 'url("/faq.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', position: 'relative' }}>
+    <div className="modpacks-menu" style={{ backgroundColor: 'transparent', backgroundImage: bgImage ? `url("${bgImage}")` : 'url("./bg-minecraft.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', position: 'relative' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Top Bar Row 1: Game Version & Loader Filters */}
