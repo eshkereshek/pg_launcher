@@ -832,7 +832,7 @@ export default function ModsMenu({
           ) : (
             <>
               {projectType === 'mod' && activeModpack?.loader === 'forge' && offset === 0 && (!query || query.toLowerCase().includes('opti')) && (
-                <div className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})` }}>
+                <div className="mc-card" style={{ background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)` }}>
                   <div className="mc-card-header">
                     <img src="https://optifine.net/favicon.ico" alt="icon" className="mc-card-icon" style={{ background: 'white' }} />
                     <div className="mc-card-title-area">
@@ -868,7 +868,7 @@ export default function ModsMenu({
                 </div>
               )}
               {results.map((mod: any) => (
-                <div key={getModId(mod)} className="mc-card" style={{ background: `rgba(20, 20, 20, ${opacity / 100})`, cursor: 'pointer' }} onClick={() => setSelectedModForViewer(mod)}>
+                <div key={getModId(mod)} className="mc-card" style={{ background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)`, cursor: 'pointer' }} onClick={() => setSelectedModForViewer(mod)}>
                   <div className="mc-card-header">
                     <img src={getModIcon(mod)} alt="icon" className="mc-card-icon" />
                     <div className="mc-card-title-area">

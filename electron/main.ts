@@ -228,10 +228,19 @@ ipcMain.handle('auth-elyby', async (_, email, password) => {
         username: email,
         password: password,
         requestUser: true
-      })
+      }),
+      signal: AbortSignal.timeout(8000)
     })
     if (!response.ok) {
-      throw new Error('Неверный логин или пароль')
+      let errDetail = ''
+      try {
+        const errJson: any = await response.json()
+        errDetail = errJson.errorMessage || errJson.error || ''
+      } catch {}
+      if (errDetail.toLowerCase().includes('credentials') || errDetail.toLowerCase().includes('password') || response.status === 403 || response.status === 401) {
+        throw new Error('Неверный логин или пароль')
+      }
+      throw new Error(errDetail || 'Ошибка ответа сервера Ely.by (' + response.status + ')')
     }
     const data: any = await response.json()
     let rawUuid = data.selectedProfile.id;
@@ -244,11 +253,15 @@ ipcMain.handle('auth-elyby', async (_, email, password) => {
       uuid: rawUuid,
       token: data.accessToken,
       clientToken: data.clientToken,
-      skinUrl: `https://ely.by/services/skins-renderer?url=https://skinsystem.ely.by/skins/${data.selectedProfile.name}.png&scale=5&renderFace=1`
+      skinUrl: `https://skinsystem.ely.by/skins/${data.selectedProfile.name}.png`
     }
   } catch (e: any) {
-    console.error(e)
-    throw new Error('Ошибка Ely.by: ' + e.message)
+    console.error('Ely.by auth error:', e)
+    const msg = e.message || ''
+    if (e.name === 'TimeoutError' || msg.includes('fetch failed') || msg.includes('Connect Timeout') || msg.includes('UND_ERR_CONNECT_TIMEOUT') || msg.includes('aborted')) {
+      throw new Error('Сервер Ely.by недоступен (тайм-аут сети / заблокирован VPN)')
+    }
+    throw new Error('Ошибка Ely.by: ' + msg)
   }
 })
 

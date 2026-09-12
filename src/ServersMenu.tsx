@@ -107,7 +107,7 @@ export function ServersMenu({ opacity = 95 }: { opacity?: number }) {
           ) : (
             <div className="mc-cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
               {servers.map((s, idx) => (
-                <div key={idx} className="mc-card" style={{ display: 'flex', flexDirection: 'column', background: `rgba(20, 20, 20, ${opacity / 100})` }}>
+                <div key={idx} className="mc-card" style={{ display: 'flex', flexDirection: 'column', background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)` }}>
                   {s.banner && s.banner.endsWith('.mp4') ? (
                     <video 
                       src={s.banner} 

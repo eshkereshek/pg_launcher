@@ -26,8 +26,12 @@ export default function WardrobeMenu({
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const skinUrl = `https://pg-sync-server.onrender.com/api/cosmetics/${account.name}/skin.png`;
-  const capeUrl = `https://pg-sync-server.onrender.com/api/cosmetics/${account.name}/cape.png`;
+  const skinUrl = account.type === 'elyby'
+    ? `https://skinsystem.ely.by/skins/${account.name}.png`
+    : `https://pg-sync-server.onrender.com/api/cosmetics/${account.name}/skin.png`;
+  const capeUrl = account.type === 'elyby'
+    ? `https://skinsystem.ely.by/cloaks/${account.name}.png`
+    : `https://pg-sync-server.onrender.com/api/cosmetics/${account.name}/cape.png`;
   const [timestamp, setTimestamp] = useState(Date.now());
 
   useEffect(() => {
@@ -128,7 +132,7 @@ export default function WardrobeMenu({
   };
 
   const frameBgStyle: React.CSSProperties = {
-    background: `rgba(20, 20, 20, ${opacity / 100})`,
+    background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)`,
     border: '3px solid #111',
     boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #111',
     backdropFilter: 'blur(8px)',

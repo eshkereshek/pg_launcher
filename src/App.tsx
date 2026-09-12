@@ -244,16 +244,28 @@ export default function App() {
 
 
   const MinecraftFace = ({ acc, size = 32 }: { acc: Account, size?: number }) => {
-    if (acc.type !== 'elyby' && acc.type !== 'pgsync') {
-      const url = acc.skinUrl || `https://minotar.net/helm/${acc.name}/${size}.png`;
-      return <img src={url} width={size} height={size} style={{ imageRendering: 'pixelated', borderRadius: 0, width: size, height: size }} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://minotar.net/helm/Steve/${size}.png`; }} alt="Skin" />
+    const [useFallback, setUseFallback] = useState(false)
+
+    if ((acc.type !== 'elyby' && acc.type !== 'pgsync') || useFallback) {
+      const url = (!useFallback && acc.skinUrl) ? acc.skinUrl : `https://minotar.net/helm/${acc.name}/${size}.png`
+      return (
+        <img
+          src={url}
+          width={size}
+          height={size}
+          style={{ imageRendering: 'pixelated', borderRadius: 0, width: size, height: size }}
+          onError={(e) => {
+            e.currentTarget.onerror = null
+            e.currentTarget.src = `https://minotar.net/helm/Steve/${size}.png`
+          }}
+          alt="Skin"
+        />
+      )
     }
 
     const rawSkinUrl = acc.type === 'pgsync' 
       ? `https://pg-sync-server.onrender.com/api/cosmetics/${acc.name}/skin.png?v=${skinTimestamp}` 
-      : `http://skinsystem.ely.by/skins/${acc.name}.png?v=${skinTimestamp}`;
-
-
+      : `https://skinsystem.ely.by/skins/${acc.name}.png?v=${skinTimestamp}`
 
     return (
       <div style={{
@@ -266,28 +278,34 @@ export default function App() {
         minWidth: size,
         minHeight: size
       }}>
-        <img src={rawSkinUrl} style={{
-          position: 'absolute',
-          top: -size,
-          left: -size,
-          width: size * 8,
-          height: size * 8,
-          maxWidth: 'none',
-          maxHeight: 'none'
-        }} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="Base" />
-        <img src={rawSkinUrl} style={{
-          position: 'absolute',
-          top: -size,
-          left: -(size * 5),
-          width: size * 8,
-          height: size * 8,
-          maxWidth: 'none',
-          maxHeight: 'none'
-        }} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="Hat" />
-        <img src={`https://minotar.net/helm/${acc.name}/${size}.png`} style={{
-          position: 'absolute',
-          top: 0, left: 0, width: size, height: size, zIndex: -1, maxWidth: 'none', maxHeight: 'none'
-        }} onError={(e) => { e.currentTarget.src = `https://minotar.net/helm/Steve/${size}.png`; }} alt="Fallback" />
+        <img
+          src={rawSkinUrl}
+          style={{
+            position: 'absolute',
+            top: -size,
+            left: -size,
+            width: size * 8,
+            height: size * 8,
+            maxWidth: 'none',
+            maxHeight: 'none'
+          }}
+          onError={() => setUseFallback(true)}
+          alt="Base"
+        />
+        <img
+          src={rawSkinUrl}
+          style={{
+            position: 'absolute',
+            top: -size,
+            left: -(size * 5),
+            width: size * 8,
+            height: size * 8,
+            maxWidth: 'none',
+            maxHeight: 'none'
+          }}
+          onError={() => setUseFallback(true)}
+          alt="Hat"
+        />
       </div>
     )
   }
@@ -1255,7 +1273,21 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        <span style={{ marginLeft: 'auto', fontFamily: '"Blocks", sans-serif', fontSize: '10px', color: '#888' }}>▼</span>
+                        <span
+                          style={{
+                            marginLeft: 'auto',
+                            fontFamily: '"Blocks", sans-serif',
+                            fontSize: '11px',
+                            color: '#888',
+                            display: 'inline-block',
+                            transform: (showVersionDropdown && !isClosingVersionDropdown) ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.2s ease',
+                            userSelect: 'none',
+                            lineHeight: 1
+                          }}
+                        >
+                          v
+                        </span>
                       </div>
 
                       {(showVersionDropdown || isClosingVersionDropdown) && (
@@ -1408,7 +1440,20 @@ export default function App() {
                         }}>
                           {selectedVersion.startsWith('mp:') ? selectedVersion.replace('mp:', '') : selectedVersion || t("app.selectVersion")}
                         </span>
-                        <span style={{ fontSize: '9px', color: '#888', transform: 'scaleY(0.8)' }}>▼</span>
+                        <span
+                          style={{
+                            fontFamily: '"Blocks", sans-serif',
+                            fontSize: '11px',
+                            color: '#888',
+                            display: 'inline-block',
+                            transform: (showVersionDropdown && !isClosingVersionDropdown) ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.2s ease',
+                            userSelect: 'none',
+                            lineHeight: 1
+                          }}
+                        >
+                          v
+                        </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                         <span style={{ fontSize: '11px', color: '#888' }}>
@@ -2196,7 +2241,7 @@ export default function App() {
                           onClick={() => { setSelectedAuthMethod('elyby'); setAuthType('elyby'); setAuthError(''); }}
                           style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
-                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://ely.by/favicon.ico" width={22} /></div>
+                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://ely.by/favicon.ico" width={22} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = './elyby.svg'; }} /></div>
                           <div className="mc-acc-text">
                             <span className="subtitle" style={{ fontSize: '11px' }}>{t("app.licenseTitle")}</span>
                             <span className="title" style={{ fontSize: '14px' }}>{t("app.elybyAccount")}</span>
@@ -2260,7 +2305,7 @@ export default function App() {
                         </button>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} />}
+                          {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = './elyby.svg'; }} />}
                           {selectedAuthMethod === 'pgsync' && <img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={20} />}
                           {selectedAuthMethod === 'offline' && <img src="https://minotar.net/helm/Steve/20.png" width={20} style={{ imageRendering: 'pixelated' }} />}
                           <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '15px', color: '#fff', textTransform: 'uppercase' }}>
