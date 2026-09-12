@@ -27,9 +27,7 @@ jobs:
         run: npm install
 
       - name: Build Linux DEB
-        run: npx tsc -b && npx vite build && npx electron-builder --linux deb
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx tsc -b && npx vite build && npx electron-builder --linux deb --publish never
 
       - name: Upload Linux DEB Artifact
         uses: actions/upload-artifact@v4
@@ -39,7 +37,7 @@ jobs:
 
   build-mac-intel:
     name: macOS Intel (x64)
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -49,16 +47,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify Architecture
-        run: uname -m
-
       - name: Install Dependencies
         run: npm install
 
       - name: Build for macOS Intel (x64)
-        run: npx tsc -b && npx vite build && npx electron-builder --mac --x64
+        run: npx tsc -b && npx vite build && npx electron-builder --mac --x64 --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload macOS Intel Artifacts
@@ -81,16 +75,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify Architecture
-        run: uname -m
-
       - name: Install Dependencies
         run: npm install
 
       - name: Build for macOS ARM (arm64)
-        run: npx tsc -b && npx vite build && npx electron-builder --mac --arm64
+        run: npx tsc -b && npx vite build && npx electron-builder --mac --arm64 --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload macOS ARM Artifacts
@@ -117,9 +107,8 @@ jobs:
         run: npm install
 
       - name: Build for Windows (Portable EXE)
-        run: npm run build
+        run: npx tsc -b && npx vite build && npx electron-builder --win --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload Windows EXE Artifact
