@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation, type Language } from './i18n'
-import { Trash, Folder, Play } from 'lucide-react'
+import { Trash, Folder } from 'lucide-react'
 import ModsMenu from './ModsMenu'
 import ModpacksMenu from './ModpacksMenu'
 import { ServersMenu } from './ServersMenu'
-import { McSelect } from './McSelect'
+import { McSelect, RussianFlag, AmericanFlag } from './McSelect'
 import pkg from '../package.json'
 import WardrobeMenu from './WardrobeMenu'
+import PlayIcon from './PlayIcon'
+import HammerIcon from './HammerIcon'
+import ModpackBoxIcon from './ModpackBoxIcon'
+import ServersIcon from './ServersIcon'
+import AccountsIcon from './AccountsIcon'
+import SettingsIcon from './SettingsIcon'
 
 interface Modpack {
   name: string
@@ -25,6 +31,37 @@ interface Account {
   clientToken?: string
   skinUrl?: string
 }
+
+const CubicCrossIcon: React.FC<{ size?: number; color?: string }> = ({ size = 14, color = 'currentColor' }) => (
+  <svg viewBox="0 0 9 8" width={size} height={size * (8 / 9)} style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges', flexShrink: 0 }}>
+    <g fill="rgba(0,0,0,0.7)">
+      <rect x="1" y="1" width="2" height="1" />
+      <rect x="7" y="1" width="2" height="1" />
+      <rect x="2" y="2" width="2" height="1" />
+      <rect x="6" y="2" width="2" height="1" />
+      <rect x="3" y="3" width="4" height="1" />
+      <rect x="4" y="4" width="2" height="1" />
+      <rect x="3" y="5" width="4" height="1" />
+      <rect x="2" y="6" width="2" height="1" />
+      <rect x="6" y="6" width="2" height="1" />
+      <rect x="1" y="7" width="2" height="1" />
+      <rect x="7" y="7" width="2" height="1" />
+    </g>
+    <g fill={color}>
+      <rect x="0" y="0" width="2" height="1" />
+      <rect x="6" y="0" width="2" height="1" />
+      <rect x="1" y="1" width="2" height="1" />
+      <rect x="5" y="1" width="2" height="1" />
+      <rect x="2" y="2" width="4" height="1" />
+      <rect x="3" y="3" width="2" height="1" />
+      <rect x="2" y="4" width="4" height="1" />
+      <rect x="1" y="5" width="2" height="1" />
+      <rect x="5" y="5" width="2" height="1" />
+      <rect x="0" y="6" width="2" height="1" />
+      <rect x="6" y="6" width="2" height="1" />
+    </g>
+  </svg>
+)
 
 const saveCompressedImage = (file: File, key: string, callback: (dataUrl: string) => void) => {
   const img = new Image();
@@ -238,7 +275,13 @@ export default function App() {
   const [isClosingDownloadsDropdown, setIsClosingDownloadsDropdown] = useState(false)
   const [justCompletedDownloads, setJustCompletedDownloads] = useState(false)
   const downloadsCloseTimerRef = useRef<any>(null)
-  const [updateInfo, setUpdateInfo] = useState<{hasUpdate: boolean, version?: string, downloadUrl?: string}>({hasUpdate: false})
+  const [updateInfo, setUpdateInfo] = useState<{hasUpdate: boolean, version?: string, downloadUrl?: string, body?: string}>({
+    hasUpdate: false,
+    version: '',
+    downloadUrl: '',
+    body: ''
+  })
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false);
   const [progress, setProgress] = useState('')
 
@@ -364,6 +407,7 @@ export default function App() {
   const [enableTabAnimations, setEnableTabAnimations] = useState(localStorage.getItem('mc_enable_tab_animations') !== 'false')
   const [enableNewDesign] = useState(localStorage.getItem('mc_new_design') === 'true')
   const [autoOpenInstallSettings, setAutoOpenInstallSettings] = useState(false)
+  const settingsLoadedRef = useRef(false)
   const [autoOpenInstallCreate, setAutoOpenInstallCreate] = useState(false)
   const [showPlayEditModal, setShowPlayEditModal] = useState(false)
   const [editPlayName, setEditPlayName] = useState('')
@@ -420,7 +464,176 @@ export default function App() {
     }
   }
 
+  // Custom Modal State for Launcher Confirmations / Alerts
+  interface CustomModalState {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+    isAlert?: boolean;
+    isLoading?: boolean;
+    onConfirm?: () => Promise<void> | void;
+    onCancel?: () => void;
+  }
+
+  const [customModal, setCustomModal] = useState<CustomModalState>({
+    isOpen: false,
+    title: '',
+    message: ''
+  })
+
+  const handleClearCacheClick = () => {
+    setCustomModal({
+      isOpen: true,
+      title: 'Очистка кэша',
+      message: 'Вы действительно хотите очистить кэш лаунчера? Будут удалены временные файлы обновлений, кэш загрузок сборок и сессий.',
+      confirmText: 'Очистить кэш',
+      cancelText: 'Отмена',
+      isDanger: false,
+      isAlert: false,
+      onConfirm: async () => {
+        try {
+          // @ts-ignore
+          const res = await window.electronAPI?.clearCache?.();
+          if (res?.status === 'success') {
+            setCustomModal({
+              isOpen: true,
+              title: 'Кэш очищен',
+              message: 'Кэш лаунчера успешно очищен.',
+              isAlert: true,
+              confirmText: 'Понятно',
+              isLoading: false
+            });
+          } else {
+            setCustomModal({
+              isOpen: true,
+              title: 'Ошибка',
+              message: 'Не удалось очистить кэш: ' + (res?.error || 'Неизвестная ошибка'),
+              isAlert: true,
+              isDanger: true,
+              confirmText: 'Закрыть',
+              isLoading: false
+            });
+          }
+        } catch (e: any) {
+          setCustomModal({
+            isOpen: true,
+            title: 'Ошибка',
+            message: 'Ошибка при очистке кэша: ' + (e?.message || e),
+            isAlert: true,
+            isDanger: true,
+            confirmText: 'Закрыть',
+            isLoading: false
+          });
+        }
+      }
+    });
+  };
+
+  const handleCleanUninstallJavaClick = () => {
+    setCustomModal({
+      isOpen: true,
+      title: 'Удаление Java',
+      message: 'Вы действительно хотите полностью удалить все версии Java Runtime? Будут принудительно завершены процессы Java и удалены все локальные среды исполнения Java (8, 17, 21). При необходимости лаунчер автоматически скачает нужную версию при запуске игры.',
+      confirmText: 'Удалить Java',
+      cancelText: 'Отмена',
+      isDanger: true,
+      isAlert: false,
+      onConfirm: async () => {
+        try {
+          // @ts-ignore
+          await window.electronAPI?.cleanUninstallJava?.();
+          await refreshInstalledJavas();
+          setCustomJava('auto');
+          localStorage.setItem('mc_custom_java', 'auto');
+          setCustomModal({
+            isOpen: true,
+            title: 'Java удалена',
+            message: 'Все установленные компоненты Java Runtime были успешно и полностью удалены.',
+            isAlert: true,
+            confirmText: 'Понятно',
+            isLoading: false
+          });
+        } catch (e: any) {
+          setCustomModal({
+            isOpen: true,
+            title: 'Ошибка',
+            message: 'Ошибка при удалении Java: ' + (e?.message || e),
+            isAlert: true,
+            isDanger: true,
+            confirmText: 'Закрыть',
+            isLoading: false
+          });
+        }
+      }
+    });
+  };
+
+  const handleResetSettingsClick = () => {
+    setCustomModal({
+      isOpen: true,
+      title: 'Сброс настроек',
+      message: 'Вы действительно хотите сбросить все настройки лаунчера? Будут возвращены исходные параметры лаунчера, сброшена память и очищен список сохранённых аккаунтов.',
+      confirmText: 'Сбросить всё',
+      cancelText: 'Отмена',
+      isDanger: true,
+      isAlert: false,
+      onConfirm: async () => {
+        try {
+          // @ts-ignore
+          await window.electronAPI?.resetSettings?.();
+        } catch {}
+        localStorage.clear();
+        window.location.reload();
+      }
+    });
+  };
+
+  const handleCheckUpdatesClick = async () => {
+    try {
+      // @ts-ignore
+      const info = await window.electronAPI?.checkUpdates?.()
+      if (info && info.hasUpdate) {
+        setUpdateInfo(info)
+        setShowUpdateModal(true)
+      } else {
+        setCustomModal({
+          isOpen: true,
+          title: 'Обновлений нет',
+          message: `У вас установлена последняя версия лаунчера (v${pkg.version}).`,
+          isAlert: true,
+          confirmText: 'Понятно',
+          isLoading: false
+        })
+      }
+    } catch {
+      setCustomModal({
+        isOpen: true,
+        title: 'Ошибка',
+        message: 'Не удалось проверить наличие обновлений.',
+        isAlert: true,
+        isDanger: true,
+        confirmText: 'Закрыть',
+        isLoading: false
+      })
+    }
+  };
+
   useEffect(() => {
+    // Intercept native window.alert to show our in-app Minecraft modal window instead of Electron native dialogs
+    window.alert = (msg: any) => {
+      setCustomModal({
+        isOpen: true,
+        title: 'Уведомление',
+        message: typeof msg === 'object' ? JSON.stringify(msg, null, 2) : String(msg),
+        isAlert: true,
+        confirmText: 'Понятно',
+        isLoading: false
+      });
+    };
+
     refreshInstalledJavas()
     // @ts-ignore
     if (window.electronAPI && window.electronAPI.onJavaInstallProgress) {
@@ -563,7 +776,12 @@ export default function App() {
     // @ts-ignore
     if (window.electronAPI && window.electronAPI.checkUpdates) {
       // @ts-ignore
-      window.electronAPI.checkUpdates().then(setUpdateInfo)
+      window.electronAPI.checkUpdates().then((info: any) => {
+        if (info && info.hasUpdate) {
+          setUpdateInfo(info)
+          setShowUpdateModal(true)
+        }
+      }).catch((e: any) => console.warn('Update check failed:', e))
     }
 
     const fetchVersions = async () => {
@@ -656,6 +874,8 @@ export default function App() {
         }
       } catch (e) {
         console.error('Failed to load disk settings:', e)
+      } finally {
+        settingsLoadedRef.current = true
       }
     }
     loadSettings()
@@ -731,7 +951,10 @@ export default function App() {
     }
   }, [rawVersions, showSnapshots, showModified, showOldReleases, showBeta, showAlpha, forgeVersions, installedVersions])
 
-  const saveSettings = () => {
+  // Auto-save settings on change
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return
+
     localStorage.setItem('mc_ram', ramValue.toString())
     localStorage.setItem('mc_show_snapshots', showSnapshots.toString())
     localStorage.setItem('mc_show_modified', showModified.toString())
@@ -762,9 +985,21 @@ export default function App() {
       enableNewDesign,
       selectedVersion
     })
-
-    alert('Настройки сохранены!')
-  }
+  }, [
+    ramValue,
+    showSnapshots,
+    showModified,
+    showOldReleases,
+    showBeta,
+    showAlpha,
+    mcArgs,
+    customJava,
+    menuOpacity,
+    enableServersTab,
+    enableTabAnimations,
+    enableNewDesign,
+    selectedVersion
+  ])
 
   const handleOpenPlayEditModal = () => {
     if (selectedVersion.startsWith('mp:')) {
@@ -988,6 +1223,7 @@ export default function App() {
       setProgress('Игра запущена')
     } catch (e: any) {
       setProgress(`Error: ${e.message}`)
+      setGameRunning(false)
     }
     setLaunching(false)
   }
@@ -1010,32 +1246,11 @@ export default function App() {
       {/* Custom Title Bar */}
       <div className="custom-titlebar">
         <div className="titlebar-left">
-          <img src="./icon.png" alt="icon" width={16} />
+          <img src="./icon.png" alt="icon" width={15} height={15} />
           <span>Pagrysha Launcher</span>
         </div>
         <div className="titlebar-right">
           <div style={{ display: "flex", alignItems: "center", gap: "15px", height: "100%" }}>
-          {updateInfo.hasUpdate && (
-            <div 
-              className="update-banner"
-              onClick={(e) => { e.stopPropagation(); handleUpdate(); }}
-              style={{
-                background: 'var(--pg-primary)',
-                color: 'white',
-                padding: '4px 12px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                animation: 'pulse 2s infinite',
-                boxShadow: '0 0 10px rgba(255, 122, 0, 0.5)',
-                cursor: isUpdating ? 'default' : 'pointer',
-                opacity: isUpdating ? 0.7 : 1
-              }}
-            >
-              {isUpdating ? 'Загрузка...' : `Доступно обновление: v${updateInfo.version}`}
-            </div>
-          )}
-          
           <div 
             className="titlebar-downloads" 
             style={{ position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
@@ -1173,65 +1388,64 @@ export default function App() {
 
           <div className="jl-nav">
             <div className={`jl-nav-item ${view === 'play' ? 'active' : ''}`} onClick={() => setView('play')}>
-              <div className="nav-play-icon" style={{ background: 'var(--pg-yellow)', borderRadius: '4px', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={12} fill="black" color="black" /></div> {t("app.sidebarPlay")}
+              <div className="jl-nav-icon">
+                <PlayIcon size={24} opacity={view === 'play' ? 1 : 0.75} />
+              </div>
+              <span className="jl-nav-text">{t("app.sidebarPlay")}</span>
             </div>
+
             <div className={`jl-nav-item ${view === 'installations' ? 'active' : ''}`} onClick={() => setView('installations')}>
-              <svg viewBox="0 0 16 16" width="22" height="22" style={{
-                filter: 'brightness(0) invert(1)',
-                opacity: view === 'installations' ? 1 : 0.67
-              }}>
-                <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAkklEQVR4AZSPgQ6AIAgFq///Z+PcwDdNodabCNxtPlf9a7ZK7Bh/VQB4D2xUFcEWRpMJFNYalnvLBCwSlvUJca8KgIEW2UkAAAhEqLXX652gD6GmIKEV8y9BDNmU0Pe46JoFLMRwgul7YqSCDA5ICxVo3+ud1OfLE2JgRQrbziIA8vBedo7RJwBojqAPVeC9X+cLAAD//3V/9IAAAAAGSURBVAMAkiYeIQXDV5IAAAAASUVORK5CYII=" width="16" height="16" />
-              </svg> {t("app.installations")}
+              <div className="jl-nav-icon">
+                <HammerIcon size={24} opacity={view === 'installations' ? 1 : 0.75} />
+              </div>
+              <span className="jl-nav-text">{t("app.installations")}</span>
             </div>
+
             <div className={`jl-nav-item ${view === 'modpacks' ? 'active' : ''}`} onClick={() => setView('modpacks')}>
-              <svg viewBox="0 0 16 16" width="22" height="22" style={{
-                filter: 'brightness(0) invert(1)',
-                opacity: view === 'modpacks' ? 1 : 0.67
-              }}>
-                <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAm0lEQVR4AbSSCw6AIAxD1fvfWftmpgUnifETClvXlZG4TC+/Xw1WDedQel3VBNmEetYGdEzOkwfcwAU0gRBpIwYKWyM3oPgYvUF5i1z76UTtqzeAxQQQ943JUwtUBlHQ5mKPVTrXyOBUDaLPDfzN1b2Xuk/AOwGNCDkdyaEBUXODILRRBNkgKn4eOEB+oDLIImJH8s05MmiEd8kGAAD//6TAe8AAAAAGSURBVAMAv9MaIYD4VE4AAAAASUVORK5CYII=" width="16" height="16" />
-              </svg> {t("app.sidebarModpacks")}
+              <div className="jl-nav-icon">
+                <ModpackBoxIcon size={24} opacity={view === 'modpacks' ? 1 : 0.75} />
+              </div>
+              <span className="jl-nav-text">{t("app.sidebarModpacks")}</span>
             </div>
+
             {enableServersTab && (
               <div className={`jl-nav-item ${view === 'servers' ? 'active' : ''}`} onClick={() => setView('servers')}>
-                <svg viewBox="0 0 16 16" width="22" height="22" style={{
-                  filter: 'brightness(0) invert(1)',
-                  opacity: view === 'servers' ? 1 : 0.67
-                }}>
-                  <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAnUlEQVR4AaxSgQ2AIAwbPq5eru1MTSMqEDV0wa7buoQpPn6/NthgZgSQR8gBC5NAWBtAOk/WqEEyCAVYGqAGkuN4A04my84OcldIe67gAk5weK66u4MZWZ/8dqcW8rh1kIne4A64V0FhD6iFNG4dXK2n8Cm4A+1VIHbgtzrSVg44vfUOqDk7ygEnimT3N0iXNWpAksQIWFOtkORI2AEAAP//kZTYHgAAAAZJREFUAwBWGzYhjQL2qgAAAABJRU5ErkJggg==" width="16" height="16" />
-                </svg> {t("app.sidebarServers")}
+                <div className="jl-nav-icon">
+                  <ServersIcon size={24} opacity={view === 'servers' ? 1 : 0.75} />
+                </div>
+                <span className="jl-nav-text">{t("app.sidebarServers")}</span>
               </div>
             )}
+
             {activeAccount.type === 'pgsync' && (
               <div className={`jl-nav-item ${view === 'wardrobe' ? 'active' : ''}`} onClick={() => setView('wardrobe')}>
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{
-                  opacity: view === 'wardrobe' ? 1 : 0.67
-                }}>
-                  <path d="M20.38 3.46L16 2a8.5 8.5 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
-                </svg> {t("app.sidebarWardrobe")}
+                <div className="jl-nav-icon">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{
+                    opacity: view === 'wardrobe' ? 1 : 0.75
+                  }}>
+                    <path d="M20.38 3.46L16 2a8.5 8.5 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
+                  </svg>
+                </div>
+                <span className="jl-nav-text">{t("app.sidebarWardrobe")}</span>
               </div>
             )}
           </div>
 
           <div className="jl-bottom">
             <div className={`jl-nav-item ${view === 'accounts' ? 'active' : ''}`} onClick={() => { setView('accounts'); setSelectedAuthMethod(null); }}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <img src="https://minotar.net/helm/Steve/16.png" style={{ width: 16, height: 16, zIndex: 2 }} />
-                <img src="https://minotar.net/helm/Alex/16.png" style={{ width: 16, height: 16, marginLeft: -6, zIndex: 1 }} />
-              </div> {t("app.accounts")}
+              <div className="jl-nav-icon">
+                <AccountsIcon size={24} opacity={view === 'accounts' ? 1 : 0.75} />
+              </div>
+              <span className="jl-nav-text">{t("app.accounts")}</span>
             </div>
-            <div className="jl-nav-item" onClick={() => setView('settings')}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="#fff">
-                <path d="m25.905 9.14 0 -3.04 4.57 0 0 -1.53 -4.57 0 0 -3.05 -1.52 0 0 7.62 1.52 0z"></path>
-                <path d="m25.905 30.48 0 -3.05 4.57 0 0 -1.53 -4.57 0 0 -3.04 -1.52 0 0 7.62 1.52 0z"></path>
-                <path d="m30.475 15.24 -21.33 0 0 -3.05 -1.52 0 0 -1.52 -1.53 0 0 1.52 -1.52 0 0 3.05 -3.05 0 0 1.52 3.05 0 0 3.05 1.52 0 0 1.52 1.53 0 0 -1.52 1.52 0 0 -3.05 21.33 0 0 -1.52z"></path>
-                <path d="M22.855 30.48h1.53V32h-1.53Z"></path>
-                <path d="M22.855 21.33h1.53v1.53h-1.53Z"></path>
-                <path d="M22.855 9.14h1.53v1.53h-1.53Z"></path>
-                <path d="M22.855 0h1.53v1.52h-1.53Z"></path>
-                <path d="m22.855 22.86 -1.52 0 0 3.04 -19.81 0 0 1.53 19.81 0 0 3.05 1.52 0 0 -7.62z"></path>
-                <path d="m21.335 4.57 -19.81 0 0 1.53 19.81 0 0 3.04 1.52 0 0 -7.62 -1.52 0 0 3.05z"></path>
-              </svg> {t("app.sidebarSettings")}
+
+            <div className={`jl-nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>
+              <div className="jl-nav-icon">
+                <SettingsIcon size={24} opacity={view === 'settings' ? 1 : 0.75} />
+              </div>
+              <span className="jl-nav-text">{t("app.sidebarSettings")}</span>
             </div>
+
             <div className="jl-bottom-btn outlined" onClick={openFolder}>
               <Folder size={18} /> {t("app.gameFolder")}
             </div>
@@ -1321,14 +1535,23 @@ export default function App() {
                                 <div
                                   className="dropdown-item"
                                   onClick={() => { handleSelectVersion(v); handleCloseVersionDropdown(); }}
-                                  onContextMenu={async (e) => {
+                                  onContextMenu={(e) => {
                                     e.preventDefault();
                                     if (isVanillaInstalled) {
-                                      if (confirm(`Переустановить ${v}?`)) {
-                                        // @ts-ignore
-                                        await window.electronAPI.deleteModpackFolder(v);
-                                        setInstalledVersions(installedVersions.filter(iv => iv !== v));
-                                      }
+                                      setCustomModal({
+                                        isOpen: true,
+                                        title: 'Переустановка версии',
+                                        message: `Вы уверены, что хотите переустановить ${v}? Все файлы этой версии будут загружены заново.`,
+                                        confirmText: 'Переустановить',
+                                        cancelText: 'Отмена',
+                                        isDanger: false,
+                                        onConfirm: async () => {
+                                          // @ts-ignore
+                                          await window.electronAPI.deleteModpackFolder(v);
+                                          setInstalledVersions(installedVersions.filter(iv => iv !== v));
+                                          setCustomModal(prev => ({ ...prev, isOpen: false }));
+                                        }
+                                      });
                                     }
                                   }}
                                   style={{
@@ -1345,21 +1568,30 @@ export default function App() {
                                   <div
                                     className="dropdown-item"
                                     onClick={() => { handleSelectVersion(forgeLabel); handleCloseVersionDropdown(); }}
-                                    onContextMenu={async (e) => {
+                                    onContextMenu={(e) => {
                                       e.preventDefault();
                                       if (isForgeInstalled) {
-                                        if (confirm(`Переустановить ${forgeLabel}?`)) {
-                                          const forgeFolders = installedVersions.filter(iv =>
-                                            iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-'))
-                                          );
-                                          for (const ff of forgeFolders) {
-                                            // @ts-ignore
-                                            await window.electronAPI.deleteModpackFolder(ff);
+                                        setCustomModal({
+                                          isOpen: true,
+                                          title: 'Переустановка Forge',
+                                          message: `Вы уверены, что хотите переустановить ${forgeLabel}?`,
+                                          confirmText: 'Переустановить',
+                                          cancelText: 'Отмена',
+                                          isDanger: false,
+                                          onConfirm: async () => {
+                                            const forgeFolders = installedVersions.filter(iv =>
+                                              iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-'))
+                                            );
+                                            for (const ff of forgeFolders) {
+                                              // @ts-ignore
+                                              await window.electronAPI.deleteModpackFolder(ff);
+                                            }
+                                            setInstalledVersions(installedVersions.filter(iv =>
+                                              !(iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-')))
+                                            ));
+                                            setCustomModal(prev => ({ ...prev, isOpen: false }));
                                           }
-                                          setInstalledVersions(installedVersions.filter(iv =>
-                                            !(iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-')))
-                                          ));
-                                        }
+                                        });
                                       }
                                     }}
                                     style={{
@@ -1501,15 +1733,24 @@ export default function App() {
                               <div
                                 className="dropdown-item"
                                 onClick={(e) => { e.stopPropagation(); handleSelectVersion(v); handleCloseVersionDropdown(); }}
-                                onContextMenu={async (e) => {
+                                onContextMenu={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   if (isVanillaInstalled) {
-                                    if (confirm(`Переустановить ${v}?`)) {
-                                      // @ts-ignore
-                                      await window.electronAPI.deleteModpackFolder(v);
-                                      setInstalledVersions(installedVersions.filter(iv => iv !== v));
-                                    }
+                                    setCustomModal({
+                                      isOpen: true,
+                                      title: 'Переустановка версии',
+                                      message: `Вы уверены, что хотите переустановить ${v}? Все файлы этой версии будут загружены заново.`,
+                                      confirmText: 'Переустановить',
+                                      cancelText: 'Отмена',
+                                      isDanger: false,
+                                      onConfirm: async () => {
+                                        // @ts-ignore
+                                        await window.electronAPI.deleteModpackFolder(v);
+                                        setInstalledVersions(installedVersions.filter(iv => iv !== v));
+                                        setCustomModal(prev => ({ ...prev, isOpen: false }));
+                                      }
+                                    });
                                   }
                                 }}
                                 style={{
@@ -1526,22 +1767,31 @@ export default function App() {
                                 <div
                                   className="dropdown-item"
                                   onClick={(e) => { e.stopPropagation(); handleSelectVersion(forgeLabel); handleCloseVersionDropdown(); }}
-                                  onContextMenu={async (e) => {
+                                  onContextMenu={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
                                     if (isForgeInstalled) {
-                                      if (confirm(`Переустановить ${forgeLabel}?`)) {
-                                        const forgeFolders = installedVersions.filter(iv =>
-                                          iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-'))
-                                        );
-                                        for (const ff of forgeFolders) {
-                                          // @ts-ignore
-                                          await window.electronAPI.deleteModpackFolder(ff);
+                                      setCustomModal({
+                                        isOpen: true,
+                                        title: 'Переустановка Forge',
+                                        message: `Вы уверены, что хотите переустановить ${forgeLabel}?`,
+                                        confirmText: 'Переустановить',
+                                        cancelText: 'Отмена',
+                                        isDanger: false,
+                                        onConfirm: async () => {
+                                          const forgeFolders = installedVersions.filter(iv =>
+                                            iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-'))
+                                          );
+                                          for (const ff of forgeFolders) {
+                                            // @ts-ignore
+                                            await window.electronAPI.deleteModpackFolder(ff);
+                                          }
+                                          setInstalledVersions(installedVersions.filter(iv =>
+                                            !(iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-')))
+                                          ));
+                                          setCustomModal(prev => ({ ...prev, isOpen: false }));
                                         }
-                                        setInstalledVersions(installedVersions.filter(iv =>
-                                          !(iv.startsWith(v + '-') && (/^\d/.test(iv.slice(v.length + 1)) || iv.includes('-forge-')))
-                                        ));
-                                      }
+                                      });
                                     }
                                   }}
                                   style={{
@@ -1694,69 +1944,64 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '30px',
-                borderBottom: '2px solid #282828',
+                borderBottom: `2px solid rgba(0, 0, 0, ${Math.max(0.4, (menuOpacity / 100) * 0.8)})`,
+                boxShadow: '0 1px 0 rgba(255, 255, 255, 0.05)',
                 padding: '24px 45px 0 45px',
                 userSelect: 'none',
                 flexShrink: 0,
-                background: 'rgba(18, 18, 18, 0.98)',
+                background: `rgba(18, 18, 18, ${Math.max(0.65, menuOpacity / 100)})`,
+                backdropFilter: 'blur(6px)',
                 zIndex: 10
               }}>
-                <div
-                  onClick={() => setSettingsTab('customization')}
-                  style={{
-                    fontSize: '15px',
-                    fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                    color: settingsTab === 'customization' ? '#ffffff' : '#888888',
-                    borderBottom: settingsTab === 'customization' ? '3px solid var(--pg-yellow)' : '3px solid transparent',
-                    paddingBottom: '12px',
-                    cursor: 'pointer',
-                    letterSpacing: '1px',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  ЛАУНЧЕР
-                </div>
-
-                <div
-                  onClick={() => setSettingsTab('main')}
-                  style={{
-                    fontSize: '15px',
-                    fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                    color: settingsTab === 'main' ? '#ffffff' : '#888888',
-                    borderBottom: settingsTab === 'main' ? '3px solid var(--pg-yellow)' : '3px solid transparent',
-                    paddingBottom: '12px',
-                    cursor: 'pointer',
-                    letterSpacing: '1px',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  MINECRAFT
-                </div>
-
-                <div
-                  onClick={() => setSettingsTab('experimental')}
-                  style={{
-                    fontSize: '15px',
-                    fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                    color: settingsTab === 'experimental' ? '#ffffff' : '#888888',
-                    borderBottom: settingsTab === 'experimental' ? '3px solid var(--pg-yellow)' : '3px solid transparent',
-                    paddingBottom: '12px',
-                    cursor: 'pointer',
-                    letterSpacing: '1px',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  ЭКСПЕРИМЕНТАЛЬНЫЕ
-                </div>
+                {[
+                  { id: 'customization', label: 'ЛАУНЧЕР' },
+                  { id: 'main', label: 'MINECRAFT' },
+                  { id: 'experimental', label: 'ЭКСПЕРИМЕНТАЛЬНЫЕ' }
+                ].map(tab => {
+                  const isActive = settingsTab === tab.id;
+                  return (
+                    <div
+                      key={tab.id}
+                      onClick={() => setSettingsTab(tab.id as any)}
+                      style={{
+                        position: 'relative',
+                        fontSize: '15px',
+                        fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                        color: isActive ? '#ffffff' : '#888888',
+                        paddingBottom: '12px',
+                        cursor: 'pointer',
+                        letterSpacing: '1px',
+                        transition: 'color 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        userSelect: 'none'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) e.currentTarget.style.color = '#cccccc';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) e.currentTarget.style.color = '#888888';
+                      }}
+                    >
+                      {tab.label}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: '-2px',
+                          left: 0,
+                          right: 0,
+                          height: '3px',
+                          backgroundColor: 'var(--pg-yellow)',
+                          boxShadow: isActive ? '0 0 10px rgba(241, 196, 15, 0.65)' : 'none',
+                          transform: isActive ? 'scaleX(1)' : 'scaleX(0)',
+                          transformOrigin: 'center',
+                          opacity: isActive ? 1 : 0,
+                          transition: 'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease'
+                        }}
+                      />
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Scrollable Settings Content Area */}
@@ -1783,8 +2028,8 @@ export default function App() {
                           value={language} 
                           onChange={(v) => setLanguage(v as Language)} 
                           options={[
-                            { value: 'ru', label: 'Русский - Россия', icon: '🇷🇺' },
-                            { value: 'en', label: 'English - United States', icon: '🇬🇧' }
+                            { value: 'ru', label: 'Русский - Россия', icon: <RussianFlag /> },
+                            { value: 'en', label: 'English - United States', icon: <AmericanFlag /> }
                           ]} 
                           style={{ width: '300px' }} 
                         />
@@ -1798,7 +2043,19 @@ export default function App() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                         <div style={{ flex: 1, maxWidth: '400px' }}>
-                          <input type="range" min="0" max="100" step="5" className="ram-slider" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '100%' }} />
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            step="5" 
+                            className="ram-slider" 
+                            value={menuOpacity} 
+                            onChange={e => setMenuOpacity(Number(e.target.value))} 
+                            style={{ 
+                              width: '100%',
+                              background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${menuOpacity}%, #0e0e0e ${menuOpacity}%, #0e0e0e 100%)`
+                            }} 
+                          />
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white', fontFamily: '"Inter", sans-serif', fontWeight: 500 }}>
                           <input type="number" className="mc-input" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '60px', padding: '5px', textAlign: 'center' }} /> %
@@ -1806,138 +2063,288 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Section: Кастомные фоны */}
+                    {/* Section: Фоновые изображения */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Фоновые изображения
+                        {t('app.bgImages')}
                       </div>
-                      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-                        {/* Main BG */}
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(285px, 1fr))', 
+                        gap: '16px', 
+                        maxWidth: '650px', 
+                        width: '100%' 
+                      }}>
+                        {/* Main Screen Frame */}
                         <div style={{
                           display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          background: '#141414',
-                          padding: '10px 14px',
-                          border: '1px solid #282828',
-                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
-                          minWidth: '270px'
+                          flexDirection: 'column',
+                          background: `rgba(20, 20, 20, ${Math.max(0.25, (menuOpacity / 100) * 0.95)})`,
+                          border: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`,
+                          boxShadow: `inset 1px 1px 0 rgba(255, 255, 255, ${0.08 * (menuOpacity / 100)}), inset -1px -1px 0 rgba(0, 0, 0, ${0.6 * (menuOpacity / 100)}), 0 4px 14px rgba(0, 0, 0, 0.35)`,
+                          borderRadius: '0px',
+                          overflow: 'hidden',
+                          transition: 'background 0.2s ease, border 0.2s ease'
                         }}>
-                          {/* Mini Preview Thumbnail */}
+                          {/* Header Bar */}
                           <div style={{
-                            width: '72px',
-                            height: '44px',
-                            background: '#0d0d0d',
-                            border: '1px solid #333',
-                            borderRadius: '2px',
-                            overflow: 'hidden',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
+                            justifyContent: 'space-between',
+                            padding: '10px 14px',
+                            background: `rgba(32, 32, 32, ${Math.max(0.3, menuOpacity / 100)})`,
+                            borderBottom: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`
                           }}>
-                            <img 
-                              src={mainBgDataUrl || './faq.png'} 
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                              alt="Main Preview" 
-                            />
+                            <span style={{
+                              fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                              fontSize: '13px',
+                              color: '#ffffff',
+                              letterSpacing: '0.6px',
+                              textShadow: '1px 1px 0 #000'
+                            }}>
+                              {t('app.mainScreen')}
+                            </span>
+                            {mainBgDataUrl && (
+                              <span style={{
+                                fontSize: '10px',
+                                fontFamily: '"Inter", sans-serif',
+                                fontWeight: 600,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                padding: '2px 8px',
+                                borderRadius: '2px',
+                                background: 'rgba(46, 204, 113, 0.18)',
+                                border: '1px solid rgba(46, 204, 113, 0.45)',
+                                color: '#2ecc71'
+                              }}>
+                                {language === 'ru' ? 'Свой фон' : 'Custom'}
+                              </span>
+                            )}
                           </div>
 
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-                            <span style={{ fontSize: '12px', color: '#ddd', fontWeight: 600 }}>Главный экран</span>
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                              <label className="mc-btn-primary hover-scale-btn" style={{ cursor: 'pointer', padding: '4px 10px', fontSize: '11px', color: '#000', whiteSpace: 'nowrap' }}>
-                                {t('app.selectFile')}
-                                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => {
-                                      setMainBgDataUrl(url);
-                                      window.dispatchEvent(new Event('storage'));
-                                    });
-                                  }
-                                }} />
-                              </label>
-                              {mainBgDataUrl && (
-                                <button 
-                                  type="button" 
-                                  className="mc-btn-danger hover-scale-btn" 
-                                  style={{ padding: '4px 8px', fontSize: '11px' }} 
-                                  title="Сбросить фон" 
-                                  onClick={() => { 
-                                    localStorage.removeItem('mc_main_bg_data'); 
-                                    setMainBgDataUrl(null); 
-                                    window.dispatchEvent(new Event('storage'));
+                          {/* Body */}
+                          <div style={{
+                            padding: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '14px'
+                          }}>
+                            {/* 16:9 Thumbnail Frame */}
+                            <div style={{
+                              width: '108px',
+                              height: '61px',
+                              flexShrink: 0,
+                              background: `rgba(10, 10, 10, ${Math.max(0.3, menuOpacity / 100)})`,
+                              border: `2px solid rgba(0, 0, 0, ${Math.max(0.5, menuOpacity / 100)})`,
+                              boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.4)',
+                              overflow: 'hidden',
+                              position: 'relative',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <img 
+                                src={mainBgDataUrl || './faq.png'} 
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
+                                alt="Main Screen Preview" 
+                              />
+                            </div>
+
+                            {/* Actions */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '11px', color: '#8c8c8c', fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
+                                1920×1080 • PNG / JPG
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <label 
+                                  className="mc-btn-primary hover-scale-btn" 
+                                  style={{ 
+                                    cursor: 'pointer', 
+                                    padding: '6px 14px', 
+                                    fontSize: '11.5px', 
+                                    color: '#000', 
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                   }}
                                 >
-                                  Сбросить
-                                </button>
-                              )}
+                                  {t('app.selectFile')}
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    style={{ display: 'none' }} 
+                                    onChange={(e: any) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => {
+                                          setMainBgDataUrl(url);
+                                          window.dispatchEvent(new Event('storage'));
+                                        });
+                                      }
+                                    }} 
+                                  />
+                                </label>
+                                {mainBgDataUrl && (
+                                  <button 
+                                    type="button" 
+                                    className="mc-btn-danger hover-scale-btn" 
+                                    style={{ 
+                                      padding: '6px 10px', 
+                                      fontSize: '11px', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '5px' 
+                                    }} 
+                                    title={t('app.resetBg')} 
+                                    onClick={() => { 
+                                      localStorage.removeItem('mc_main_bg_data'); 
+                                      setMainBgDataUrl(null); 
+                                      window.dispatchEvent(new Event('storage'));
+                                    }}
+                                  >
+                                    <Trash size={12} />
+                                    <span>{t('app.reset')}</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
 
-                        {/* Secondary BG */}
+                        {/* Secondary Screen Frame */}
                         <div style={{
                           display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          background: '#141414',
-                          padding: '10px 14px',
-                          border: '1px solid #282828',
-                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
-                          minWidth: '270px'
+                          flexDirection: 'column',
+                          background: `rgba(20, 20, 20, ${Math.max(0.25, (menuOpacity / 100) * 0.95)})`,
+                          border: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`,
+                          boxShadow: `inset 1px 1px 0 rgba(255, 255, 255, ${0.08 * (menuOpacity / 100)}), inset -1px -1px 0 rgba(0, 0, 0, ${0.6 * (menuOpacity / 100)}), 0 4px 14px rgba(0, 0, 0, 0.35)`,
+                          borderRadius: '0px',
+                          overflow: 'hidden',
+                          transition: 'background 0.2s ease, border 0.2s ease'
                         }}>
-                          {/* Mini Preview Thumbnail */}
+                          {/* Header Bar */}
                           <div style={{
-                            width: '72px',
-                            height: '44px',
-                            background: '#0d0d0d',
-                            border: '1px solid #333',
-                            borderRadius: '2px',
-                            overflow: 'hidden',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0
+                            justifyContent: 'space-between',
+                            padding: '10px 14px',
+                            background: `rgba(32, 32, 32, ${Math.max(0.3, menuOpacity / 100)})`,
+                            borderBottom: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`
                           }}>
-                            <img 
-                              src={secBgDataUrl || './bg-minecraft.png'} 
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).src = './bg-minecraft.png'; }}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                              alt="Secondary Preview" 
-                            />
+                            <span style={{
+                              fontFamily: '"MinecraftTen", "Blocks", sans-serif',
+                              fontSize: '13px',
+                              color: '#ffffff',
+                              letterSpacing: '0.6px',
+                              textShadow: '1px 1px 0 #000'
+                            }}>
+                              {t('app.secondaryScreen')}
+                            </span>
+                            {secBgDataUrl && (
+                              <span style={{
+                                fontSize: '10px',
+                                fontFamily: '"Inter", sans-serif',
+                                fontWeight: 600,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                padding: '2px 8px',
+                                borderRadius: '2px',
+                                background: 'rgba(46, 204, 113, 0.18)',
+                                border: '1px solid rgba(46, 204, 113, 0.45)',
+                                color: '#2ecc71'
+                              }}>
+                                {language === 'ru' ? 'Свой фон' : 'Custom'}
+                              </span>
+                            )}
                           </div>
 
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-                            <span style={{ fontSize: '12px', color: '#ddd', fontWeight: 600 }}>Вторичный экран</span>
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                              <label className="mc-btn-primary hover-scale-btn" style={{ cursor: 'pointer', padding: '4px 10px', fontSize: '11px', color: '#000', whiteSpace: 'nowrap' }}>
-                                {t('app.selectFile')}
-                                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e: any) => {
-                                  if (e.target.files && e.target.files[0]) {
-                                    saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => {
-                                      setSecBgDataUrl(url);
-                                      window.dispatchEvent(new Event('storage'));
-                                    });
-                                  }
-                                }} />
-                              </label>
-                              {secBgDataUrl && (
-                                <button 
-                                  type="button" 
-                                  className="mc-btn-danger hover-scale-btn" 
-                                  style={{ padding: '4px 8px', fontSize: '11px' }} 
-                                  title="Сбросить фон" 
-                                  onClick={() => { 
-                                    localStorage.removeItem('mc_sec_bg_data'); 
-                                    setSecBgDataUrl(null); 
-                                    window.dispatchEvent(new Event('storage'));
+                          {/* Body */}
+                          <div style={{
+                            padding: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '14px'
+                          }}>
+                            {/* 16:9 Thumbnail Frame */}
+                            <div style={{
+                              width: '108px',
+                              height: '61px',
+                              flexShrink: 0,
+                              background: `rgba(10, 10, 10, ${Math.max(0.3, menuOpacity / 100)})`,
+                              border: `2px solid rgba(0, 0, 0, ${Math.max(0.5, menuOpacity / 100)})`,
+                              boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.4)',
+                              overflow: 'hidden',
+                              position: 'relative',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <img 
+                                src={secBgDataUrl || './bg-minecraft.png'} 
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = './bg-minecraft.png'; }}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
+                                alt="Secondary Screen Preview" 
+                              />
+                            </div>
+
+                            {/* Actions */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '11px', color: '#8c8c8c', fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
+                                1920×1080 • PNG / JPG
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <label 
+                                  className="mc-btn-primary hover-scale-btn" 
+                                  style={{ 
+                                    cursor: 'pointer', 
+                                    padding: '6px 14px', 
+                                    fontSize: '11.5px', 
+                                    color: '#000', 
+                                    whiteSpace: 'nowrap',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
                                   }}
                                 >
-                                  Сбросить
-                                </button>
-                              )}
+                                  {t('app.selectFile')}
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    style={{ display: 'none' }} 
+                                    onChange={(e: any) => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => {
+                                          setSecBgDataUrl(url);
+                                          window.dispatchEvent(new Event('storage'));
+                                        });
+                                      }
+                                    }} 
+                                  />
+                                </label>
+                                {secBgDataUrl && (
+                                  <button 
+                                    type="button" 
+                                    className="mc-btn-danger hover-scale-btn" 
+                                    style={{ 
+                                      padding: '6px 10px', 
+                                      fontSize: '11px', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '5px' 
+                                    }} 
+                                    title={t('app.resetBg')} 
+                                    onClick={() => { 
+                                      localStorage.removeItem('mc_sec_bg_data'); 
+                                      setSecBgDataUrl(null); 
+                                      window.dispatchEvent(new Event('storage'));
+                                    }}
+                                  >
+                                    <Trash size={12} />
+                                    <span>{t('app.reset')}</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1947,56 +2354,44 @@ export default function App() {
                     {/* Section: Кэш и настройки лаунчера */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Кэш и настройки лаунчера
+                        Кэш и управление данными
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                         <button 
+                          type="button"
                           className="mc-btn-primary hover-scale-btn" 
                           style={{ padding: '8px 16px', fontSize: '12px' }} 
-                          onClick={async () => {
-                            try {
-                              // @ts-ignore
-                              const res = await window.electronAPI.clearCache()
-                              if (res.status === 'success') {
-                                alert('Кэш лаунчера успешно очищен!')
-                              } else {
-                                alert('Ошибка очистки кэша: ' + res.error)
-                              }
-                            } catch(e: any) {
-                              alert('Ошибка: ' + e.message)
-                            }
-                          }}
+                          onClick={handleCheckUpdatesClick}
+                        >
+                          Проверить обновления
+                        </button>
+
+                        <button 
+                          type="button"
+                          className="mc-btn-primary hover-scale-btn" 
+                          style={{ padding: '8px 16px', fontSize: '12px' }} 
+                          onClick={handleClearCacheClick}
                         >
                           Очистить кэш лаунчера
                         </button>
-                        <span style={{ fontSize: '12px', color: '#888' }}>
-                          Удаляет временные файлы загрузки сборок, кеш OptiFine и текущей сессии.
-                        </span>
-                      </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
                         <button 
+                          type="button"
                           className="mc-btn-danger hover-scale-btn"
-                          onClick={async () => {
-                            if (confirm('Вы действительно хотите сбросить все настройки лаунчера?')) {
-                              try {
-                                // @ts-ignore
-                                await window.electronAPI?.resetSettings?.();
-                              } catch {}
-                              localStorage.clear();
-                              window.location.reload();
-                            }
-                          }}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: '12px'
-                          }}
+                          style={{ padding: '8px 16px', fontSize: '12px' }}
+                          onClick={handleCleanUninstallJavaClick}
+                        >
+                          Полное удаление Java
+                        </button>
+
+                        <button 
+                          type="button"
+                          className="mc-btn-danger hover-scale-btn"
+                          style={{ padding: '8px 16px', fontSize: '12px' }}
+                          onClick={handleResetSettingsClick}
                         >
                           Сбросить настройки лаунчера
                         </button>
-                        <span style={{ fontSize: '12px', color: '#888' }}>
-                          Сбрасывает все сохраненные параметры лаунчера и аккаунты.
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -2012,7 +2407,19 @@ export default function App() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                         <div style={{ flex: 1, maxWidth: '400px' }}>
-                          <input type="range" min="512" max={maxRam} step="512" className="ram-slider" value={ramValue} onChange={e => setRamValue(Number(e.target.value))} style={{ width: '100%' }} />
+                          <input 
+                            type="range" 
+                            min="512" 
+                            max={maxRam} 
+                            step="512" 
+                            className="ram-slider" 
+                            value={ramValue} 
+                            onChange={e => setRamValue(Number(e.target.value))} 
+                            style={{ 
+                              width: '100%',
+                              background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${Math.max(0, Math.min(100, Math.round(((ramValue - 512) / (maxRam - 512)) * 100)))}%, #0e0e0e ${Math.max(0, Math.min(100, Math.round(((ramValue - 512) / (maxRam - 512)) * 100)))}%, #0e0e0e 100%)`
+                            }} 
+                          />
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#888', marginTop: '4px' }}>
                             <span>512M</span>
                             <span>{Math.floor(maxRam * 0.25)}M</span>
@@ -2116,24 +2523,6 @@ export default function App() {
                     </div>
                   </div>
                 )}
-
-                {/* Bottom Save Action Bar */}
-                <div style={{ marginTop: 'auto', paddingTop: '25px', display: 'flex', justifyContent: 'flex-start', borderTop: '1px solid #282828' }}>
-                  <button 
-                    className="mc-btn-primary hover-scale-btn" 
-                    onClick={() => {
-                      saveSettings();
-                    }}
-                    style={{
-                      padding: '10px 24px',
-                      fontSize: '14px',
-                      fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                      letterSpacing: '1px'
-                    }}
-                  >
-                    {t("app.save")}
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -2241,7 +2630,7 @@ export default function App() {
                           onClick={() => { setSelectedAuthMethod('elyby'); setAuthType('elyby'); setAuthError(''); }}
                           style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
-                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://ely.by/favicon.ico" width={22} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = './elyby.svg'; }} /></div>
+                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://ely.by/favicon.ico" width={22} /></div>
                           <div className="mc-acc-text">
                             <span className="subtitle" style={{ fontSize: '11px' }}>{t("app.licenseTitle")}</span>
                             <span className="title" style={{ fontSize: '14px' }}>{t("app.elybyAccount")}</span>
@@ -2305,7 +2694,7 @@ export default function App() {
                         </button>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = './elyby.svg'; }} />}
+                          {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} />}
                           {selectedAuthMethod === 'pgsync' && <img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={20} />}
                           {selectedAuthMethod === 'offline' && <img src="https://minotar.net/helm/Steve/20.png" width={20} style={{ imageRendering: 'pixelated' }} />}
                           <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '15px', color: '#fff', textTransform: 'uppercase' }}>
@@ -2402,40 +2791,61 @@ export default function App() {
 
       {/* Crash Modal */}
       {crashLog !== null && (
-        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 9999 }} onClick={() => setCrashLog(null)}>
-          <div className="modal-box" style={{ background: '#111', border: '3px solid #000', boxShadow: 'inset 0 3px 0 0 #333, inset 3px 0 0 0 #222, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #0a0a0a', padding: '30px', width: '800px', maxWidth: '90vw' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <h2 style={{ color: '#e74c3c', fontSize: '18px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>Игра Крашнулась!</h2>
-                <span style={{ color: '#888', fontSize: '12px', marginTop: '5px' }}>Лог ошибки запуска</span>
+        <div className="mc-dialog-overlay" onClick={() => setCrashLog(null)}>
+          <div className="mc-dialog-window" style={{ width: '800px', maxWidth: '92vw' }} onClick={e => e.stopPropagation()}>
+            <div className="mc-dialog-header">
+              <div className="mc-dialog-title danger">
+                <svg viewBox="0 0 16 16" width="18" height="18" style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges', flexShrink: 0 }}>
+                  <rect x="2" y="2" width="12" height="12" fill="#5a0909"/>
+                  <rect x="3" y="3" width="10" height="10" fill="#e74c3c"/>
+                  <rect x="7" y="5" width="2" height="4" fill="#ffffff"/>
+                  <rect x="7" y="10" width="2" height="2" fill="#ffffff"/>
+                </svg>
+                <span>ИГРА КРАШНУЛАСЬ!</span>
               </div>
               <button
                 onClick={() => setCrashLog(null)}
-                className="mc-btn-primary"
-                style={{ padding: '6px 10px', background: '#222', border: 'none', color: '#aaa', display: 'flex', alignItems: 'center', cursor: 'pointer', alignSelf: 'flex-start' }}
+                className="mc-close-cube-btn"
+                title="Закрыть"
               >
-                <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '14px', lineHeight: '14px', textTransform: 'lowercase' }}>x</span>
+                <CubicCrossIcon />
               </button>
             </div>
             
-            <div style={{ 
-              background: '#000', 
-              color: '#0f0', 
-              fontFamily: 'monospace', 
-              fontSize: '12px', 
-              padding: '10px', 
-              height: '400px', 
-              overflowY: 'auto',
-              border: '1px solid #333',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all',
-              userSelect: 'text'
-            }}>
-              {crashLog}
+            <div className="mc-dialog-content" style={{ padding: '12px' }}>
+              <div style={{ color: '#888', fontSize: '11px', marginBottom: '8px', fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase' }}>
+                Лог ошибки запуска Minecraft:
+              </div>
+              <div style={{ 
+                background: '#0a0a0a', 
+                color: '#2ecc71', 
+                fontFamily: 'monospace', 
+                fontSize: '12px', 
+                padding: '12px', 
+                height: '350px', 
+                overflowY: 'auto',
+                border: '2px solid #000',
+                boxShadow: 'inset 2px 2px 0 0 #000',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                userSelect: 'text'
+              }}>
+                {crashLog}
+              </div>
             </div>
             
-            <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="mc-btn-primary mc-btn-yellow" onClick={() => setCrashLog(null)}>
+            <div className="mc-dialog-footer">
+              <button 
+                type="button"
+                className="mc-cube-btn neutral"
+                onClick={() => {
+                  navigator.clipboard.writeText(crashLog);
+                  setCustomModal({ isOpen: true, title: 'Уведомление', message: 'Лог ошибки скопирован в буфер обмена!', isAlert: true, confirmText: 'Понятно' });
+                }}
+              >
+                Скопировать лог
+              </button>
+              <button type="button" className="mc-cube-btn gold" onClick={() => setCrashLog(null)}>
                 Закрыть
               </button>
             </div>
@@ -2444,69 +2854,85 @@ export default function App() {
       )}
 
       {showPlayEditModal && (
-        <div className="modal-overlay" onClick={() => setShowPlayEditModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px', maxHeight: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center' }}>
-              <span style={{ fontSize: '18px', color: 'white', fontFamily: '"Blocks", sans-serif' }}>Настройки сборки</span>
-              <button onClick={() => setShowPlayEditModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '18px', lineHeight: '18px' }}>x</span>
+        <div className="mc-dialog-overlay" onClick={() => setShowPlayEditModal(false)}>
+          <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '460px', maxWidth: '92vw' }}>
+            <div className="mc-dialog-header">
+              <div className="mc-dialog-title warning">
+                <span>НАСТРОЙКИ СБОРКИ</span>
+              </div>
+              <button 
+                className="mc-close-cube-btn" 
+                title="Закрыть" 
+                onClick={() => setShowPlayEditModal(false)}
+              >
+                <CubicCrossIcon />
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ color: '#aaa', fontSize: '12px', fontFamily: '"Blocks", sans-serif' }}>Название</label>
-                <input type="text" className="mc-input" value={editPlayName} onChange={e => setEditPlayName(e.target.value)} style={{ fontFamily: '"Blocks", sans-serif' }} />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ color: '#aaa', fontSize: '12px', fontFamily: '"Blocks", sans-serif' }}>Иконка</label>
-                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                  <label
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      // @ts-ignore
-                      const dataUrl = await window.electronAPI.selectIconFile();
-                      if (dataUrl) setEditPlayIcon(dataUrl);
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #444', cursor: 'pointer', background: '#222' }}
-                  >
-                    <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
+            <div className="mc-dialog-content">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    Название сборки
                   </label>
-                  {PRESET_ICONS.map(icon => (
-                    <img
-                      key={icon}
-                      src={icon}
-                      width={32}
-                      height={32}
-                      style={{
-                        cursor: 'pointer',
-                        border: editPlayIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
-                        padding: '2px',
-                        objectFit: 'cover'
+                  <input type="text" className="mc-input" value={editPlayName} onChange={e => setEditPlayName(e.target.value)} style={{ fontFamily: '"Blocks", sans-serif' }} />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    Иконка
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <label
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        // @ts-ignore
+                        const dataUrl = await window.electronAPI.selectIconFile();
+                        if (dataUrl) setEditPlayIcon(dataUrl);
                       }}
-                      onClick={() => setEditPlayIcon(icon)}
-                    />
-                  ))}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
+                      title="Выбрать свой файл"
+                    >
+                      <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
+                    </label>
+                    {PRESET_ICONS.map(icon => (
+                      <img
+                        key={icon}
+                        src={icon}
+                        width={32}
+                        height={32}
+                        style={{
+                          cursor: 'pointer',
+                          border: editPlayIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
+                          padding: '2px',
+                          background: editPlayIcon === icon ? 'rgba(241,196,15,0.15)' : 'transparent',
+                          objectFit: 'cover'
+                        }}
+                        onClick={() => setEditPlayIcon(icon)}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button
-                  className="mc-btn-primary"
-                  onClick={() => {
-                    if (confirmPlayDelete) {
-                      handleDeletePlayEdit();
-                    } else {
-                      setConfirmPlayDelete(true);
-                    }
-                  }}
-                  style={{ flex: 1, padding: '10px', background: '#e74c3c', borderColor: '#c0392b', color: 'white' }}
-                >
-                  {confirmPlayDelete ? 'Уверены?' : 'Удалить'}
-                </button>
-                <button className="mc-btn-primary" onClick={handleSavePlayEdit} style={{ flex: 1, padding: '10px' }}>Сохранить</button>
-              </div>
+            <div className="mc-dialog-footer" style={{ justifyContent: 'space-between' }}>
+              <button
+                type="button"
+                className="mc-cube-btn danger"
+                onClick={() => {
+                  if (confirmPlayDelete) {
+                    handleDeletePlayEdit();
+                  } else {
+                    setConfirmPlayDelete(true);
+                  }
+                }}
+              >
+                {confirmPlayDelete ? 'Точно удалить?' : 'Удалить'}
+              </button>
+              <button type="button" className="mc-cube-btn gold" onClick={handleSavePlayEdit}>
+                Сохранить
+              </button>
             </div>
           </div>
         </div>
@@ -2514,115 +2940,326 @@ export default function App() {
 
       {/* Java Manager Modal */}
       {showJavaManagerModal && (
-        <div className="modal-overlay" onClick={() => setShowJavaManagerModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1c1c1c', border: '2px solid #2a2a2a', padding: '24px', width: '580px', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '18px', color: '#f1c40f', fontFamily: '"MinecraftTen", "Blocks", sans-serif' }}>☕ Компоненты Java Runtime</span>
-              <button onClick={() => setShowJavaManagerModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+        <div className="mc-dialog-overlay" onClick={() => setShowJavaManagerModal(false)}>
+          <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '620px', maxWidth: '94vw', maxHeight: '90vh' }}>
+            <div className="mc-dialog-header">
+              <div className="mc-dialog-title warning">
+                <span>☕ КОМПОНЕНТЫ JAVA RUNTIME</span>
+              </div>
+              <button 
+                className="mc-close-cube-btn" 
+                title="Закрыть" 
+                onClick={() => setShowJavaManagerModal(false)}
+              >
+                <CubicCrossIcon />
+              </button>
             </div>
 
-            <p style={{ margin: 0, fontSize: '12px', color: '#bbb', lineHeight: '1.5' }}>
-              Лаунчер автоматически выбирает нужную версию Java для каждой версии игры. Вы можете установить недостающие версии вручную:
-            </p>
+            <div className="mc-dialog-content" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12.5px', color: '#ccc', lineHeight: '1.5' }}>
+                Лаунчер автоматически выбирает нужную версию Java для каждой версии игры. Вы можете установить недостающие версии вручную:
+              </p>
 
-            {javaError && (
-              <div style={{ padding: '8px 12px', backgroundColor: '#4a1515', border: '1px solid #e74c3c', color: '#ffb3b3', fontSize: '12px' }}>
-                {javaError}
-              </div>
-            )}
+              {javaError && (
+                <div style={{ padding: '8px 12px', backgroundColor: '#3b0d0d', border: '2px solid #b71c1c', color: '#ffb3b3', fontSize: '12px', marginBottom: '12px' }}>
+                  {javaError}
+                </div>
+              )}
 
-            {[
-              {
-                version: '8' as const,
-                title: 'Java 8 (JRE 8)',
-                desc: 'Для старых и классических версий (1.0 — 1.16.5, Alpha, Beta, Classic)',
-                badge: '<= 1.16.5'
-              },
-              {
-                version: '17' as const,
-                title: 'Java 17 (JRE 17)',
-                desc: 'Для версий Minecraft 1.17 — 1.20.4',
-                badge: '1.17 — 1.20.4'
-              },
-              {
-                version: '21' as const,
-                title: 'Java 21 (JRE 21)',
-                desc: 'Для современных версий игры (1.20.5 — 1.21+)',
-                badge: '1.20.5+'
-              }
-            ].map(item => {
-              const isInst = !!installedJavas[item.version]?.installed
-              const isThisInstalling = installingJava === item.version
-              const pct = isThisInstalling ? (javaProgress?.progress || 10) : 0
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {[
+                  {
+                    version: '8' as const,
+                    title: 'Java 8 (JRE 8)',
+                    desc: 'Для старых и классических версий (1.0 — 1.16.5, Alpha, Beta, Classic)',
+                    badge: '<= 1.16.5'
+                  },
+                  {
+                    version: '17' as const,
+                    title: 'Java 17 (JRE 17)',
+                    desc: 'Для версий Minecraft 1.17 — 1.20.4',
+                    badge: '1.17 — 1.20.4'
+                  },
+                  {
+                    version: '21' as const,
+                    title: 'Java 21 (JRE 21)',
+                    desc: 'Для современных версий игры (1.20.5 — 1.21+)',
+                    badge: '1.20.5+'
+                  }
+                ].map(item => {
+                  const isInst = !!installedJavas[item.version]?.installed
+                  const isThisInstalling = installingJava === item.version
+                  const pct = isThisInstalling ? (javaProgress?.progress || 10) : 0
 
-              return (
-                <div key={item.version} style={{
-                  backgroundColor: '#141414', border: `1px solid ${isInst ? '#27ae60' : '#333'}`,
-                  padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <strong style={{ color: '#fff', fontSize: '14px' }}>{item.title}</strong>
-                        <span style={{ fontSize: '10px', background: '#282828', color: '#aaa', padding: '2px 6px', borderRadius: '3px' }}>{item.badge}</span>
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.desc}</div>
-                    </div>
-
-                    <div>
-                      {isInst ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2ecc71', fontSize: '12px', fontWeight: 'bold' }}>
-                          <span>✓</span> Установлена
+                  return (
+                    <div key={item.version} style={{
+                      backgroundColor: '#181818', 
+                      border: '2px solid #000',
+                      boxShadow: isInst ? 'inset 0 0 0 1px #27ae60' : 'inset 1px 1px 0 #282828',
+                      padding: '12px 16px', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '8px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <strong style={{ color: '#fff', fontSize: '13.5px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', letterSpacing: '0.5px' }}>{item.title}</strong>
+                            <span style={{ fontSize: '10px', background: '#252525', color: 'var(--pg-yellow)', padding: '2px 6px', border: '1px solid #333' }}>{item.badge}</span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.desc}</div>
                         </div>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={!!installingJava}
-                          onClick={() => handleInstallJava(item.version)}
-                          className="mc-btn-primary"
-                          style={{ padding: '6px 14px', fontSize: '11px', whiteSpace: 'nowrap', cursor: 'pointer' }}
-                        >
-                          {isThisInstalling ? 'Установка...' : 'Установить'}
-                        </button>
+
+                        <div>
+                          {isInst ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2ecc71', fontSize: '12px', fontWeight: 'bold' }}>
+                              <span>✓</span> Установлена
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!!installingJava}
+                              onClick={() => handleInstallJava(item.version)}
+                              className="mc-cube-btn gold"
+                              style={{ padding: '6px 14px', fontSize: '11px' }}
+                            >
+                              {isThisInstalling ? 'Установка...' : 'Установить'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isThisInstalling && (
+                        <div style={{ marginTop: '4px' }}>
+                          <div style={{ width: '100%', height: '12px', backgroundColor: '#000', border: '1px solid #333', overflow: 'hidden' }}>
+                            <div style={{
+                              height: '100%', width: `${pct}%`,
+                              background: 'linear-gradient(to right, #d4a90a, #f1c40f)',
+                              transition: 'width 0.2s'
+                            }}></div>
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'var(--pg-yellow)', marginTop: '4px', fontFamily: 'monospace' }}>
+                            {javaProgress?.status || 'Загрузка...'}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </div>
+                  )
+                })}
+              </div>
+            </div>
 
-                  {isThisInstalling && (
-                    <div style={{ marginTop: '4px' }}>
-                      <div style={{ width: '100%', height: '12px', backgroundColor: '#000', border: '1px solid #333', overflow: 'hidden' }}>
-                        <div style={{
-                          height: '100%', width: `${pct}%`,
-                          background: 'linear-gradient(to right, #f39c12, #f1c40f)',
-                          transition: 'width 0.2s'
-                        }}></div>
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#f1c40f', marginTop: '4px', fontFamily: 'monospace' }}>
-                        {javaProgress?.status || 'Загрузка...'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-              <button
-                type="button"
-                disabled={!!installingJava || Object.values(installedJavas).every(j => j.installed)}
-                onClick={handleInstallAllRecommended}
-                className="mc-btn-primary"
-                style={{ padding: '8px 16px', fontSize: '12px' }}
-              >
-                Установить все
-              </button>
+            <div className="mc-dialog-footer" style={{ justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  disabled={!!installingJava || Object.values(installedJavas).every(j => j.installed)}
+                  onClick={handleInstallAllRecommended}
+                  className="mc-cube-btn gold"
+                >
+                  Установить все
+                </button>
+                <button
+                  type="button"
+                  disabled={!!installingJava}
+                  onClick={handleCleanUninstallJavaClick}
+                  className="mc-cube-btn danger"
+                >
+                  Удалить Java
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowJavaManagerModal(false)}
-                className="mc-btn-primary"
-                style={{ padding: '8px 24px', fontSize: '12px' }}
+                className="mc-cube-btn neutral"
               >
                 Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Action Dialog Modal (Minecraft Authentic GUI Style) */}
+      {customModal.isOpen && (
+        <div 
+          className="mc-dialog-overlay" 
+          onClick={() => { if (!customModal.isLoading) setCustomModal(prev => ({ ...prev, isOpen: false })) }}
+        >
+          <div 
+            className="mc-dialog-window" 
+            onClick={e => e.stopPropagation()} 
+          >
+            {/* Header */}
+            <div className="mc-dialog-header">
+              <div className={`mc-dialog-title ${customModal.isDanger ? 'danger' : 'warning'}`}>
+                {customModal.isDanger ? (
+                  <svg viewBox="0 0 16 16" width="18" height="18" style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges', flexShrink: 0 }}>
+                    <rect x="2" y="2" width="12" height="12" fill="#5a0909"/>
+                    <rect x="3" y="3" width="10" height="10" fill="#e74c3c"/>
+                    <rect x="7" y="5" width="2" height="4" fill="#ffffff"/>
+                    <rect x="7" y="10" width="2" height="2" fill="#ffffff"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" width="18" height="18" style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges', flexShrink: 0 }}>
+                    <rect x="2" y="2" width="12" height="12" fill="#3b2800"/>
+                    <rect x="3" y="3" width="10" height="10" fill="#f1c40f"/>
+                    <rect x="7" y="5" width="2" height="4" fill="#000000"/>
+                    <rect x="7" y="10" width="2" height="2" fill="#000000"/>
+                  </svg>
+                )}
+                <span>{customModal.title.toUpperCase()}</span>
+              </div>
+              {!customModal.isLoading && (
+                <button 
+                  className="mc-close-cube-btn"
+                  title="Закрыть"
+                  onClick={() => setCustomModal(prev => ({ ...prev, isOpen: false }))}
+                >
+                  <CubicCrossIcon />
+                </button>
+              )}
+            </div>
+
+            {/* Inset Content Box */}
+            <div className="mc-dialog-content">
+              {customModal.message}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="mc-dialog-footer">
+              {!customModal.isAlert && (
+                <button
+                  type="button"
+                  disabled={customModal.isLoading}
+                  onClick={() => {
+                    if (customModal.onCancel) customModal.onCancel();
+                    setCustomModal(prev => ({ ...prev, isOpen: false }));
+                  }}
+                  className="mc-cube-btn neutral"
+                >
+                  {customModal.cancelText || 'Отмена'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={customModal.isLoading}
+                onClick={async () => {
+                  if (customModal.onConfirm) {
+                    setCustomModal(prev => ({ ...prev, isLoading: true }));
+                    try {
+                      await customModal.onConfirm();
+                    } finally {
+                      setCustomModal(prev => ({ ...prev, isLoading: false }));
+                    }
+                  } else {
+                    setCustomModal(prev => ({ ...prev, isOpen: false }));
+                  }
+                }}
+                className={`mc-cube-btn ${customModal.isDanger ? 'danger' : 'gold'}`}
+              >
+                {customModal.isLoading ? 'Выполнение...' : (customModal.confirmText || (customModal.isAlert ? 'Понятно' : 'Подтвердить'))}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Minecraft Launcher Update Modal */}
+      {showUpdateModal && updateInfo.hasUpdate && (
+        <div 
+          className="mc-update-overlay"
+          onClick={() => {
+            if (!isUpdating) setShowUpdateModal(false)
+          }}
+        >
+          <div 
+            className="mc-update-window"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="mc-update-header">
+              <div className="mc-update-title">
+                ОБНОВЛЕНИЕ ЛАУНЧЕРА
+              </div>
+              <button 
+                type="button" 
+                className="mc-close-cube-btn"
+                disabled={isUpdating}
+                onClick={() => setShowUpdateModal(false)}
+                title="Закрыть"
+              >
+                <CubicCrossIcon />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="mc-update-content">
+              <div className="mc-update-version">
+                Доступна версия <span className="mc-update-version-num">v{updateInfo.version || pkg.version}</span>.
+              </div>
+
+              <div className="mc-update-section-title">
+                ИСПРАВЛЕНО
+              </div>
+
+              <div className="mc-update-changelog">
+                {updateInfo.body ? (
+                  updateInfo.body
+                    .split('\n')
+                    .map(line => line.trim())
+                    .filter(line => line.length > 0 && !line.startsWith('#'))
+                    .map(line => line.replace(/^[-*]\s*/, ''))
+                    .slice(0, 8)
+                    .join('\n') || 'Загрузка некоторых сборок и запуск установок с fabric.'
+                ) : (
+                  'Загрузка некоторых сборок и запуск установок с fabric.'
+                )}
+              </div>
+
+              {isUpdating && (
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ 
+                    height: '14px', 
+                    background: '#0a0a0a', 
+                    border: '2px solid #000', 
+                    boxShadow: 'inset 1px 1px 0 #222',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      height: '100%',
+                      background: 'linear-gradient(to right, #d4a90a, #f1c40f)',
+                      width: `${activeDownloads.find(d => d.id === 'app_update')?.progress || 0}%`,
+                      transition: 'width 0.2s'
+                    }} />
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--pg-yellow)', marginTop: '6px', fontFamily: 'monospace' }}>
+                    {activeDownloads.find(d => d.id === 'app_update')?.text || 'Загрузка обновления...'}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="mc-update-footer">
+              <button 
+                type="button" 
+                disabled={isUpdating}
+                onClick={handleUpdate}
+                className="mc-cube-btn gold"
+              >
+                {isUpdating ? 'Загрузка...' : 'Обновить'}
+              </button>
+
+              <button 
+                type="button" 
+                disabled={isUpdating}
+                onClick={() => setShowUpdateModal(false)}
+                className="mc-cube-btn neutral"
+              >
+                Позже
               </button>
             </div>
           </div>

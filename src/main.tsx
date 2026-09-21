@@ -37,13 +37,19 @@ function MainWrapper() {
   if (isInstaller === null) return <div style={{ backgroundColor: '#1e222d', width: '100vw', height: '100vh' }} />
 
   if (isInstaller) {
-    return <InstallerApp />
+    return (
+      <div className="launcher-appear-wrap">
+        <InstallerApp />
+      </div>
+    )
   }
 
   return (
     <Suspense fallback={<div style={{ backgroundColor: '#1e222d', width: '100vw', height: '100vh' }} />}>
       <LanguageProvider>
-        <App />
+        <div className="launcher-appear-wrap">
+          <App />
+        </div>
       </LanguageProvider>
     </Suspense>
   )

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog, session } from 'electron'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import { createRequire } from 'module'
@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import crypto from 'node:crypto'
 import https from 'node:https'
-import { execFile, execSync, spawnSync, execFileSync } from 'node:child_process'
+import { execFile, execSync, spawnSync, execFileSync, spawn } from 'node:child_process'
 import extract from 'extract-zip'
 // @ts-ignore
 import { Client } from 'minecraft-launcher-core'
@@ -17,27 +17,114 @@ import * as cheerio from 'cheerio'
 
 const require = createRequire(import.meta.url)
 
-// --- Patch MCLC for speed --- //
+// --- Patch MCLC for speed and robustness --- //
 if (!process.env.PORTABLE_EXECUTABLE_DIR) {
   try {
     const mclcHandlerPath = require.resolve('minecraft-launcher-core/components/handler.js')
     let handlerCode = fs.readFileSync(mclcHandlerPath, 'utf8')
+    let changed = false
+
     // Fix freezing asset check by using async stat instead of sync stat or checksum
     if (handlerCode.includes('!await this.checkSum(hash, path.join(subAsset, hash))')) {
       handlerCode = handlerCode.replace(
         '!await this.checkSum(hash, path.join(subAsset, hash))',
         '(await require("fs").promises.stat(path.join(subAsset, hash)).then(s => s.size === 0).catch(() => true))'
       )
-      
-      // Fix isModernForge for Minecraft >= 2.0 or 26.0 (where the '1.' prefix is dropped)
-      if (handlerCode.includes("json.inheritsFrom.split('.')[1] >= 12")) {
-        handlerCode = handlerCode.split("json.inheritsFrom.split('.')[1] >= 12").join(
-          "(parseInt(json.inheritsFrom.split('.')[0]) > 1 || parseInt(json.inheritsFrom.split('.')[1]) >= 12)"
-        )
-      }
+      changed = true
+    }
+    
+    // Fix isModernForge for Minecraft >= 2.0 or 26.0 (where the '1.' prefix is dropped)
+    if (handlerCode.includes("json.inheritsFrom.split('.')[1] >= 12")) {
+      handlerCode = handlerCode.split("json.inheritsFrom.split('.')[1] >= 12").join(
+        "(parseInt(json.inheritsFrom.split('.')[0]) > 1 || parseInt(json.inheritsFrom.split('.')[1]) >= 12)"
+      )
+      changed = true
+    }
 
+    // Isolate Forge cache per installer version so different Forge builds don't overwrite arguments
+    if (handlerCode.includes("path.join(this.options.root, 'forge', `${this.version.id}`, 'version.json')")) {
+      handlerCode = handlerCode.replace(
+        "path.join(this.options.root, 'forge', `${this.version.id}`, 'version.json')",
+        "path.join(this.options.root, 'forge', this.options.forge ? require('path').basename(this.options.forge).replace(/\\.jar$/, '') : `${this.version.id}`, 'version.json')"
+      )
+      changed = true
+    }
+    if (handlerCode.includes("path.join(this.options.root, 'forge', this.version.id)")) {
+      handlerCode = handlerCode.replace(
+        "path.join(this.options.root, 'forge', this.version.id)",
+        "require('path').dirname(versionPath)"
+      )
+      changed = true
+    }
+    // Concurrency-limited asset downloading worker queue (prevents EMFILE, freezing, and infinite stalls)
+    if (handlerCode.includes('await Promise.all(Object.keys(index.objects).map(async asset => {')) {
+      const oldAssetBlock = `    await Promise.all(Object.keys(index.objects).map(async asset => {
+      const hash = index.objects[asset].hash
+      const subhash = hash.substring(0, 2)
+      const subAsset = path.join(assetDirectory, 'objects', subhash)
+
+      if (!fs.existsSync(path.join(subAsset, hash)) || (await require("fs").promises.stat(path.join(subAsset, hash)).then(s => s.size === 0).catch(() => true))) {
+        await this.downloadAsync(\`\${this.options.overrides.url.resource}/\${subhash}/\${hash}\`, subAsset, hash, true, 'assets')
+      }
+      counter++
+      this.client.emit('progress', {
+        type: 'assets',
+        task: counter,
+        total: Object.keys(index.objects).length
+      })
+    }))`
+
+      const newAssetBlock = `    const assets = Object.keys(index.objects)
+    const totalAssets = assets.length
+    counter = 0
+    this.client.emit('progress', {
+      type: 'assets',
+      task: 0,
+      total: totalAssets
+    })
+    const concurrency = Math.min(24, Math.max(8, this.options.overrides.maxSockets || 16))
+    let assetIdx = 0
+    const workers = new Array(concurrency).fill(null).map(async () => {
+      while (assetIdx < assets.length) {
+        const asset = assets[assetIdx++]
+        const hash = index.objects[asset].hash
+        const subhash = hash.substring(0, 2)
+        const subAsset = path.join(assetDirectory, 'objects', subhash)
+        const targetFile = path.join(subAsset, hash)
+        let needsDownload = true
+        try {
+          const st = await require("fs").promises.stat(targetFile)
+          if (st.size > 0) needsDownload = false
+        } catch {}
+        if (needsDownload) {
+          await this.downloadAsync(\`\${this.options.overrides.url.resource}/\${subhash}/\${hash}\`, subAsset, hash, true, 'assets')
+        }
+        counter++
+        this.client.emit('progress', {
+          type: 'assets',
+          task: counter,
+          total: totalAssets
+        })
+      }
+    })
+    await Promise.all(workers)`
+
+      handlerCode = handlerCode.replace(oldAssetBlock, newAssetBlock)
+      changed = true
+    }
+
+    // Clean up empty file on request error before retrying
+    if (handlerCode.includes("Retrying... ${retry}`)\n        if (retry) await this.downloadAsync(url, directory, name, false, type)")) {
+      handlerCode = handlerCode.replace(
+        "Retrying... ${retry}`)\n        if (retry) await this.downloadAsync(url, directory, name, false, type)",
+        "Retrying... ${retry}`)\n        try { if (fs.existsSync(path.join(directory, name))) fs.unlinkSync(path.join(directory, name)) } catch {}\n        if (retry) await this.downloadAsync(url, directory, name, false, type)"
+      )
+      changed = true
+    }
+
+    if (changed) {
       fs.writeFileSync(mclcHandlerPath, handlerCode)
-      console.log('MCLC handler patched successfully for fast assets check and modern forge!')
+      console.log('MCLC handler patched successfully!')
     }
   } catch (e) {
     console.log('Failed to patch MCLC:', e)
@@ -64,6 +151,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 const launcher = new Client()
+let activeMinecraftProcess: any = null
 
 function createWindow() {
   const isInstaller = !!process.env.PORTABLE_EXECUTABLE_DIR;
@@ -81,6 +169,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false,
       additionalArguments: [isInstaller ? '--is-installer' : '--not-installer']
     },
     frame: false
@@ -107,6 +196,17 @@ app.on('window-all-closed', () => {
 })
 
 app.whenReady().then(() => {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Access-Control-Allow-Origin': ['*'],
+        'Access-Control-Allow-Headers': ['*'],
+        'Access-Control-Allow-Methods': ['GET, POST, OPTIONS']
+      }
+    })
+  })
+
   if (!process.env.PORTABLE_EXECUTABLE_DIR) {
     saveInstallPath(path.dirname(process.execPath));
   }
@@ -167,6 +267,9 @@ ipcMain.handle('reset-settings', () => {
   try {
     if (fs.existsSync(settingsFile)) {
       fs.unlinkSync(settingsFile)
+    }
+    if (fs.existsSync(accountsFile)) {
+      fs.unlinkSync(accountsFile)
     }
     return { status: 'ok' }
   } catch (e: any) {
@@ -459,36 +562,92 @@ ipcMain.handle('open-folder', () => {
 
 ipcMain.handle('clear-cache', async () => {
   try {
-    const tempDir = app.getPath('temp')
-    // Clear temp files matching our pattern
-    const files = fs.readdirSync(tempDir)
-    for (const f of files) {
-      if (f.startsWith('mrpack_')) {
-        fs.rmSync(path.join(tempDir, f), { recursive: true, force: true })
+    // 1. Clear Electron session caches and storage
+    try {
+      if (session.defaultSession) {
+        await session.defaultSession.clearCache()
+        await session.defaultSession.clearStorageData({
+          storages: ['cachestorage', 'shadercache', 'serviceworkers', 'indexdb']
+        })
       }
+      if (win?.webContents?.session && win.webContents.session !== session.defaultSession) {
+        await win.webContents.session.clearCache()
+        await win.webContents.session.clearStorageData({
+          storages: ['cachestorage', 'shadercache', 'serviceworkers', 'indexdb']
+        })
+      }
+    } catch (err) {
+      console.warn('Failed clearing session cache:', err)
     }
-    // Clear electron session cache
-    await win?.webContents.session.clearCache()
 
-    // Delete minecraft downloaded data
+    // 2. Clear temp files matching our patterns
+    const tempDir = app.getPath('temp')
+    try {
+      if (fs.existsSync(tempDir)) {
+        const files = fs.readdirSync(tempDir)
+        for (const f of files) {
+          if (/^(mrpack_|Pagrysha_|pagrysha-|optifine)/i.test(f)) {
+            try {
+              const p = path.join(tempDir, f)
+              fs.rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+            } catch {}
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed cleaning temp files:', err)
+    }
+
+    // 3. Delete installer caches, launcher_cache and temporary data in rootPath
     const foldersToClear = [
-      'versions',
-      'assets',
-      'libraries',
       'forge-installers',
       'fabric-installers',
       'quilt-installers',
       'neoforge-installers',
       'optifine-installers',
-      'mods' // global mods folder
+      'cache',
+      'launcher_cache',
+      'temp',
+      '.cache'
     ]
 
     for (const folder of foldersToClear) {
       const folderPath = path.join(rootPath, folder)
-      if (fs.existsSync(folderPath)) {
-        fs.rmSync(folderPath, { recursive: true, force: true })
+      try {
+        if (fs.existsSync(folderPath)) {
+          fs.rmSync(folderPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        }
+      } catch (err) {
+        console.warn(`Failed clearing folder ${folderPath}:`, err)
       }
     }
+
+    // 4. Also clean any loose temporary/part/download files in rootPath
+    try {
+      if (fs.existsSync(rootPath)) {
+        const rootFiles = fs.readdirSync(rootPath)
+        for (const file of rootFiles) {
+          if (/\.(tmp|download|part)$/i.test(file)) {
+            try {
+              fs.unlinkSync(path.join(rootPath, file))
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+
+    // 5. Clean launcher logs in userData
+    const userData = app.getPath('userData')
+    try {
+      const logFiles = ['minecraft_launcher.log', 'skin_debug.log', 'authlib-injector.log']
+      for (const lf of logFiles) {
+        const lp = path.join(userData, lf)
+        if (fs.existsSync(lp)) {
+          try { fs.unlinkSync(lp) } catch {}
+        }
+      }
+    } catch {}
+
     return { status: 'success' }
   } catch(e: any) {
     return { status: 'error', error: e.message }
@@ -525,6 +684,165 @@ ipcMain.handle('read-local-image', async (_, filePath: string) => {
     return null
   }
 })
+
+ipcMain.handle('get-elyby-skin', async (_, username: string) => {
+  const logFile = path.join(process.env.APP_ROOT || 'd:/DRDM/mc-launcher', 'skin_debug.log')
+  try {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC get-elyby-skin] Querying for user: ${username}\n`)
+  } catch {}
+
+  try {
+    const texRes = await fetch(`https://skinsystem.ely.by/textures/${encodeURIComponent(username)}`)
+    if (texRes.ok && texRes.status === 200) {
+      const texData: any = await texRes.json()
+      let skinBase64: string | null = null
+      let capeBase64: string | null = null
+      let model: 'slim' | 'default' = texData?.SKIN?.metadata?.model === 'slim' ? 'slim' : 'default'
+
+      if (texData?.SKIN?.url) {
+        const skinUrl = texData.SKIN.url.replace(/^http:\/\//, 'https://')
+        const r = await fetch(skinUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'image/png,image/*;q=0.8'
+          }
+        })
+        if (r.ok) {
+          const buf = await r.arrayBuffer()
+          skinBase64 = `data:image/png;base64,${Buffer.from(buf).toString('base64')}`
+        }
+      }
+
+      if (texData?.CAPE?.url) {
+        const capeUrl = texData.CAPE.url.replace(/^http:\/\//, 'https://')
+        const r = await fetch(capeUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'image/png,image/*;q=0.8'
+          }
+        })
+        if (r.ok) {
+          const buf = await r.arrayBuffer()
+          capeBase64 = `data:image/png;base64,${Buffer.from(buf).toString('base64')}`
+        }
+      }
+
+      if (skinBase64) {
+        try {
+          fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC get-elyby-skin] SUCCESS (${skinBase64.length} chars, model: ${model})\n`)
+        } catch {}
+        return { skinBase64, capeBase64, model }
+      }
+    }
+  } catch (err: any) {
+    try {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC get-elyby-skin] Textures API failed: ${err?.message}\n`)
+    } catch {}
+  }
+
+  // Fallback: direct download from skinsystem
+  try {
+    const fallbackRes = await fetch(`https://skinsystem.ely.by/skins/${encodeURIComponent(username)}.png`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'image/png,image/*;q=0.8'
+      }
+    })
+    if (fallbackRes.ok) {
+      const buf = await fallbackRes.arrayBuffer()
+      const skinBase64 = `data:image/png;base64,${Buffer.from(buf).toString('base64')}`
+      return { skinBase64, model: 'auto-detect' }
+    }
+  } catch (err: any) {
+    try {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC get-elyby-skin] Fallback failed: ${err?.message}\n`)
+    } catch {}
+  }
+
+  return null
+})
+
+ipcMain.handle('fetch-image-data', async (_, url: string) => {
+  const logFile = path.join(process.env.APP_ROOT || 'd:/DRDM/mc-launcher', 'skin_debug.log')
+  try {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC fetch-image-data] Requesting: ${url}\n`)
+  } catch {}
+
+  if (!url) return null
+  if (url.startsWith('data:')) return url
+
+  try {
+    // If Ely.by skinsystem URL, resolve directly via textures API for reliable HTTPS storage URL
+    if (url.includes('skinsystem.ely.by/skins/') || url.includes('skinsystem.ely.by/cloaks/')) {
+      const match = url.match(/skinsystem\.ely\.by\/(?:skins|cloaks)\/([^.?]+)/)
+      if (match) {
+        const username = match[1]
+        try {
+          fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Resolving textures for Ely.by user: ${username}\n`)
+          const texRes = await fetch(`https://skinsystem.ely.by/textures/${encodeURIComponent(username)}`)
+          if (texRes.ok && texRes.status === 200) {
+            const texData: any = await texRes.json()
+            fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Textures returned: ${JSON.stringify(texData)}\n`)
+            let targetUrl = ''
+            if (url.includes('cloaks') && texData?.CAPE?.url) {
+              targetUrl = texData.CAPE.url.replace(/^http:\/\//, 'https://')
+            } else if (texData?.SKIN?.url) {
+              targetUrl = texData.SKIN.url.replace(/^http:\/\//, 'https://')
+            }
+            if (targetUrl) {
+              fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Fetching storage target: ${targetUrl}\n`)
+              const res = await fetch(targetUrl, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                  'Accept': 'image/png,image/*;q=0.8'
+                }
+              })
+              fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Storage target status: ${res.status}\n`)
+              if (res.ok) {
+                const arrayBuffer = await res.arrayBuffer()
+                const contentType = res.headers.get('content-type') || 'image/png'
+                const b64 = `data:${contentType};base64,${Buffer.from(arrayBuffer).toString('base64')}`
+                fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] SUCCESS base64 length: ${b64.length}\n`)
+                return b64
+              }
+            }
+          }
+        } catch (texErr: any) {
+          fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Ely.by textures lookup failed: ${texErr?.message}\n`)
+        }
+      }
+    }
+
+    // Standard fetch for other URLs (PG-Sync, Minotar, storage URLs, etc.)
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Doing standard fetch for: ${url}\n`)
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+      }
+    })
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Standard fetch status: ${res.status}\n`)
+
+    if (!res.ok) return null
+
+    const arrayBuffer = await res.arrayBuffer()
+    const contentType = res.headers.get('content-type') || 'image/png'
+    const b64 = `data:${contentType};base64,${Buffer.from(arrayBuffer).toString('base64')}`
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] Standard fetch SUCCESS base64 length: ${b64.length}\n`)
+    return b64
+  } catch (e: any) {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [IPC] EXCEPTION: ${e?.message}\n`)
+    return null
+  }
+})
+
+ipcMain.handle('log-skin-debug', (_, msg: string) => {
+  try {
+    const logFile = path.join(process.env.APP_ROOT || 'd:/DRDM/mc-launcher', 'skin_debug.log')
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] [RENDERER] ${msg}\n`)
+  } catch {}
+})
+
 
 ipcMain.handle('get-popular-mods', async (_, loader, version, offset = 0) => {
   const url = `https://api.modrinth.com/v2/search?facets=[["categories:${loader}"],["versions:${version}"],["project_type:mod"]]&limit=20&offset=${offset}`
@@ -796,6 +1114,21 @@ ipcMain.handle('install-optifine', async (_, gameVersion, instanceId) => {
     const modsDir = path.join(rootPath, 'versions', instanceId, 'mods')
     if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true })
     
+    // Clean up any existing/older OptiFine jars to ensure only one OptiFine file exists
+    try {
+      const existingFiles = fs.readdirSync(modsDir)
+      for (const f of existingFiles) {
+        const lower = f.toLowerCase()
+        if (lower.includes('optifine') && (lower.endsWith('.jar') || lower.endsWith('.jar.disabled')) && f !== filename) {
+          try { fs.unlinkSync(path.join(modsDir, f)) } catch {}
+        }
+        // CustomSkinLoader directly conflicts with OptiFine on Forge rendering (causes NoSuchMethodError / ClassFormatError crash)
+        if (lower.includes('customskinloader')) {
+          try { fs.unlinkSync(path.join(modsDir, f)) } catch {}
+        }
+      }
+    } catch (e) {}
+
     const zipPath = path.join(modsDir, filename)
     if (!fs.existsSync(zipPath)) {
       sendDownload(`Скачивание ${filename}...`, 30)
@@ -1156,6 +1489,12 @@ async function ensureForge(gameVersion: string, sendStatus: (msg: string) => voi
   }
   const expectedProfileName = `${gameVersion}-forge-${forgeVersion}`;
 
+  // Clean legacy un-isolated forge cache to avoid cross-version conflicts
+  const legacyForgeCache = path.join(rootPath, 'forge', gameVersion)
+  if (fs.existsSync(legacyForgeCache)) {
+    try { fs.rmSync(legacyForgeCache, { recursive: true, force: true }) } catch {}
+  }
+
   // Check if forge is already installed in versions
   const forgeVersionDir = path.join(rootPath, 'versions', fullForgeVersion)
   const newForgeVersionDir = path.join(rootPath, 'versions', expectedProfileName)
@@ -1335,7 +1674,7 @@ function getJavaMajorFromExe(javaExe: string): number | null {
 }
 
 // Search for already installed Java runtimes across all known locations
-function findInstalledJava(targetMajor: '8' | '17' | '21' | '25'): string | null {
+function findInstalledJava(targetMajor: '8' | '17' | '21' | '25', onlyLauncherManaged = false): string | null {
   const targetNum = parseInt(targetMajor, 10)
 
   // 1. Check userData/java-runtime-<major> and userData/java-runtime
@@ -1355,6 +1694,25 @@ function findInstalledJava(targetMajor: '8' | '17' | '21' | '25'): string | null
         return bin
       }
     }
+  }
+
+  // Check launcher's own runtime directory
+  const launcherRuntimeDir = path.join(rootPath, 'runtime')
+  if (fs.existsSync(launcherRuntimeDir)) {
+    const bin = findJavaBinary(launcherRuntimeDir)
+    if (bin) {
+      const detectedMajor = getJavaMajorFromExe(bin)
+      if (detectedMajor === targetNum) {
+        if (process.platform !== 'win32') {
+          try { fs.chmodSync(bin, 0o755) } catch {}
+        }
+        return bin
+      }
+    }
+  }
+
+  if (onlyLauncherManaged) {
+    return null
   }
 
   // 2. Check Mojang launcher runtimes in .minecraft/runtime across platforms
@@ -1633,7 +1991,7 @@ ipcMain.handle('get-installed-javas', async () => {
   const versions: ('8' | '17' | '21')[] = ['8', '17', '21']
   const result: Record<string, { installed: boolean; path: string | null }> = {}
   for (const v of versions) {
-    const p = findInstalledJava(v)
+    const p = findInstalledJava(v, true)
     result[v] = {
       installed: !!p,
       path: p
@@ -1654,6 +2012,105 @@ ipcMain.handle('install-java', async (_event, version: '8' | '17' | '21') => {
     })
   })
   return { success: true, path: installedPath }
+})
+
+ipcMain.handle('clean-uninstall-java', async () => {
+  try {
+    const deleted: string[] = []
+    const failed: string[] = []
+
+    // 0. Terminate any running java / javaw processes to release file locks
+    if (process.platform === 'win32') {
+      try {
+        execSync('taskkill /F /IM java.exe /IM javaw.exe', { stdio: 'ignore' })
+      } catch {}
+    } else {
+      try {
+        execSync('pkill -f java', { stdio: 'ignore' })
+      } catch {}
+    }
+
+    // Windows needs a short delay to release file locks after process termination
+    await new Promise(r => setTimeout(r, 400))
+
+    // 1. Delete all launcher-installed Java runtimes in userData
+    const userDataDir = app.getPath('userData')
+    try {
+      if (fs.existsSync(userDataDir)) {
+        const entries = fs.readdirSync(userDataDir)
+        for (const entry of entries) {
+          if (/^java-runtime/i.test(entry)) {
+            const fullPath = path.join(userDataDir, entry)
+            try {
+              fs.rmSync(fullPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+              deleted.push(fullPath)
+            } catch (err) {
+              failed.push(fullPath)
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // Check alternate launcher userData folders (e.g. mc-launcher, pagrysha-launcher)
+    const appData = process.env['APPDATA']
+    if (appData) {
+      const altDirs = [path.join(appData, 'mc-launcher'), path.join(appData, 'pagrysha-launcher')]
+      for (const altUserData of altDirs) {
+        if (fs.existsSync(altUserData) && altUserData !== userDataDir) {
+          try {
+            const entries = fs.readdirSync(altUserData)
+            for (const entry of entries) {
+              if (/^java-runtime/i.test(entry)) {
+                const p = path.join(altUserData, entry)
+                try {
+                  fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+                  deleted.push(p)
+                } catch {}
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // 2. Delete launcher runtime folder in rootPath
+    const launcherRuntime = path.join(rootPath, 'runtime')
+    if (fs.existsSync(launcherRuntime)) {
+      try {
+        fs.rmSync(launcherRuntime, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        deleted.push(launcherRuntime)
+      } catch {
+        failed.push(launcherRuntime)
+      }
+    }
+
+    // 3. Delete temp java archives
+    try {
+      const tempDir = app.getPath('temp')
+      if (fs.existsSync(tempDir)) {
+        const tempFiles = fs.readdirSync(tempDir)
+        for (const f of tempFiles) {
+          if (/^(java|Adoptium|OpenJDK|JavaDeploy|jre|jdk)/i.test(f)) {
+            try {
+              fs.rmSync(path.join(tempDir, f), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+              deleted.push(path.join(tempDir, f))
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+
+    return {
+      status: 'success',
+      deletedCount: deleted.length,
+      deletedPaths: deleted,
+      failedPaths: failed
+    }
+  } catch (e: any) {
+    console.error('Clean uninstall java failed:', e)
+    return { status: 'error', error: e.message }
+  }
 })
 
 // Helper to analyze Minecraft / JVM crashes and format diagnostics
@@ -1793,8 +2250,83 @@ function formatCrashReport(gameDir: string, launcherLogPath: string, exitCode: n
   return `${header}\n${reportBody}\n`
 }
 
+// Protect saves from corruption and infinite duplicate loop
+function protectAndSanitizeWorlds(gameDir: string) {
+  try {
+    const savesDir = path.join(gameDir, 'saves')
+    if (!fs.existsSync(savesDir)) return
+
+    const worlds = fs.readdirSync(savesDir)
+    for (const world of worlds) {
+      const worldPath = path.join(savesDir, world)
+      try {
+        if (!fs.statSync(worldPath).isDirectory()) continue
+
+        // 1. Safety backup & recovery of level.dat
+        const levelDat = path.join(worldPath, 'level.dat')
+        const levelDatOld = path.join(worldPath, 'level.dat_old')
+        const levelDatBackup = path.join(worldPath, 'level.dat_pgbackup')
+
+        if (fs.existsSync(levelDat)) {
+          const stat = fs.statSync(levelDat)
+          if (stat.size > 0) {
+            try { fs.copyFileSync(levelDat, levelDatBackup) } catch {}
+          } else {
+            // level.dat is 0 bytes (corrupted by crash or duplicate conflict)!
+            if (fs.existsSync(levelDatBackup) && fs.statSync(levelDatBackup).size > 0) {
+              fs.copyFileSync(levelDatBackup, levelDat)
+              console.log(`[WorldProtect] Restored corrupted level.dat from pgbackup in ${world}`)
+            } else if (fs.existsSync(levelDatOld) && fs.statSync(levelDatOld).size > 0) {
+              fs.copyFileSync(levelDatOld, levelDat)
+              console.log(`[WorldProtect] Restored corrupted level.dat from level.dat_old in ${world}`)
+            }
+          }
+        } else if (fs.existsSync(levelDatBackup) && fs.statSync(levelDatBackup).size > 0) {
+          fs.copyFileSync(levelDatBackup, levelDat)
+          console.log(`[WorldProtect] Restored missing level.dat from pgbackup in ${world}`)
+        } else if (fs.existsSync(levelDatOld) && fs.statSync(levelDatOld).size > 0) {
+          fs.copyFileSync(levelDatOld, levelDat)
+          console.log(`[WorldProtect] Restored missing level.dat from level.dat_old in ${world}`)
+        }
+
+        // 2. Clear stale session.lock if no Minecraft process is running
+        const sessionLock = path.join(worldPath, 'session.lock')
+        if (fs.existsSync(sessionLock)) {
+          try {
+            fs.unlinkSync(sessionLock)
+            console.log(`[WorldProtect] Cleaned stale session.lock in ${world}`)
+          } catch (e: any) {
+            console.warn(`[WorldProtect] session.lock is currently locked by active process in ${world}`)
+          }
+        }
+      } catch (err) {
+        console.warn(`[WorldProtect] Error processing world ${world}:`, err)
+      }
+    }
+  } catch (e) {
+    console.error('[WorldProtect] Error checking worlds:', e)
+  }
+}
+
 ipcMain.handle('launch-game', async (_event, options) => {
   const sendStatus = (msg: string) => win?.webContents.send('launch-progress', msg)
+  
+  // Prevent duplicate Minecraft instances running simultaneously
+  if (activeMinecraftProcess && !activeMinecraftProcess.killed) {
+    let isAlive = false
+    try {
+      if (typeof activeMinecraftProcess.pid === 'number') {
+        process.kill(activeMinecraftProcess.pid, 0)
+        isAlive = true
+      }
+    } catch {}
+
+    if (isAlive) {
+      throw new Error('Minecraft уже запущен! Закройте открытую игру перед новым запуском.')
+    } else {
+      activeMinecraftProcess = null
+    }
+  }
   
   try {
     sendStatus('Checking Java...')
@@ -1893,6 +2425,7 @@ ipcMain.handle('launch-game', async (_event, options) => {
     }
 
     const gameDir = options.modpackName ? path.join(rootPath, 'versions', options.instanceId) : rootPath
+    protectAndSanitizeWorlds(gameDir)
 
     const envOverrides: Record<string, string> = {
       ...(process.env as Record<string, string>),
@@ -1949,13 +2482,15 @@ ipcMain.handle('launch-game', async (_event, options) => {
       javaPath: javaPath,
       customArgs: [...defaultJvmArgs],
       overrides: {
+        maxSockets: 32,
         detached: false,
         env: envOverrides,
-        gameDirectory: gameDir
+        gameDirectory: gameDir,
+        cwd: gameDir
       }
     }
 
-    if (options.authType === 'elyby' || options.authType === 'pgsync') {
+    if (options.authType === 'elyby' || options.authType === 'pgsync' || options.hasElybySkins) {
       const injectorPath = path.join(rootPath, 'authlib-injector.jar')
       if (!fs.existsSync(injectorPath)) {
         sendStatus('Downloading Skin system helper...')
@@ -1971,7 +2506,7 @@ ipcMain.handle('launch-game', async (_event, options) => {
         }
       }
       if (fs.existsSync(injectorPath)) {
-        const yggdrasilUrl = options.authType === 'elyby' ? 'ely.by' : 'https://pg-sync-server.onrender.com/api/yggdrasil';
+        const yggdrasilUrl = options.authType === 'pgsync' ? 'https://pg-sync-server.onrender.com/api/yggdrasil' : 'ely.by';
         let jvmArgs = [
           `-javaagent:${injectorPath}=${yggdrasilUrl}`,
           '-Dauthlibinjector.side=client'
@@ -2019,6 +2554,12 @@ ipcMain.handle('launch-game', async (_event, options) => {
         // Modern forge (returned as custom version profile name)
         opts.version.custom = forgePath
         opts.forge = undefined
+        // Disable EarlyDisplay window on modern Forge to avoid crash with OptiFine / overlays
+        opts.customArgs = [
+          '-Dfml.earlyprogresswindow=false',
+          '-Dforge.enableRenderQueue=false',
+          ...(opts.customArgs || [])
+        ]
       }
     } else if (options.loader === 'neoforge') {
       throw new Error("NeoForge пока не поддерживается ядром лаунчера (MCLC). Пожалуйста, выберите Forge, Fabric или Quilt.");
@@ -2052,25 +2593,48 @@ ipcMain.handle('launch-game', async (_event, options) => {
     let lastDownloadTime = 0;
     launcher.on('download-status', (e: any) => {
       if (!gameStarted) {
+        // Multi-file batches (assets, classes, natives) emit download-status per tiny individual file,
+        // which makes progress jump wildly (e.g. 0% -> 90% -> 5% -> 100%).
+        // Overall cumulative progress for these is cleanly tracked by the 'progress' event instead.
+        if (e.type === 'assets' || e.type === 'classes' || e.type === 'natives') {
+          return;
+        }
+
         const now = Date.now();
         if (now - lastDownloadTime < 100) return;
         lastDownloadTime = now;
 
         let dispName = e.name;
-        if (dispName.length > 30 && /^[a-f0-9]+$/i.test(dispName)) dispName = 'Ассеты игры';
-        else if (dispName.length > 30) dispName = dispName.substring(0, 30) + '...';
+        if (dispName.length > 30) dispName = dispName.substring(0, 30) + '...';
 
         sendStatus(`Скачивание: ${dispName} (${Math.round((e.current / e.total) * 100)}%)`)
         win?.webContents.send('download-update', { id: 'game_launch', name: 'Minecraft', text: `Скачивание: ${dispName}`, progress: Math.round((e.current / e.total) * 100) })
       }
     })
+
+    let lastProgressTime = 0;
     launcher.on('progress', (e: any) => {
-      if (!gameStarted) {
-        sendStatus(`Проверка файлов: ${e.type} (${Math.round((e.task/e.total)*100)}%)`)
+      if (!gameStarted && e.total > 0) {
+        const pct = Math.min(100, Math.round((e.task / e.total) * 100))
+        const typeLabel = e.type === 'assets' ? 'Загрузка ассетов' : e.type === 'classes' ? 'Загрузка библиотек' : e.type === 'natives' ? 'Загрузка нативов' : `Проверка: ${e.type}`
+
+        sendStatus(`${typeLabel} (${pct}%)`)
+
+        const now = Date.now();
+        if (now - lastProgressTime > 120 || pct === 100 || e.task === 1) {
+          lastProgressTime = now;
+          win?.webContents.send('download-update', {
+            id: 'game_launch',
+            name: 'Minecraft',
+            text: `${typeLabel} (${e.task}/${e.total})`,
+            progress: pct
+          })
+        }
       }
     })
     
     launcher.on('close', (e: any) => {
+      activeMinecraftProcess = null
       fs.appendFileSync(logPath, `[CLOSE] Game exited with code ${e}\n`)
       if (e !== 0) {
         win?.webContents.send('launch-progress', `Error: Game crashed (Code ${e}). Check logs!`)
@@ -2089,7 +2653,13 @@ ipcMain.handle('launch-game', async (_event, options) => {
     })
     
     sendStatus('Preparing game files... (This may take a while)')
-    await launcher.launch(opts)
+    const proc = await launcher.launch(opts)
+    activeMinecraftProcess = proc
+    if (proc && typeof proc.on === 'function') {
+      proc.on('exit', () => {
+        activeMinecraftProcess = null
+      })
+    }
     
     gameStarted = true;
     win?.webContents.send('download-finish', 'game_launch')
@@ -2189,7 +2759,6 @@ ipcMain.handle('install-app', async (_, targetPath: string) => {
   }
 });
 
-import { spawn } from 'child_process';
 ipcMain.handle('create-shortcuts', async (_, targetPath: string) => {
   try {
     const exeName = path.basename(process.execPath);
@@ -2387,7 +2956,7 @@ ipcMain.handle('check-updates', async () => {
     if (isNewerVersion(latestVersion, currentVersion)) {
       const downloadUrl = data.assets?.find((a: any) => a.name.endsWith('.exe'))?.browser_download_url;
       if (downloadUrl) {
-        return { hasUpdate: true, version: latestVersion, downloadUrl };
+        return { hasUpdate: true, version: latestVersion, downloadUrl, body: data.body || '' };
       }
     }
     return { hasUpdate: false };

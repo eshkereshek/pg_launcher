@@ -35,39 +35,181 @@ export default function WardrobeMenu({
   const [timestamp, setTimestamp] = useState(Date.now());
 
   useEffect(() => {
-    if (canvasRef.current) {
-      const viewer = new SkinViewer({
-        canvas: canvasRef.current,
-        width: 300,
-        height: 380,
-        skin: `${skinUrl}?t=${timestamp}`
-      });
+    if (!canvasRef.current) return;
 
-      viewer.animation = new WalkingAnimation();
-      viewer.autoRotate = true;
-      viewer.autoRotateSpeed = 0.5;
+    let isCancelled = false;
+    const viewer = new SkinViewer({
+      canvas: canvasRef.current,
+      width: 300,
+      height: 380
+    });
 
-      // Load cape if available
-      viewer.loadCape(`${capeUrl}?t=${timestamp}`).catch(() => {
-        // Ignore if cape doesn't exist
-      });
+    viewer.animation = new WalkingAnimation();
+    viewer.autoRotate = true;
+    viewer.autoRotateSpeed = 0.5;
+    skinViewerRef.current = viewer;
 
-      skinViewerRef.current = viewer;
+    const loadSkinData = async () => {
+      try {
+        if (account.type === 'elyby') {
+          // @ts-ignore
+          if (window.electronAPI && typeof window.electronAPI.getElybySkin === 'function') {
+            try {
+              // @ts-ignore
+              const res = await window.electronAPI.getElybySkin(account.name);
+              if (res && res.skinBase64) {
+                const img = new Image();
+                img.onload = () => {
+                  if (!isCancelled && skinViewerRef.current) {
+                    skinViewerRef.current.loadSkin(img, { model: res.model || 'auto-detect' });
+                  }
+                };
+                img.src = res.skinBase64;
+                if (res.capeBase64) {
+                  const capeImg = new Image();
+                  capeImg.onload = () => {
+                    if (!isCancelled && skinViewerRef.current) {
+                      skinViewerRef.current.loadCape(capeImg);
+                    }
+                  };
+                  capeImg.src = res.capeBase64;
+                }
+                return;
+              }
+            } catch {}
+          }
 
-      // Handle fallback if skin doesn't exist (e.g. 404)
-      viewer.loadSkin(`${skinUrl}?t=${timestamp}`).catch(() => {
-        viewer.loadSkin(`https://minotar.net/skin/${account.name}`).catch(() => {
-          // If still fails, load Steve
-          viewer.loadSkin('https://minotar.net/skin/Steve');
-        });
-      });
-    }
+          // Try Vite proxy
+          try {
+            const proxyRes = await fetch(`/api-elyby-textures/textures/${encodeURIComponent(account.name)}`);
+            if (proxyRes.ok) {
+              const texData: any = await proxyRes.json();
+              if (texData?.SKIN?.url) {
+                const storagePath = texData.SKIN.url.replace(/^https?:\/\/ely\.by\//, '/api-elyby-storage/');
+                const imgRes = await fetch(storagePath);
+                if (imgRes.ok) {
+                  const blob = await imgRes.blob();
+                  const blobUrl = URL.createObjectURL(blob);
+                  const img = new Image();
+                  const model = texData.SKIN.metadata?.model === 'slim' ? 'slim' : 'default';
+                  img.onload = () => {
+                    if (!isCancelled && skinViewerRef.current) {
+                      skinViewerRef.current.loadSkin(img, { model });
+                    }
+                  };
+                  img.src = blobUrl;
+                  if (texData?.CAPE?.url) {
+                    const capePath = texData.CAPE.url.replace(/^https?:\/\/ely\.by\//, '/api-elyby-storage/');
+                    const capeRes = await fetch(capePath);
+                    if (capeRes.ok) {
+                      const capeBlob = await capeRes.blob();
+                      const capeImg = new Image();
+                      capeImg.onload = () => {
+                        if (!isCancelled && skinViewerRef.current) {
+                          skinViewerRef.current.loadCape(capeImg);
+                        }
+                      };
+                      capeImg.src = URL.createObjectURL(capeBlob);
+                    }
+                  }
+                  return;
+                }
+              }
+            }
+          } catch {}
+
+          let targetSkin = `https://skinsystem.ely.by/skins/${encodeURIComponent(account.name)}.png`;
+          let model: 'slim' | 'default' | 'auto-detect' = 'auto-detect';
+          let targetCape: string | null = null;
+          try {
+            const texRes = await fetch(`https://skinsystem.ely.by/textures/${encodeURIComponent(account.name)}`);
+            if (texRes.ok) {
+              const texData: any = await texRes.json();
+              if (texData?.SKIN?.url) {
+                targetSkin = texData.SKIN.url.replace(/^http:\/\//, 'https://');
+                if (texData.SKIN.metadata?.model === 'slim') model = 'slim';
+                else if (texData.SKIN.metadata?.model === 'default') model = 'default';
+              }
+              if (texData?.CAPE?.url) {
+                targetCape = texData.CAPE.url.replace(/^http:\/\//, 'https://');
+              }
+            }
+          } catch {}
+
+          let skinLoaded = false;
+          // @ts-ignore
+          if (window.electronAPI?.fetchImageData) {
+            try {
+              // @ts-ignore
+              const b64 = await window.electronAPI.fetchImageData(targetSkin);
+              if (b64) {
+                const img = new Image();
+                img.onload = () => {
+                  if (!isCancelled && skinViewerRef.current) {
+                    skinViewerRef.current.loadSkin(img, { model });
+                  }
+                };
+                img.src = b64;
+                skinLoaded = true;
+              }
+            } catch {}
+          }
+          if (!skinLoaded) {
+            try {
+              const res = await fetch(targetSkin);
+              if (res.ok) {
+                const blob = await res.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => {
+                  if (!isCancelled && skinViewerRef.current) {
+                    skinViewerRef.current.loadSkin(img, { model });
+                  }
+                };
+                img.src = blobUrl;
+                skinLoaded = true;
+              }
+            } catch {}
+          }
+
+          if (targetCape) {
+            // @ts-ignore
+            if (window.electronAPI?.fetchImageData) {
+              // @ts-ignore
+              const capeB64 = await window.electronAPI.fetchImageData(targetCape);
+              if (capeB64) {
+                const img = new Image();
+                img.onload = () => {
+                  if (!isCancelled && skinViewerRef.current) {
+                    skinViewerRef.current.loadCape(img);
+                  }
+                };
+                img.src = capeB64;
+              }
+            }
+          }
+        } else {
+          viewer.loadSkin(`${skinUrl}?t=${timestamp}`).catch(() => {
+            viewer.loadSkin(`https://minotar.net/skin/${account.name}`).catch(() => {
+              viewer.loadSkin('https://minotar.net/skin/Steve');
+            });
+          });
+          viewer.loadCape(`${capeUrl}?t=${timestamp}`).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('[WardrobeMenu] Skin load error:', err);
+      }
+    };
+
+    loadSkinData();
+
     return () => {
+      isCancelled = true;
       if (skinViewerRef.current) {
         skinViewerRef.current.dispose();
       }
     };
-  }, [skinUrl, capeUrl, timestamp, account.name]);
+  }, [skinUrl, capeUrl, timestamp, account.name, account.type]);
 
   const handleUpload = async (type: 'skin' | 'cape', file: File) => {
     setLoading(true);

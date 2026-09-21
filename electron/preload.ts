@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   readLocalImage: (filePath: string) => ipcRenderer.invoke('read-local-image', filePath),
+  fetchImageData: (url: string) => ipcRenderer.invoke('fetch-image-data', url),
+  getElybySkin: (username: string) => ipcRenderer.invoke('get-elyby-skin', username),
+  logSkinDebug: (msg: string) => ipcRenderer.invoke('log-skin-debug', msg),
   searchServers: (page: number, region?: string) => ipcRenderer.invoke('search-servers', page, region),
   importModFile: (fileName: string, buffer: ArrayBuffer, instanceId?: string) => ipcRenderer.invoke('import-mod-file', fileName, buffer, instanceId),
   searchMods: (query: string, loader: string, version: string, offset?: number, projectType?: string, sort?: string) => ipcRenderer.invoke('search-mods', query, loader, version, offset || 0, projectType || 'mod', sort || 'relevance'),
@@ -86,6 +89,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Java Runtime Management
   getInstalledJavas: () => ipcRenderer.invoke('get-installed-javas'),
   installJava: (version: string) => ipcRenderer.invoke('install-java', version),
+  cleanUninstallJava: () => ipcRenderer.invoke('clean-uninstall-java'),
   onJavaInstallProgress: (callback: (data: { version: string, status: string, progress: number }) => void) => {
     ipcRenderer.on('java-install-progress', (_, data) => callback(data))
   }

@@ -1,5 +1,5 @@
 diff --git a/node_modules/minecraft-launcher-core/components/handler.js b/node_modules/minecraft-launcher-core/components/handler.js
-index 111a797..42b1c64 100644
+index 111a797..4e09efe 100644
 --- a/node_modules/minecraft-launcher-core/components/handler.js
 +++ b/node_modules/minecraft-launcher-core/components/handler.js
 @@ -18,7 +18,7 @@ class Handler {
@@ -11,16 +11,73 @@ index 111a797..42b1c64 100644
          if (error) {
            resolve({
              run: false,
-@@ -177,7 +177,7 @@ class Handler {
-       const subhash = hash.substring(0, 2)
-       const subAsset = path.join(assetDirectory, 'objects', subhash)
+@@ -55,6 +55,7 @@ class Handler {
+       _request.on('error', async (error) => {
+         this.client.emit('debug', `[MCLC]: Failed to download asset to ${path.join(directory, name)} due to\n${error}.` +
+                     ` Retrying... ${retry}`)
++        try { if (fs.existsSync(path.join(directory, name))) fs.unlinkSync(path.join(directory, name)) } catch {}
+         if (retry) await this.downloadAsync(url, directory, name, false, type)
+         resolve()
+       })
+@@ -166,27 +167,43 @@ class Handler {
+ 
+     const index = JSON.parse(fs.readFileSync(path.join(assetDirectory, 'indexes', `${assetId}.json`), { encoding: 'utf8' }))
+ 
++    const assets = Object.keys(index.objects)
++    const totalAssets = assets.length
++    counter = 0
+     this.client.emit('progress', {
+       type: 'assets',
+       task: 0,
+-      total: Object.keys(index.objects).length
++      total: totalAssets
+     })
+ 
+-    await Promise.all(Object.keys(index.objects).map(async asset => {
+-      const hash = index.objects[asset].hash
+-      const subhash = hash.substring(0, 2)
+-      const subAsset = path.join(assetDirectory, 'objects', subhash)
++    const concurrency = Math.min(24, Math.max(8, this.options.overrides.maxSockets || 16))
++    let assetIdx = 0
++    const workers = new Array(concurrency).fill(null).map(async () => {
++      while (assetIdx < assets.length) {
++        const asset = assets[assetIdx++]
++        const hash = index.objects[asset].hash
++        const subhash = hash.substring(0, 2)
++        const subAsset = path.join(assetDirectory, 'objects', subhash)
++        const targetFile = path.join(subAsset, hash)
  
 -      if (!fs.existsSync(path.join(subAsset, hash)) || !await this.checkSum(hash, path.join(subAsset, hash))) {
-+      if (!fs.existsSync(path.join(subAsset, hash)) || (await require("fs").promises.stat(path.join(subAsset, hash)).then(s => s.size === 0).catch(() => true))) {
-         await this.downloadAsync(`${this.options.overrides.url.resource}/${subhash}/${hash}`, subAsset, hash, true, 'assets')
+-        await this.downloadAsync(`${this.options.overrides.url.resource}/${subhash}/${hash}`, subAsset, hash, true, 'assets')
++        let needsDownload = true
++        try {
++          const st = await require("fs").promises.stat(targetFile)
++          if (st.size > 0) needsDownload = false
++        } catch {}
++
++        if (needsDownload) {
++          await this.downloadAsync(`${this.options.overrides.url.resource}/${subhash}/${hash}`, subAsset, hash, true, 'assets')
++        }
++        counter++
++        this.client.emit('progress', {
++          type: 'assets',
++          task: counter,
++          total: totalAssets
++        })
        }
-       counter++
-@@ -252,7 +252,7 @@ class Handler {
+-      counter++
+-      this.client.emit('progress', {
+-        type: 'assets',
+-        task: counter,
+-        total: Object.keys(index.objects).length
+-      })
+-    }))
++    })
++    await Promise.all(workers)
+     counter = 0
+ 
+     // Copy assets to legacy if it's an older Minecraft version.
+@@ -252,7 +269,7 @@ class Handler {
    async getNatives () {
      const nativeDirectory = path.resolve(this.options.overrides.natives || path.join(this.options.root, 'natives', this.version.id))
  
@@ -29,7 +86,7 @@ index 111a797..42b1c64 100644
  
      if (!fs.existsSync(nativeDirectory) || !fs.readdirSync(nativeDirectory).length) {
        fs.mkdirSync(nativeDirectory, { recursive: true })
-@@ -323,7 +323,7 @@ class Handler {
+@@ -323,13 +340,14 @@ class Handler {
    }
  
    isModernForge (json) {
@@ -38,6 +95,25 @@ index 111a797..42b1c64 100644
    }
  
    async getForgedWrapped () {
+     let json = null
+     let installerJson = null
+-    const versionPath = path.join(this.options.root, 'forge', `${this.version.id}`, 'version.json')
++    const forgeSubDir = this.options.forge ? path.basename(this.options.forge).replace(/\.jar$/, '') : `${this.version.id}`
++    const versionPath = path.join(this.options.root, 'forge', forgeSubDir, 'version.json')
+     // Since we're building a proper "custom" JSON that will work nativly with MCLC, the version JSON will not
+     // be re-generated on the next run.
+     if (fs.existsSync(versionPath)) {
+@@ -460,8 +478,8 @@ class Handler {
+     json.forgeWrapperVersion = this.options.overrides.fw.version
+ 
+     // Saving file for next run!
+-    if (!fs.existsSync(path.join(this.options.root, 'forge', this.version.id))) {
+-      fs.mkdirSync(path.join(this.options.root, 'forge', this.version.id), { recursive: true })
++    if (!fs.existsSync(path.dirname(versionPath))) {
++      fs.mkdirSync(path.dirname(versionPath), { recursive: true })
+     }
+     fs.writeFileSync(versionPath, JSON.stringify(json, null, 4))
+ 
 diff --git a/node_modules/minecraft-launcher-core/components/launcher.js b/node_modules/minecraft-launcher-core/components/launcher.js
 index c7063a7..1e3f0db 100644
 --- a/node_modules/minecraft-launcher-core/components/launcher.js

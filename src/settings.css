@@ -168,23 +168,99 @@
 }
 .ram-slider {
   width: 100%;
-  height: 12px;
-  background: var(--pg-black);
-  border: 2px solid var(--pg-dark);
-  box-shadow: inset 0 2px 0 var(--pg-dark);
+  height: 14px;
+  background: #0e0e0e;
+  border: 2px solid #000000;
+  box-shadow: inset 1px 1px 0 0 #000000, inset -1px -1px 0 0 rgba(255, 255, 255, 0.08);
   border-radius: 0;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  margin: 6px 0;
+  position: relative;
+  transition: border-color 0.15s ease;
+  overflow: visible;
 }
+
+.ram-slider:hover {
+  border-color: #222222;
+}
+
+.ram-slider:focus {
+  outline: none;
+}
+
+/* WebKit slider thumb (Chrome, Edge, Electron) */
 .ram-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 18px;
-  height: 24px;
+  appearance: none;
+  width: 16px;
+  height: 28px;
+  background: linear-gradient(180deg, #f5d033 0%, #d4a007 100%);
+  border: 2px solid #000000;
   border-radius: 0;
-  background: var(--pg-yellow);
-  cursor: pointer;
-  border: 2px solid var(--pg-dark);
-  box-shadow: inset -2px -2px 0px rgba(0,0,0,0.3), inset 2px 2px 0px rgba(255,255,255,0.5);
+  box-shadow: 
+    inset 1px 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset -1px -1px 0 0 rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.6);
+  cursor: grab;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+
+.ram-slider::-webkit-slider-thumb:hover {
+  background: linear-gradient(180deg, #ffde4d 0%, #e8b409 100%);
+  box-shadow: 
+    inset 1px 1px 0 0 #ffffff,
+    inset -1px -1px 0 0 rgba(0, 0, 0, 0.5),
+    0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+.ram-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  background: linear-gradient(180deg, #c49405 0%, #ab7d02 100%);
+  box-shadow: 
+    inset -1px -1px 0 0 rgba(255, 255, 255, 0.4),
+    inset 1px 1px 0 0 rgba(0, 0, 0, 0.6),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Firefox slider thumb */
+.ram-slider::-moz-range-thumb {
+  width: 16px;
+  height: 28px;
+  background: linear-gradient(180deg, #f5d033 0%, #d4a007 100%);
+  border: 2px solid #000000;
+  border-radius: 0;
+  box-shadow: 
+    inset 1px 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset -1px -1px 0 0 rgba(0, 0, 0, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.6);
+  cursor: grab;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+
+.ram-slider::-moz-range-thumb:hover {
+  background: linear-gradient(180deg, #ffde4d 0%, #e8b409 100%);
+  box-shadow: 
+    inset 1px 1px 0 0 #ffffff,
+    inset -1px -1px 0 0 rgba(0, 0, 0, 0.5),
+    0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+.ram-slider::-moz-range-thumb:active {
+  cursor: grabbing;
+  background: linear-gradient(180deg, #c49405 0%, #ab7d02 100%);
+  box-shadow: 
+    inset -1px -1px 0 0 rgba(255, 255, 255, 0.4),
+    inset 1px 1px 0 0 rgba(0, 0, 0, 0.6),
+    0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.ram-slider::-moz-range-track {
+  background: #0e0e0e;
+  border: 2px solid #000000;
+  height: 14px;
 }
 .ram-marks {
   position: absolute;
@@ -287,28 +363,28 @@
 @keyframes settingsBoxSlide {
   from {
     opacity: 0;
-    transform: scale(0.96) translateY(10px);
+    transform: translateY(28px) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes settingsBoxSlideOut {
   from {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateY(0) scale(1);
   }
   to {
     opacity: 0;
-    transform: scale(0.96) translateY(10px);
+    transform: translateY(18px) scale(0.97);
   }
 }
 
 .settings-modal-overlay {
   position: absolute;
-  top: 32px;
+  top: 26px;
   left: 0;
   right: 0;
   bottom: 0;
@@ -360,3 +436,404 @@
   animation: checkmarkPop 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
   transform-origin: 2px 5px;
 }
+
+/* ==========================================================================
+   Authentic Minecraft Dialog Windows & Cubic Buttons
+   ========================================================================== */
+
+.mc-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: settingsOverlayFade 0.15s ease-out forwards;
+}
+
+.mc-dialog-window {
+  background: #1b1b1b;
+  border: 3px solid #000000;
+  box-shadow: 
+    inset 3px 3px 0 0 #4a4a4a, 
+    inset -3px -3px 0 0 #111111, 
+    0 20px 50px rgba(0, 0, 0, 0.95);
+  width: 490px;
+  max-width: 92vw;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  user-select: none;
+  animation: settingsBoxSlide 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mc-dialog-header {
+  background: #151515;
+  border-bottom: 2px solid #000000;
+  box-shadow: inset 0 -2px 0 0 #111111, 0 2px 0 0 #2d2d2d;
+  padding: 10px 14px 10px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mc-dialog-title {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 16px;
+  letter-spacing: 0.8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mc-dialog-title.danger {
+  color: #ff5555;
+  text-shadow: 2px 2px 0 #3b0000;
+}
+
+.mc-dialog-title.warning {
+  color: #f5cf2a;
+  text-shadow: 2px 2px 0 #3b2800;
+}
+
+.mc-dialog-title.success {
+  color: #55ff55;
+  text-shadow: 2px 2px 0 #003b00;
+}
+
+/* Cubic Pixel-Art Close Button */
+.mc-close-cube-btn {
+  width: 28px;
+  height: 28px;
+  background: #b71c1c;
+  border: 2px solid #000000;
+  box-shadow: inset 2px 2px 0 0 #ef5350, inset -2px -2px 0 0 #5a0909, 0 2px 0 0 #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #ffffff;
+  padding: 0;
+  border-radius: 0;
+  outline: none;
+  transition: background 0.1s, transform 0.08s, box-shadow 0.08s, outline 0.08s;
+  flex-shrink: 0;
+}
+
+.mc-close-cube-btn:hover {
+  background: #d32f2f;
+  color: #ffffff;
+  box-shadow: inset 2px 2px 0 0 #f87171, inset -2px -2px 0 0 #7f1d1d, 0 2px 0 0 #000000;
+  outline: 2px solid #ffffff;
+  outline-offset: 1px;
+}
+
+.mc-close-cube-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset -2px -2px 0 0 #ef5350, inset 2px 2px 0 0 #5a0909;
+  outline: none;
+}
+
+.mc-close-cube-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inset Sunken Content Area */
+.mc-dialog-content {
+  margin: 16px 18px 14px 18px;
+  background: #121212;
+  border: 2px solid #000000;
+  box-shadow: inset 2px 2px 0 0 #0a0a0a, inset -2px -2px 0 0 #282828;
+  padding: 18px 20px;
+  color: #dddddd;
+  font-size: 13.5px;
+  line-height: 1.6;
+  font-family: 'Inter', -apple-system, sans-serif;
+  box-sizing: border-box;
+}
+
+.mc-dialog-content::-webkit-scrollbar,
+.mc-update-changelog::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mc-dialog-content::-webkit-scrollbar-track,
+.mc-update-changelog::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.mc-dialog-content::-webkit-scrollbar-thumb,
+.mc-update-changelog::-webkit-scrollbar-thumb {
+  background: #333333;
+  border: 1px solid #111111;
+}
+
+.mc-dialog-content::-webkit-scrollbar-thumb:hover,
+.mc-update-changelog::-webkit-scrollbar-thumb:hover {
+  background: var(--pg-yellow);
+}
+
+.mc-dialog-footer {
+  padding: 0 18px 18px 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Cubic Action Buttons */
+.mc-cube-btn {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif !important;
+  font-size: 13px !important;
+  letter-spacing: 0.6px !important;
+  padding: 9px 20px !important;
+  border: 2px solid #000000 !important;
+  border-radius: 0 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-transform: uppercase !important;
+  user-select: none !important;
+  transition: transform 0.08s, box-shadow 0.08s, outline 0.08s !important;
+}
+
+.mc-cube-btn.neutral {
+  background: #383838 !important;
+  color: #e0e0e0 !important;
+  text-shadow: 1px 1px 0 #000000 !important;
+  box-shadow: inset 2px 2px 0 0 #585858, inset -2px -2px 0 0 #181818, 0 3px 0 0 #000000 !important;
+}
+
+.mc-cube-btn.neutral:hover {
+  background: #444444 !important;
+  color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: 1px !important;
+}
+
+.mc-cube-btn.neutral:active {
+  transform: translateY(3px) !important;
+  box-shadow: inset -2px -2px 0 0 #585858, inset 2px 2px 0 0 #181818 !important;
+  outline: none !important;
+}
+
+.mc-cube-btn.danger {
+  background: #8b1818 !important;
+  color: #ffffff !important;
+  text-shadow: 1px 1px 0 #3a0000 !important;
+  box-shadow: inset 2px 2px 0 0 #c62828, inset -2px -2px 0 0 #460909, 0 3px 0 0 #000000 !important;
+}
+
+.mc-cube-btn.danger:hover {
+  background: #a61c1c !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: 1px !important;
+}
+
+.mc-cube-btn.danger:active {
+  transform: translateY(3px) !important;
+  box-shadow: inset -2px -2px 0 0 #c62828, inset 2px 2px 0 0 #460909 !important;
+  outline: none !important;
+}
+
+.mc-cube-btn.gold {
+  background: #f1c40f !important;
+  color: #000000 !important;
+  text-shadow: none !important;
+  box-shadow: inset 2px 2px 0 0 #fff176, inset -2px -2px 0 0 #b7950b, 0 3px 0 0 #000000 !important;
+}
+
+.mc-cube-btn.gold:hover {
+  background: #f5cf2a !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: 1px !important;
+}
+
+.mc-cube-btn.gold:active {
+  transform: translateY(3px) !important;
+  box-shadow: inset -2px -2px 0 0 #fff176, inset 2px 2px 0 0 #b7950b !important;
+  outline: none !important;
+}
+
+.mc-cube-btn.blue {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  text-shadow: 1px 1px 0 #1e3a8a !important;
+  box-shadow: inset 2px 2px 0 0 #60a5fa, inset -2px -2px 0 0 #1e40af, 0 3px 0 0 #000000 !important;
+}
+
+.mc-cube-btn.blue:hover {
+  background: #3b82f6 !important;
+  color: #ffffff !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: 1px !important;
+}
+
+.mc-cube-btn.blue:active {
+  transform: translateY(3px) !important;
+  box-shadow: inset -2px -2px 0 0 #60a5fa, inset 2px 2px 0 0 #1e40af !important;
+  outline: none !important;
+}
+
+/* ==========================================================================
+   Minecraft Launcher Update Modal
+   ========================================================================== */
+
+.mc-update-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10001;
+  animation: settingsOverlayFade 0.18s ease-out forwards;
+}
+
+.mc-update-window {
+  background: #1b1b1b;
+  border: 3px solid #000000;
+  box-shadow: 
+    inset 3px 3px 0 0 #4a4a4a, 
+    inset -3px -3px 0 0 #111111, 
+    0 20px 50px rgba(0, 0, 0, 0.95);
+  width: 500px;
+  max-width: 92vw;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  user-select: none;
+  animation: settingsBoxSlide 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mc-update-header {
+  background: #151515;
+  border-bottom: 2px solid #000000;
+  box-shadow: inset 0 -2px 0 0 #111111, 0 2px 0 0 #2d2d2d;
+  padding: 10px 14px 10px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mc-update-title {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.8px;
+  color: var(--pg-yellow);
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0 #3b2800;
+}
+
+.mc-update-close-btn {
+  width: 28px;
+  height: 28px;
+  background: #b71c1c;
+  border: 2px solid #000000;
+  box-shadow: inset 2px 2px 0 0 #ef5350, inset -2px -2px 0 0 #5a0909, 0 2px 0 0 #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  font-family: sans-serif;
+  padding: 0;
+  border-radius: 0;
+  outline: none;
+  transition: background 0.1s, transform 0.08s, box-shadow 0.08s, outline 0.08s;
+  flex-shrink: 0;
+}
+
+.mc-update-close-btn:hover {
+  background: #d32f2f;
+  outline: 2px solid #ffffff;
+  outline-offset: 1px;
+}
+
+.mc-update-close-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset -2px -2px 0 0 #ef5350, inset 2px 2px 0 0 #5a0909;
+  outline: none;
+}
+
+.mc-update-close-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mc-update-content {
+  margin: 18px 18px 14px 18px;
+  background: #121212;
+  border: 2px solid #000000;
+  box-shadow: inset 2px 2px 0 0 #0a0a0a, inset -2px -2px 0 0 #282828;
+  padding: 18px 20px;
+  color: #dddddd;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.mc-update-version {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 12px;
+}
+
+.mc-update-version-num {
+  color: var(--pg-yellow);
+}
+
+.mc-update-section-title {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.8px;
+  color: var(--pg-yellow);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  text-shadow: 1px 1px 0 #2b1d00;
+}
+
+.mc-update-changelog {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d1d5db;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.mc-update-footer {
+  padding: 0 18px 18px 18px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+@media (max-height: 650px) {
+  .mc-dialog-window,
+  .mc-update-window {
+    transform: scale(0.9);
+  }
+}
+
+@media (max-height: 560px) {
+  .mc-dialog-window,
+  .mc-update-window {
+    transform: scale(0.82);
+  }
+}
+
+

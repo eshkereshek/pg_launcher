@@ -1,7 +1,7 @@
 {
   "name": "pagrysha-launcher",
   "private": true,
-  "version": "7.1.9",
+  "version": "7.2.0",
   "author": "Pagrysha <support@pagrysha.com>",
   "type": "module",
   "main": "dist-electron/main.js",
@@ -59,8 +59,6 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerSidebar": "build/installerSidebar.bmp",
-      "installerHeader": "build/installerHeader.bmp",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Pagrysha Launcher"

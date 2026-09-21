@@ -9,6 +9,18 @@ export default defineConfig({
     host: '127.0.0.1',
     watch: {
       ignored: ['**/dist-build/**', '**/dist/**', '**/dist-electron/**', '**/release/**']
+    },
+    proxy: {
+      '/api-elyby-textures': {
+        target: 'https://skinsystem.ely.by',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-elyby-textures/, '')
+      },
+      '/api-elyby-storage': {
+        target: 'https://ely.by',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-elyby-storage/, '')
+      }
     }
   },
   plugins: [

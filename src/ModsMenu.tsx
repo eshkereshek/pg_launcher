@@ -1,16 +1,34 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from './i18n'
-import { Plus, X, Package, Settings, Search, Power, Trash2 } from 'lucide-react'
+import { Plus, Package, Settings, Search, Power, Trash2 } from 'lucide-react'
 import { McSelect } from './McSelect'
 import ModViewer from './ModViewer'
+const CubicCrossIcon: React.FC<{ size?: number; color?: string }> = ({ size = 14, color = 'currentColor' }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges' }}>
+    <rect x="2" y="2" width="2" height="2" />
+    <rect x="4" y="4" width="2" height="2" />
+    <rect x="6" y="6" width="4" height="4" />
+    <rect x="10" y="4" width="2" height="2" />
+    <rect x="12" y="2" width="2" height="2" />
+    <rect x="2" y="12" width="2" height="2" />
+    <rect x="4" y="10" width="2" height="2" />
+    <rect x="10" y="10" width="2" height="2" />
+    <rect x="12" y="12" width="2" height="2" />
+  </svg>
+)
 
 interface Modpack {
   name: string
   loader: string
   version: string
   loaderVersion?: string
-  installedMods: { id: string; title: string; type?: string; isEnabled?: boolean }[]
+  installedMods: { id: string; title: string; type?: string; isEnabled?: boolean; projectId?: string; isLocal?: boolean }[]
   icon?: string
+  hasElybySkins?: boolean
+}
+
+const normalizeModFilename = (filename: string) => {
+  return (filename || '').toLowerCase().trim().replace(/\.disabled$/, '')
 }
 
 const PRESET_ICONS = [
@@ -220,22 +238,74 @@ export default function ModsMenu({
     // Sync installed mods with actual files in directory
     try {
       // @ts-ignore
-      const localMods = await window.electronAPI.getInstalledMods(mp.name)
-      if (localMods && localMods.length > 0) {
-        // Merge local mods with known mods
-        const knownIds = new Set(mp.installedMods.map(m => m.id))
-        const newMods = localMods.filter((lm: any) => !knownIds.has(lm.id))
-        if (newMods.length > 0) {
-          mp.installedMods = [...mp.installedMods, ...newMods]
-          setModpacks(prev => {
-            const updated = prev.map(p => p.name === mp.name ? mp : p)
-            // @ts-ignore
-            window.electronAPI.saveModpacks(updated)
-            return updated
+      const localMods: { id: string; title: string; type?: string; isLocal?: boolean; isEnabled?: boolean }[] = await window.electronAPI.getInstalledMods(mp.name) || []
+      
+      const localFileMap = new Map<string, { id: string; title: string; isEnabled?: boolean }>()
+      for (const lm of localMods) {
+        localFileMap.set(normalizeModFilename(lm.title || lm.id), lm)
+      }
+
+      // Preserve non-mod items (shaders, resource packs) as they are stored in other folders
+      const nonModItems = (mp.installedMods || []).filter(m => m.type && m.type !== 'mod')
+      
+      // Existing mod items
+      const existingModItems = (mp.installedMods || []).filter(m => !m.type || m.type === 'mod')
+      
+      const reconciledMods: typeof mp.installedMods = []
+      const seenFilenames = new Set<string>()
+
+      for (const item of existingModItems) {
+        const norm = normalizeModFilename(item.title || item.id)
+        if (seenFilenames.has(norm)) {
+          // Prune duplicates that were previously saved in mp.installedMods
+          continue
+        }
+        seenFilenames.add(norm)
+
+        const localMatch = localFileMap.get(norm)
+        if (localMatch) {
+          reconciledMods.push({
+            ...item,
+            id: item.id || localMatch.id,
+            title: localMatch.title,
+            type: 'mod',
+            isEnabled: localMatch.isEnabled !== false
+          })
+          // Mark as accounted for
+          localFileMap.delete(norm)
+        }
+      }
+
+      // Any remaining files in localFileMap are newly added files (e.g. manually imported / copied)
+      for (const remaining of localFileMap.values()) {
+        const norm = normalizeModFilename(remaining.title || remaining.id)
+        if (!seenFilenames.has(norm)) {
+          seenFilenames.add(norm)
+          reconciledMods.push({
+            id: remaining.id,
+            title: remaining.title,
+            type: 'mod',
+            isLocal: true,
+            isEnabled: remaining.isEnabled !== false
           })
         }
       }
-    } catch (e) { console.error(e) }
+
+      const finalInstalledMods = [...reconciledMods, ...nonModItems]
+
+      // Check if installedMods changed
+      if (JSON.stringify(finalInstalledMods) !== JSON.stringify(mp.installedMods)) {
+        mp.installedMods = finalInstalledMods
+        setModpacks(prev => {
+          const updated = prev.map(p => p.name === mp.name ? mp : p)
+          // @ts-ignore
+          window.electronAPI.saveModpacks(updated)
+          return updated
+        })
+      }
+    } catch (e) {
+      console.error(e)
+    }
 
     setActiveModpack(mp)
     setQuery('')
@@ -246,48 +316,28 @@ export default function ModsMenu({
   const createModpack = async () => {
     if (!newName.trim()) return
     const safeName = newName.replace(/[<>:"/\\|?*]/g, '-')
-    const mp: Modpack = { name: safeName, loader: newLoader, version: newVersion, loaderVersion: undefined, installedMods: [], icon: newIcon }
-
-    setModpacks(prev => {
-      const updated = [...prev, mp]
-      // @ts-ignore
-      window.electronAPI.saveModpacks(updated)
-      return updated
-    })
-
-    setShowCreateModal(false)
     const shouldInstallOptifine = installOptifine
+    const shouldInstallElyby = installElybySkins
     const createdName = safeName
     const createdVersion = newVersion
     const createdLoader = newLoader
+    const createdIcon = newIcon
 
+    setShowCreateModal(false)
     setNewName('')
     setNewIcon(PRESET_ICONS[0])
     setInstallOptifine(false)
     setInstallElybySkins(false)
-    selectModpack(mp)
 
-    const shouldInstallElyby = installElybySkins
+    const initialInstalledMods: { id: string; title: string; type?: string; isEnabled?: boolean; projectId?: string }[] = []
 
     if (createdLoader === 'forge' && shouldInstallOptifine) {
       try {
         // @ts-ignore
         const result = await window.electronAPI.installOptifine(createdVersion, createdName)
         if (result.status === 'success' && result.filenames) {
-          setModpacks(currentModpacks => {
-            const newMp = currentModpacks.find(m => m.name === createdName)
-            if (newMp) {
-              const updatedMp = { ...newMp, installedMods: [...newMp.installedMods] }
-              result.filenames.forEach((filename: string, i: number) => {
-                updatedMp.installedMods.push({ id: `optimization-${i}-${Date.now()}`, title: filename, type: 'mod' })
-              })
-              const newAll = currentModpacks.map(m => m.name === createdName ? updatedMp : m)
-              // @ts-ignore
-              window.electronAPI.saveModpacks(newAll)
-              setActiveModpack(curr => curr?.name === createdName ? updatedMp : curr)
-              return newAll
-            }
-            return currentModpacks
+          result.filenames.forEach((filename: string) => {
+            initialInstalledMods.push({ id: filename, title: filename, type: 'mod', isEnabled: true })
           })
         } else if (result.status === 'error') {
           alert(t('mods.failedOptifine') + ' ' + result.error)
@@ -297,14 +347,45 @@ export default function ModsMenu({
       }
     }
 
+    // For Ely.by skins:
+    // If Forge with OptiFine, DO NOT install CustomSkinLoader mod as it causes bytecode collision / crash with OptiFine.
+    // Instead, hasElybySkins activates native authlib-injector in launch-game!
+    let hasElybySkins = false
     if (shouldInstallElyby) {
-      try {
-        // @ts-ignore
-        await window.electronAPI.downloadMod('customskinloader', createdVersion, createdLoader, createdName)
-      } catch (e) {
-        console.error('Failed to install CustomSkinLoader:', e)
+      hasElybySkins = true
+      if (!(createdLoader === 'forge' && shouldInstallOptifine)) {
+        try {
+          // @ts-ignore
+          const cslRes = await window.electronAPI.downloadMod('customskinloader', createdVersion, createdLoader, createdName)
+          if (cslRes?.filenames) {
+            cslRes.filenames.forEach((fn: string) => {
+              initialInstalledMods.push({ id: fn, projectId: 'customskinloader', title: fn, type: 'mod', isEnabled: true })
+            })
+          }
+        } catch (e) {
+          console.error('Failed to install CustomSkinLoader:', e)
+        }
       }
     }
+
+    const mp: Modpack = {
+      name: safeName,
+      loader: createdLoader,
+      version: createdVersion,
+      loaderVersion: undefined,
+      installedMods: initialInstalledMods,
+      icon: createdIcon,
+      hasElybySkins: hasElybySkins
+    }
+
+    setModpacks(prev => {
+      const updated = [...prev, mp]
+      // @ts-ignore
+      window.electronAPI.saveModpacks(updated)
+      return updated
+    })
+
+    await selectModpack(mp)
   }
 
   const saveModpackSettings = async () => {
@@ -413,14 +494,23 @@ export default function ModsMenu({
       const loader = activeModpack.loader
       // @ts-ignore
       const result = await window.electronAPI.downloadMod(mod.project_id, activeModpack.version, loader, activeModpack.name, projectType)
-      const newMods = result.filenames.map((name: string, i: number) => ({
-        id: i === 0 ? modId : `dep-${modId}-${i}`,
+      const newMods = (result.filenames || []).map((name: string, i: number) => ({
+        id: name,
+        projectId: i === 0 ? modId : undefined,
         title: name,
-        type: projectType
+        type: projectType,
+        isEnabled: true
       }))
+
+      // Deduplicate against existing installed mods by normalized filename
+      const newNorms = new Set(newMods.map((m: any) => normalizeModFilename(m.title)))
+      const filteredExisting = activeModpack.installedMods.filter(
+        m => !newNorms.has(normalizeModFilename(m.title))
+      )
+
       const updatedMp = {
         ...activeModpack,
-        installedMods: [...activeModpack.installedMods, ...newMods]
+        installedMods: [...filteredExisting, ...newMods]
       }
       setActiveModpack(updatedMp)
       const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
@@ -446,7 +536,10 @@ export default function ModsMenu({
   }
 
   const isOptifineInstalled = () => {
-    return activeModpack?.installedMods.some(m => m.title.toLowerCase().includes('optifine')) || false
+    return activeModpack?.installedMods.some(m => 
+      (m.title && m.title.toLowerCase().includes('optifine')) ||
+      (m.id && m.id.toLowerCase().includes('optifine'))
+    ) || false
   }
 
   const installOptifineManually = async () => {
@@ -456,14 +549,18 @@ export default function ModsMenu({
       // @ts-ignore
       const result = await window.electronAPI.installOptifine(activeModpack.version, activeModpack.name)
       if (result.status === 'success' && result.filenames) {
-        const newMods = result.filenames.map((name: string, i: number) => ({
-          id: `optifine-manual-${Date.now()}-${i}`,
+        const filteredMods = activeModpack.installedMods.filter(
+          m => !((m.title || '').toLowerCase().includes('optifine') || (m.id || '').toLowerCase().includes('optifine'))
+        )
+        const newMods = result.filenames.map((name: string) => ({
+          id: name,
           title: name,
-          type: 'mod'
+          type: 'mod',
+          isEnabled: true
         }))
         const updatedMp = {
           ...activeModpack,
-          installedMods: [...activeModpack.installedMods, ...newMods]
+          installedMods: [...filteredMods, ...newMods]
         }
         setActiveModpack(updatedMp)
         const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
@@ -478,8 +575,13 @@ export default function ModsMenu({
   }
 
   const isInstalled = (mod: any) => {
-    const modId = mod.project_id
-    return activeModpack?.installedMods.some(m => m.id === modId) || false
+    const modId = mod?.project_id
+    const slug = mod?.slug
+    return activeModpack?.installedMods.some(m => 
+      (modId && (m.projectId === modId || m.id === modId)) ||
+      (slug && (m.projectId === slug || m.id === slug)) ||
+      (m.title && modId && m.title.toLowerCase().includes(modId.toLowerCase()))
+    ) || false
   }
 
   // Helpers to normalize Modrinth data
@@ -618,23 +720,8 @@ export default function ModsMenu({
               }
 
               if (added) {
-                // Refresh installed mods
-                // @ts-ignore
-                const installed = await window.electronAPI.getInstalledMods(activeModpack.name)
-
-                setModpacks(prev => {
-                  const updated = prev.map(mp => {
-                    if (mp.name === activeModpack.name) {
-                      return { ...mp, installedMods: installed }
-                    }
-                    return mp
-                  })
-                  // @ts-ignore
-                  window.electronAPI.saveModpacks(updated)
-                  return updated
-                })
-
-                setActiveModpack({ ...activeModpack, installedMods: installed })
+                // Refresh installed mods via selectModpack reconciliation
+                await selectModpack(activeModpack)
               }
             }}
           >
@@ -735,7 +822,11 @@ export default function ModsMenu({
                             await window.electronAPI.toggleMod(m.title, activeModpack.name, !(m.isEnabled !== false));
                             const updatedMp = {
                               ...activeModpack,
-                              installedMods: activeModpack.installedMods.map(mod => mod.id === m.id ? { ...mod, isEnabled: (m.isEnabled === false) } : mod)
+                              installedMods: activeModpack.installedMods.map(mod => 
+                                (mod.id === m.id || normalizeModFilename(mod.title) === normalizeModFilename(m.title)) 
+                                  ? { ...mod, isEnabled: (m.isEnabled === false) } 
+                                  : mod
+                              )
                             };
                             setActiveModpack(updatedMp);
                             const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
@@ -788,7 +879,9 @@ export default function ModsMenu({
                                 await window.electronAPI.uninstallMod(m.title, activeModpack.name);
                                 const updatedMp = { 
                                   ...activeModpack, 
-                                  installedMods: activeModpack.installedMods.filter(mod => mod.id !== m.id) 
+                                  installedMods: activeModpack.installedMods.filter(
+                                    mod => mod.id !== m.id && normalizeModFilename(mod.title) !== normalizeModFilename(m.title)
+                                  ) 
                                 };
                                 setActiveModpack(updatedMp);
                                 const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
@@ -913,162 +1006,215 @@ export default function ModsMenu({
 
       {/* Create Modpack Modal */}
       {showCreateModal && (
-        <div className="modal-overlay" onClick={() => setShowCreateModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px', maxHeight: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <span style={{ fontSize: '18px', color: 'white' }}>{t("mods.createModpackTitle")}</span>
-              <button onClick={() => setShowCreateModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}><X size={20} /></button>
+        <div className="mc-dialog-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '480px', maxWidth: '92vw' }}>
+            <div className="mc-dialog-header">
+              <div className="mc-dialog-title warning">
+                <span>{t("mods.createModpackTitle").toUpperCase()}</span>
+              </div>
+              <button 
+                type="button" 
+                className="mc-close-cube-btn" 
+                title="Закрыть" 
+                onClick={() => setShowCreateModal(false)}
+              >
+                <CubicCrossIcon />
+              </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.name")}</label>
-                <input type="text" className="mc-input" value={newName} onChange={e => setNewName(e.target.value)} />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.loader")}</label>
-                  <McSelect
-                    value={newLoader}
-                    onChange={v => setNewLoader(v)}
-                    options={[
-                      { value: 'fabric', label: 'Fabric' },
-                      { value: 'forge', label: 'Forge' },
-                      { value: 'quilt', label: 'Quilt' },
-                      { value: 'neoforge', label: 'NeoForge' }
-                    ]}
-                  />
-                </div>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.gameVersion")}</label>
-                  <McSelect
-                    value={newVersion}
-                    onChange={v => setNewVersion(v)}
-                    options={gameVersions.map((v: string) => ({ value: v, label: v }))}
-                  />
-                </div>
-              </div>
-
-
-              {newLoader === 'forge' && (
-                <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={installOptifine} onChange={e => setInstallOptifine(e.target.checked)} />
-                    {t("mods.installOptifine")}
+            <div className="mc-dialog-content">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    {t("mods.name")}
                   </label>
+                  <input type="text" className="mc-input" value={newName} onChange={e => setNewName(e.target.value)} style={{ fontFamily: '"Blocks", sans-serif' }} />
                 </div>
-              )}
 
-              <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#aaa', fontSize: '13px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={installElybySkins} onChange={e => setInstallElybySkins(e.target.checked)} />
-                  {t("mods.installElyby")}
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.icon")}</label>
-                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                  <label
-                    onClick={async (e) => {
-                      e.preventDefault()
-                      // @ts-ignore
-                      const dataUrl = await window.electronAPI.selectIconFile()
-                      if (dataUrl) setNewIcon(dataUrl)
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #444', cursor: 'pointer', background: '#222' }}
-                  >
-                    <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
-                  </label>
-                  {PRESET_ICONS.map(icon => (
-                    <img
-                      key={icon}
-                      src={icon}
-                      width={32}
-                      height={32}
-                      style={{
-                        cursor: 'pointer',
-                        border: newIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
-                        padding: '2px',
-                        objectFit: 'cover'
-                      }}
-                      onClick={() => setNewIcon(icon)}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                      {t("mods.loader")}
+                    </label>
+                    <McSelect
+                      value={newLoader}
+                      onChange={v => setNewLoader(v)}
+                      options={[
+                        { value: 'fabric', label: 'Fabric' },
+                        { value: 'forge', label: 'Forge' },
+                        { value: 'quilt', label: 'Quilt' },
+                        { value: 'neoforge', label: 'NeoForge' }
+                      ]}
                     />
-                  ))}
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                      {t("mods.gameVersion")}
+                    </label>
+                    <McSelect
+                      value={newVersion}
+                      onChange={v => setNewVersion(v)}
+                      options={gameVersions.map((v: string) => ({ value: v, label: v }))}
+                    />
+                  </div>
+                </div>
+
+                {newLoader === 'forge' && (
+                  <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '2px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '12.5px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={installOptifine} onChange={e => setInstallOptifine(e.target.checked)} />
+                      {t("mods.installOptifine")}
+                    </label>
+                  </div>
+                )}
+
+                <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '12.5px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={installElybySkins} onChange={e => setInstallElybySkins(e.target.checked)} />
+                    {t("mods.installElyby")}
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    {t("mods.icon")}
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <label
+                      onClick={async (e) => {
+                        e.preventDefault()
+                        // @ts-ignore
+                        const dataUrl = await window.electronAPI.selectIconFile()
+                        if (dataUrl) setNewIcon(dataUrl)
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
+                      title="Выбрать свой файл"
+                    >
+                      <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
+                    </label>
+                    {PRESET_ICONS.map(icon => (
+                      <img
+                        key={icon}
+                        src={icon}
+                        width={32}
+                        height={32}
+                        style={{
+                          cursor: 'pointer',
+                          border: newIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
+                          padding: '2px',
+                          background: newIcon === icon ? 'rgba(241,196,15,0.15)' : 'transparent',
+                          objectFit: 'cover'
+                        }}
+                        onClick={() => setNewIcon(icon)}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <button className="mc-btn-primary" onClick={createModpack} style={{ marginTop: '10px', padding: '10px' }}>{t("mods.btnCreate")}</button>
+            <div className="mc-dialog-footer">
+              <button 
+                type="button" 
+                className="mc-cube-btn neutral" 
+                onClick={() => setShowCreateModal(false)}
+              >
+                Отмена
+              </button>
+              <button 
+                type="button" 
+                className="mc-cube-btn gold" 
+                onClick={createModpack}
+              >
+                {t("mods.btnCreate")}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-
       {/* Modpack Settings Modal */}
       {showModpackSettingsModal && activeModpack && (
-        <div className="modal-overlay" onClick={() => setShowModpackSettingsModal(false)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
-          <div className="modal-box" onClick={e => e.stopPropagation()} style={{ background: '#1a1a1a', border: '2px solid #2a2a2a', padding: '20px', width: '400px', maxHeight: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <span style={{ fontSize: '18px', color: 'white' }}>{t("mods.modpackSettings")}</span>
-              <button onClick={() => setShowModpackSettingsModal(false)} style={{ background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}><X size={20} /></button>
+        <div className="mc-dialog-overlay" onClick={() => setShowModpackSettingsModal(false)}>
+          <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '480px', maxWidth: '92vw' }}>
+            <div className="mc-dialog-header">
+              <div className="mc-dialog-title warning">
+                <span>{t("mods.modpackSettings").toUpperCase()}</span>
+              </div>
+              <button 
+                type="button" 
+                className="mc-close-cube-btn" 
+                title="Закрыть" 
+                onClick={() => setShowModpackSettingsModal(false)}
+              >
+                <CubicCrossIcon />
+              </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.name")}</label>
-                <input type="text" className="mc-input" value={editModpackName} onChange={e => setEditModpackName(e.target.value)} />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <label style={{ color: '#aaa', fontSize: '12px' }}>{t("mods.icon")}</label>
-                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                  <label
-                    onClick={async (e) => {
-                      e.preventDefault()
-                      // @ts-ignore
-                      const dataUrl = await window.electronAPI.selectIconFile()
-                      if (dataUrl) setEditModpackIcon(dataUrl)
-                    }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #444', cursor: 'pointer', background: '#222' }}
-                  >
-                    <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
+            <div className="mc-dialog-content">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    {t("mods.name")}
                   </label>
-                  {PRESET_ICONS.map(icon => (
-                    <img
-                      key={icon}
-                      src={icon}
-                      width={32}
-                      height={32}
-                      style={{
-                        cursor: 'pointer',
-                        border: editModpackIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
-                        padding: '2px',
-                        objectFit: 'cover'
+                  <input type="text" className="mc-input" value={editModpackName} onChange={e => setEditModpackName(e.target.value)} style={{ fontFamily: '"Blocks", sans-serif' }} />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                    {t("mods.icon")}
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <label
+                      onClick={async (e) => {
+                        e.preventDefault()
+                        // @ts-ignore
+                        const dataUrl = await window.electronAPI.selectIconFile()
+                        if (dataUrl) setEditModpackIcon(dataUrl)
                       }}
-                      onClick={() => setEditModpackIcon(icon)}
-                    />
-                  ))}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
+                      title="Выбрать свой файл"
+                    >
+                      <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
+                    </label>
+                    {PRESET_ICONS.map(icon => (
+                      <img
+                        key={icon}
+                        src={icon}
+                        width={32}
+                        height={32}
+                        style={{
+                          cursor: 'pointer',
+                          border: editModpackIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
+                          padding: '2px',
+                          background: editModpackIcon === icon ? 'rgba(241,196,15,0.15)' : 'transparent',
+                          objectFit: 'cover'
+                        }}
+                        onClick={() => setEditModpackIcon(icon)}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button
-                  className="mc-btn-primary"
-                  onClick={() => {
-                    if (confirmDelete) {
-                      deleteModpack()
-                    } else {
-                      setConfirmDelete(true)
-                    }
-                  }}
-                  style={{ flex: 1, padding: '10px', background: '#e74c3c', borderColor: '#c0392b', color: 'white' }}
-                >
-                  {confirmDelete ? t('mods.areYouSure') : t('mods.deleteModpack')}
-                </button>
-                <button className="mc-btn-primary" onClick={saveModpackSettings} style={{ flex: 1, padding: '10px' }}>{t("mods.save")}</button>
-              </div>
+            <div className="mc-dialog-footer" style={{ justifyContent: 'space-between' }}>
+              <button
+                type="button"
+                className="mc-cube-btn danger"
+                onClick={() => {
+                  if (confirmDelete) {
+                    deleteModpack()
+                  } else {
+                    setConfirmDelete(true)
+                  }
+                }}
+              >
+                {confirmDelete ? t('mods.areYouSure') : t('mods.deleteModpack')}
+              </button>
+              <button type="button" className="mc-cube-btn gold" onClick={saveModpackSettings}>
+                {t("mods.save")}
+              </button>
             </div>
           </div>
         </div>

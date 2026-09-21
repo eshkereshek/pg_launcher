@@ -60,3 +60,89 @@
   display: inline-block;
   text-align: left;
 }
+
+@keyframes mc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.mc-spin {
+  animation: mc-spin 0.9s linear infinite;
+}
+
+.mod-version-row {
+  transition: background-color 0.15s ease;
+}
+
+.mod-version-row:hover {
+  background-color: #212121 !important;
+}
+
+/* Mod Install Action Button (Icon Only) */
+.mod-install-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  max-width: 36px !important;
+  max-height: 36px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  background-color: var(--pg-yellow) !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+  border-radius: 0 !important;
+  cursor: pointer !important;
+  box-shadow: inset -2px -2px 0 0 rgba(0,0,0,0.3), inset 2px 2px 0 0 rgba(255,255,255,0.4), 0 3px 0 0 #111 !important;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, outline 0.1s ease !important;
+  overflow: visible !important;
+}
+
+.mod-install-btn:hover:not(:disabled) {
+  outline: 2px solid #ffffff !important;
+  outline-offset: 2px !important;
+  background-color: var(--pg-yellow) !important;
+  color: #000000 !important;
+  transform: none !important;
+}
+
+.mod-install-btn:active:not(:disabled) {
+  transform: translateY(3px) !important;
+  box-shadow: inset -2px -2px 0 0 rgba(0,0,0,0.3), inset 2px 2px 0 0 rgba(255,255,255,0.4), 0 0 0 0 #111 !important;
+  outline: none !important;
+}
+
+.mod-install-btn svg {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  display: block !important;
+  color: #000000 !important;
+  flex-shrink: 0 !important;
+  pointer-events: none !important;
+}
+
+.mod-action-badge {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.mod-action-badge svg {
+  width: 20px !important;
+  height: 20px !important;
+  display: block !important;
+  flex-shrink: 0 !important;
+}
