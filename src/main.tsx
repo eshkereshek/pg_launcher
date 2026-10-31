@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, lazy, Suspense } from 'react'
+import { StrictMode, useState, useEffect, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Глобальные обработчики ошибок больше не разрушают DOM: показываем ненавязчивое
@@ -69,6 +69,7 @@ import './pixel-corners.css'
 
 import { LanguageProvider, translate } from './i18n.tsx'
 import { Toaster } from './Toasts'
+import InstallerApp from './InstallerApp'
 import { initTauriBridge } from './api/tauriBridge'
 
 // Initialize Tauri bridge to supply window.electronAPI
@@ -77,10 +78,25 @@ initTauriBridge()
 const App = lazy(() => import('./App.tsx'))
 
 function MainWrapper() {
+  const [isInstaller, setIsInstaller] = useState<boolean | null>(null)
+
   useEffect(() => {
     document.documentElement.style.backgroundColor = '#151515'
     document.body.style.backgroundColor = '#151515'
+    window.electronAPI.isInstaller()
+      .then((res: boolean) => setIsInstaller(!!res))
+      .catch(() => setIsInstaller(false))
   }, [])
+
+  if (isInstaller === null) return <div style={{ backgroundColor: '#151515', width: '100%', height: '100%' }} />
+
+  if (isInstaller) {
+    return (
+      <div className="launcher-appear-wrap" style={{ backgroundColor: '#151515' }}>
+        <InstallerApp />
+      </div>
+    )
+  }
 
   return (
     <Suspense fallback={<div style={{ backgroundColor: '#151515', width: '100%', height: '100%' }} />}>
