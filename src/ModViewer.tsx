@@ -2,12 +2,39 @@ import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { 
-  Clock, Tag, ArrowLeft, ChevronLeft, ChevronRight, X, 
-  Image as ImageIcon, ZoomIn, ZoomOut, Check, Loader2 
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import {
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Image as ImageIcon,
+  ZoomIn,
+  ZoomOut,
+  Loader2,
 } from 'lucide-react';
 import { useTranslation } from './i18n';
+import BackButton from './BackButton';
 import './ModViewer.css';
+import { Clock, Tag, Check } from './PixelIcons'
+
+/**
+ * Описания проектов приходят с Modrinth/CurseForge — то есть их пишут авторы
+ * модов, а не мы. rehypeRaw превращает HTML внутри описания в настоящие узлы
+ * документа, поэтому без санитайза любой автор мог бы выполнить свой скрипт
+ * внутри лаунчера, а оттуда дотянуться до IPC-команд. Схема — стандартная
+ * GitHub-подобная; сверху добавлено только то, что реально встречается в
+ * описаниях: выравнивание ячеек таблиц и классы подсветки кода.
+ */
+export const descriptionSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    th: [...(defaultSchema.attributes?.th || []), 'align'],
+    td: [...(defaultSchema.attributes?.td || []), 'align'],
+    code: [...(defaultSchema.attributes?.code || []), ['className', /^language-./]],
+    img: [...(defaultSchema.attributes?.img || []), 'loading', 'decoding'],
+  },
+}
 
 export const PixelDownloadIcon = ({ size = 20, color = "#000000", opacity = 1, style }: { size?: number, color?: string, opacity?: number, style?: React.CSSProperties }) => (
   <svg 
@@ -28,17 +55,123 @@ const projectDetailsCache = new Map<string, any>();
 const versionsCache = new Map<string, any[]>();
 const dependenciesCache = new Map<string, any[]>();
 
+// Пиксельная иконка перевода: два диалоговых пузырька со строчками текста.
+// Рисуется по карте 16x16 (./k/W/s/t), чтобы пиксели были ровными и править
+// их можно было глазами, а не координатами прямоугольников.
+const TRANSLATE_ICON_MAP = [
+  "................",
+  "................",
+  ".kkkkkkkkk......",
+  ".kWWWWWWWk......",
+  ".kWtttttWk......",
+  ".kWWWWWWWk......",
+  ".ksssssssk......",
+  ".kkkkkkkkkkkkkkk",
+  "..kk..kWWWWWWWWk",
+  "......kWtttttWWk",
+  "......kWWWWWWWWk",
+  "......kWttttWWWk",
+  "......kWWWWWWWWk",
+  "......kssssssssk",
+  "......kkkkkkkkkk",
+  ".............kk.",
+];
+
+// k — контур, W — заливка, s — тень нижнего края, t — строчки текста.
+const TRANSLATE_ICON_PALETTE: Record<string, string> = {
+  k: "#1e1e1e",
+  W: "#ffffff",
+  s: "#d8d8d8",
+  t: "#6f6f6f",
+};
+
+// Когда перевод показан, пузырьки становятся тёмными с жёлтыми строчками:
+// на жёлтой кнопке это читается как «включено».
+const TRANSLATE_ICON_PALETTE_ON: Record<string, string> = {
+  k: "#171200",
+  W: "#171200",
+  s: "#171200",
+  t: "#f1c40f",
+};
+
+// Строки карты склеиваем в прямоугольники по прогонам — меньше узлов в DOM.
+const buildTranslateIconRects = (palette: Record<string, string>) => {
+  const rects: { x: number; y: number; w: number; fill: string }[] = [];
+  TRANSLATE_ICON_MAP.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      const ch = row[x];
+      if (ch === ".") {
+        x += 1;
+        continue;
+      }
+      let w = 1;
+      while (x + w < row.length && row[x + w] === ch) w += 1;
+      rects.push({ x, y, w, fill: palette[ch] || "#000000" });
+      x += w;
+    }
+  });
+  return rects;
+};
+
+const TRANSLATE_ICON_RECTS = buildTranslateIconRects(TRANSLATE_ICON_PALETTE);
+const TRANSLATE_ICON_RECTS_ON = buildTranslateIconRects(TRANSLATE_ICON_PALETTE_ON);
+
+const TranslatePixelIcon = ({ size = 18, on = false }: { size?: number; on?: boolean }) => {
+  const rects = on ? TRANSLATE_ICON_RECTS_ON : TRANSLATE_ICON_RECTS;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={size}
+      height={size}
+      shapeRendering="crispEdges"
+      style={{ display: "block", imageRendering: "pixelated" }}
+    >
+      {rects.map((r, i) => (
+        <rect key={i} x={r.x} y={r.y} width={r.w} height={1} fill={r.fill} />
+      ))}
+    </svg>
+  );
+};
+
+// Переводы описаний. Кэш сознательно короткий и хранит перевод вместе с
+// исходником: перевод обязан показываться только рядом со своим текстом.
+// Без этого в кэше оставался перевод короткого описания из карточки каталога,
+// и он подставлялся вместо полного текста описания.
+const TRANSLATIONS_CACHE_LIMIT = 8;
+type TranslationEntry = { source: string; text: string };
+const translationsCache = new Map<string, TranslationEntry>();
+
+const rememberTranslation = (id: string, entry: TranslationEntry) => {
+  if (translationsCache.has(id)) translationsCache.delete(id);
+  translationsCache.set(id, entry);
+  while (translationsCache.size > TRANSLATIONS_CACHE_LIMIT) {
+    const oldest = translationsCache.keys().next().value;
+    if (oldest === undefined) break;
+    translationsCache.delete(oldest);
+  }
+};
+
 interface ModViewerProps {
   mod: any;
   activeModpack?: any;
   onClose: () => void;
-  onInstall: (mod: any) => void;
+  /** version — объект версии Modrinth, нужен сборкам: у .mrpack нет «версии
+      мода», зато есть игра и загрузчик, по которым бэкенд и ставит файл. */
+  onInstall: (mod: any, versionId?: string, version?: any) => void;
   isInstalled: boolean;
   isDownloading: boolean;
+  /** Мод это или сборка: меняет подписи и набор вкладок. */
+  kind?: 'mod' | 'modpack';
+  /** Id установленной версии, если он известен. Без него «установленной»
+      считается та строка, которую поставила бы главная кнопка. */
+  installedVersionId?: string;
 }
 
-export default function ModViewer({ mod, activeModpack, onClose, onInstall, isInstalled, isDownloading }: ModViewerProps) {
+export default function ModViewer({ mod, activeModpack, onClose, onInstall, isInstalled, isDownloading, kind = 'mod', installedVersionId }: ModViewerProps) {
+  const isPack = kind === 'modpack';
   const { t } = useTranslation();
+  const objectWord = isPack ? t('mv.unitModpacks') : t('mv.unitMod');
   const [activeTab, setActiveTab] = useState<'overview' | 'gallery' | 'versions' | 'dependencies'>('overview');
   
   const projectId = mod?.project_id || mod?.id;
@@ -59,6 +192,17 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
 
   // Versions pagination limit for buttery smooth DOM performance
   const [visibleCount, setVisibleCount] = useState(40);
+
+  // Перевод описания. Оригинал никуда не девается: перевод лежит отдельно и
+  // показывается по кнопке, оригинал — по той же кнопке.
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [translationNote, setTranslationNote] = useState('');
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [translateProgress, setTranslateProgress] = useState<{ done: number; total: number } | null>(null);
+  // Текст, из которого сделан перевод. Перевод показываем только рядом со своим
+  // оригиналом — иначе перевод короткого описания попадал под полное тело.
+  const [translationSource, setTranslationSource] = useState('');
 
   const galleryImages: { url: string; title: string; description?: string }[] = (
     projectDetails?.gallery || mod?.gallery || mod?.screenshots || []
@@ -88,7 +232,102 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
     setIsLightboxOpen(false);
     setIsZoomed(false);
     setVisibleCount(40);
+    // Чужой перевод показывать нельзя — снимаем его при смене проекта.
+    const cached = projectId ? translationsCache.get(projectId) : undefined;
+    setTranslation(cached?.text || null);
+    setTranslationSource(cached?.source || '');
+    setTranslating(false);
+    setTranslationNote('');
+    // Сохранённый перевод держим под кнопкой, а не на экране: в карточку
+    // заходят за оригиналом, а перевод просят нажатием.
+    setShowOriginal(!!cached);
   }, [projectId]);
+
+  // То, что реально показывается в «Обзоре».
+  const originalDescription: string = projectDetails?.body || mod?.description || '';
+  // Переводим ровно то, что показано. У части проектов (особенно у ресурспаков
+  // и шейдеров) тела статьи нет вовсе — там описание и есть короткая строка, а
+  // раньше кнопка на ней молчала: переводить было «нечего», текст оставался
+  // английским. Перевод по-прежнему привязан к своему оригиналу
+  // (`translationSource`), поэтому чужой текст под описанием не появится.
+  const fullDescription: string = originalDescription;
+  // Перевод имеет право жить только рядом со своим оригиналом.
+  const translationMatches = !!translation && translationSource === originalDescription;
+  const translationVisible = translationMatches && !showOriginal;
+
+  const runTranslation = async () => {
+    if (!fullDescription) {
+      setTranslationNote(
+        projectDetails ? t('mv.nothingToTranslate') : t('mv.loadFullFirst')
+      );
+      return;
+    }
+
+    const source = fullDescription;
+    setTranslating(true);
+    setTranslateProgress(null);
+    setTranslationNote('');
+    try {
+      // @ts-ignore
+      const res = await window.electronAPI?.translateText?.(source, 'ru');
+      if (!res?.text) throw new Error(t('mv.translatorNoAnswer'));
+      if (res.already_target) {
+        setTranslationNote(t('mv.alreadyRussian'));
+        return;
+      }
+      if (projectId) rememberTranslation(projectId, { source, text: res.text });
+      setTranslation(res.text);
+      setTranslationSource(source);
+      setShowOriginal(false);
+
+      const notes: string[] = [];
+      if (res.partial) notes.push(t('mv.partialChunks'));
+      if (res.truncated) notes.push(t('mv.partialLong'));
+      setTranslationNote(notes.join(' '));
+    } catch (e: any) {
+      setTranslationNote(e?.message || t('mv.translateFailed'));
+    } finally {
+      setTranslating(false);
+      setTranslateProgress(null);
+    }
+  };
+
+  const handleTranslateToggle = () => {
+    if (translating) return;
+
+    // Перевод уже есть — просто переключаем оригинал/перевод, без нового запроса.
+    if (translationMatches) {
+      setShowOriginal(prev => !prev);
+      setTranslationNote('');
+      return;
+    }
+
+    void runTranslation();
+  };
+
+  // Куски переводятся параллельно, поэтому без счётчика кнопка на длинном
+  // описании выглядит зависшей.
+  useEffect(() => {
+    if (!translating) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    // @ts-ignore
+    const subscription = window.electronAPI?.onTranslateProgress?.((data: { done: number; total: number }) => {
+      if (!disposed) setTranslateProgress(data);
+    });
+    subscription
+      ?.then((fn: any) => {
+        if (typeof fn !== 'function') return;
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      ?.catch(() => {});
+
+    return () => {
+      disposed = true;
+      if (typeof unlisten === 'function') unlisten();
+    };
+  }, [translating]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,7 +390,10 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
     }
 
     // 3. Dependencies (fetched in parallel!)
-    if (dependenciesCache.has(projectId)) {
+    // Сборке зависимости не нужны: вкладка скрыта, лишний запрос не делаем.
+    if (isPack) {
+      setLoadingDependencies(false);
+    } else if (dependenciesCache.has(projectId)) {
       setDependencies(dependenciesCache.get(projectId)!);
       setLoadingDependencies(false);
     } else {
@@ -172,8 +414,26 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
 
   if (!mod) return null;
 
-  const getModIcon = (m: any) => m?.icon_url || m?.logo_url || './iconsblocks/Grass_Block.png';
+  const getModIcon = (m: any) => m?.icon_url || m?.logo_url || './iconsblocks/Grass_Block_(inventory)_MCE.png';
   const getModTitle = (m: any) => m?.title || m?.name || 'Unknown Mod';
+
+  /* Пустая версия или пустой загрузчик в контексте означают «любой»: каталог
+     сборок заранее ничего не выбрал. */
+  const matchesContext = (v: any) => {
+    const wantedVersion = activeModpack?.version || '';
+    const wantedLoader = activeModpack?.loader || '';
+    const versionOk = !wantedVersion || !!v.game_versions?.includes(wantedVersion);
+    const loaderOk = !wantedLoader ||
+      v.loaders?.some((l: string) => l.toLowerCase() === String(wantedLoader).toLowerCase());
+    return versionOk && loaderOk;
+  };
+
+  /* Modrinth отдаёт версии от новых к старым, а бэкенд берёт первую подходящую,
+     то есть главная кнопка ставит ровно эту строку. Галочка «установлено»
+     теперь только на ней: раньше она стояла на всех подходящих строках сразу и
+     кнопки скачивания старых релизов просто исчезали. */
+  const primaryCompatibleId = !!activeModpack ? versions.find(matchesContext)?.id : undefined;
+  const installedRowId = installedVersionId || primaryCompatibleId;
 
   return (
     <div className="mod-viewer-overlay" onClick={onClose} style={{
@@ -189,6 +449,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
         display: 'flex',
         flexDirection: 'column',
         backgroundColor: 'var(--pg-dark)',
+        position: 'relative',
         color: 'var(--pg-text)'
       }}>
         {/* Header */}
@@ -202,25 +463,11 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
           background: 'var(--pg-dark2)',
           boxSizing: 'border-box'
         }}>
-          <button
+          {/* Кнопка назад одна на все раскрытые карточки и на создание сборки. */}
+          <BackButton
             onClick={onClose}
-            className="mc-btn-primary"
-            style={{
-              position: 'absolute',
-              top: '15px', left: '15px',
-              padding: '6px 12px',
-              background: '#222',
-              border: 'none',
-              color: '#aaa',
-              display: 'flex',
-              alignItems: 'center',
-              cursor: 'pointer',
-              borderRadius: '0',
-              zIndex: 10
-            }}
-          >
-            <ArrowLeft size={20} />
-          </button>
+            style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10 }}
+          />
 
           <div style={{
             width: '136px', height: '136px',
@@ -258,24 +505,38 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
               <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Clock size={18} /> {new Date(projectDetails?.updated || mod.date_modified || Date.now()).toLocaleDateString()}
               </span>
+              {/* Сборкам показываем поддерживаемые версии игры: внутренний
+                  идентификатор версии Modrinth игроку ничего не говорит. */}
               <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Tag size={18} /> Последняя: {mod.versions ? mod.versions[mod.versions.length - 1] : projectDetails?.versions?.[projectDetails.versions.length - 1] || '?'}
+                <Tag size={18} />
+                {isPack
+                  ? `Minecraft ${(projectDetails?.game_versions || mod.versions || []).slice(-3).join(', ') || '?'}`
+                  : `Последняя: ${mod.versions ? mod.versions[mod.versions.length - 1] : projectDetails?.versions?.[projectDetails.versions.length - 1] || '?'}`}
               </span>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', marginRight: '20px', flexShrink: 0 }}>
+            {/* Установленный проект кнопку не жмёт. Старую версию по-прежнему
+                можно взять в таблице «Версии» — там она нужна для откатов. */}
             {isInstalled ? (
-              <button className="mc-btn-primary" style={{ background: '#27ae60', borderColor: '#2ecc71', fontSize: '18px', padding: '15px 30px', fontWeight: 'bold' }}>
-                {t("mods.isInstalled") || "Установлено"}
+              <button
+                className="mc-btn-secondary"
+                disabled
+                style={{ background: '#2b2b2b', fontSize: '18px', padding: '15px 30px', fontWeight: 'bold', cursor: 'not-allowed' }}
+                title={isPack
+                  ? t('mv.alreadyInstalledHint')
+                  : t('mv.alreadyInstalled')}
+              >
+                {t("mods.isInstalled") || t('modpacks.installedBadge')}
               </button>
             ) : isDownloading ? (
               <button className="mc-btn-primary" disabled style={{ fontSize: '18px', padding: '15px 30px', fontWeight: 'bold' }}>
-                Загрузка...
+                {t('app.loading')}
               </button>
             ) : (
               <button className="mc-btn-primary" onClick={() => onInstall(mod)} style={{ fontSize: '18px', padding: '15px 30px', fontWeight: 'bold' }}>
-                {t("mods.install") || "Установить"}
+                {isPack ? (t("modpacks.install") || t('mods.install')) : (t("mods.install") || t('mods.install'))}
               </button>
             )}
           </div>
@@ -290,10 +551,12 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
           background: 'var(--pg-dark2)'
         }}>
           {[
-            { id: 'overview', label: 'Обзор' },
-            { id: 'gallery', label: 'Картинки', count: galleryImages.length },
-            { id: 'versions', label: 'Версии', count: versions.length },
-            { id: 'dependencies', label: 'Зависимости', count: dependencies.length }
+            { id: 'overview', label: t('servers.tabOverview') },
+            { id: 'gallery', label: t('servers.tabGallery'), count: galleryImages.length },
+            { id: 'versions', label: t('mv.tabVersions'), count: versions.length },
+            /* У сборки отдельных зависимостей нет: состав лежит внутри .mrpack,
+               поэтому вкладку «Зависимости» для неё не показываем. */
+            ...(isPack ? [] : [{ id: 'dependencies', label: t('mv.tabDependencies'), count: dependencies.length }])
           ].map(tab => (
             <div
               key={tab.id}
@@ -349,13 +612,15 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 }}>
                   <Loader2 size={36} className="mc-spin" style={{ color: 'var(--pg-yellow)' }} />
                   <span style={{ color: '#aaa', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
-                    Загрузка описания...
+                    {t('servers.loadingDescription')}
                   </span>
                 </div>
               ) : (
                 <div className="markdown-body" style={{ padding: '40px', color: '#ddd', lineHeight: 1.6, width: '100%', maxWidth: '100%', margin: '0 auto', fontSize: '15px', boxSizing: 'border-box' }}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                    {projectDetails?.body || mod.description || "Описание отсутствует."}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, [rehypeSanitize, descriptionSchema]]}>
+                    {translationVisible
+                      ? translation
+                      : (originalDescription || t('mv.noDescription'))}
                   </ReactMarkdown>
                 </div>
               )}
@@ -401,7 +666,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       onMouseLeave={e => {
                         e.currentTarget.style.outline = 'none';
                       }}
-                      title="Нажмите, чтобы увеличить"
+                      title={t('mv.clickToZoom')}
                     >
                       <div style={{
                         width: '100%',
@@ -415,7 +680,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       }}>
                         <img
                           src={img.url}
-                          alt={img.title || `Скриншот ${idx + 1}`}
+                          alt={img.title || t('mv.screenshotAlt', { p1: idx + 1 })}
                           style={{
                             width: '100%',
                             height: '100%',
@@ -472,7 +737,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 }}>
                   <ImageIcon size={48} color="#444" />
                   <span style={{ fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
-                    У этого мода нет скриншотов в галерее
+                    {isPack ? t('mv.noScreenshotsModpack') : t('mv.noScreenshotsMod')}
                   </span>
                 </div>
               )}
@@ -497,10 +762,10 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                     color: '#ddd',
                     fontSize: '16px'
                   }}>
-                    Загрузка версий с Modrinth...
+                    {t('mv.loadingVersions')}
                   </span>
                   <span style={{ color: '#777', fontSize: '13px', fontFamily: '"Blocks", sans-serif' }}>
-                    Получение списка релизов
+                    {t('mv.fetchingReleases')}
                   </span>
                 </div>
               ) : (
@@ -526,20 +791,20 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                     alignItems: 'center',
                     minWidth: '700px'
                   }}>
-                    <div>Дата</div>
-                    <div>Версия</div>
-                    <div>Загрузчик</div>
+                    <div>{t('mv.colDate')}</div>
+                    <div>{t('mv.colVersion')}</div>
+                    <div>{t('mv.colLoader')}</div>
                     <div>Minecraft</div>
-                    <div style={{ textAlign: 'center' }}>Действие</div>
+                    <div style={{ textAlign: 'center' }}>{t('mv.colAction')}</div>
                   </div>
 
                   {/* Rows */}
                   {versions.length > 0 ? (
                     <>
                       {versions.slice(0, visibleCount).map((v: any, idx: number) => {
-                        const isCompatible = activeModpack && 
-                          v.game_versions?.includes(activeModpack.version) && 
-                          v.loaders?.some((l: string) => l.toLowerCase() === activeModpack.loader.toLowerCase());
+                        const isCompatible = !!activeModpack && matchesContext(v);
+                        // Галочка только на той строке, что реально установлена.
+                        const isThisInstalled = isInstalled && v.id === installedRowId;
                         
                         return (
                           <div
@@ -672,23 +937,23 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
 
                             {/* Action - ONLY LOGO WITHOUT TEXT */}
                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                              {isInstalled && isCompatible ? (
+                              {isThisInstalled && isCompatible ? (
                                 <div
                                   className="mod-action-badge"
-                                  title={t("mods.isInstalled") || "Установлен"}
+                                  title={t("mods.isInstalled") || t('mv.installedState')}
                                   style={{
-                                    background: 'rgba(46, 204, 113, 0.15)',
-                                    border: '1px solid rgba(46, 204, 113, 0.4)',
-                                    color: '#2ecc71',
-                                    boxShadow: 'inset 0 0 4px rgba(46, 204, 113, 0.2)'
+                                    background: '#232323',
+                                    border: '1px solid #3a3a3a',
+                                    color: '#ffffff',
+                                    boxShadow: 'none'
                                   }}
                                 >
-                                  <Check size={20} strokeWidth={2.5} color="#2ecc71" />
+                                  <Check size={20} strokeWidth={2.5} color="#ffffff" />
                                 </div>
                               ) : isDownloading ? (
                                 <div
                                   className="mod-action-badge"
-                                  title="Загрузка..."
+                                  title={t('app.loading')}
                                   style={{
                                     background: 'rgba(241, 196, 15, 0.12)',
                                     border: '1px solid rgba(241, 196, 15, 0.3)',
@@ -701,8 +966,8 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                 <button
                                   type="button"
                                   className="mod-install-btn"
-                                  onClick={() => onInstall(mod)}
-                                  title={t("mods.install") || "Установить"}
+                                  onClick={() => onInstall(mod, v.id, v)}
+                                  title={`${t("mods.install") || "Установить"}: ${v.name || v.version_number || ''}`.trim()}
                                 >
                                   <PixelDownloadIcon size={20} color="#000000" />
                                 </button>
@@ -776,7 +1041,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       gap: '14px'
                     }}>
                       <span style={{ fontSize: '15px', fontFamily: '"Blocks", sans-serif', color: '#bbb' }}>
-                        Нет доступных версий
+                        {t('mv.noVersions')}
                       </span>
                     </div>
                   )}
@@ -798,7 +1063,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 }}>
                   <Loader2 size={36} className="mc-spin" style={{ color: 'var(--pg-yellow)' }} />
                   <span style={{ color: '#aaa', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
-                    Загрузка зависимостей...
+                    {t('mv.loadingDependencies')}
                   </span>
                 </div>
               ) : dependencies.length > 0 ? (
@@ -808,7 +1073,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                     display: 'flex', alignItems: 'center', gap: '20px',
                     border: '1px solid var(--pg-dark3)'
                   }}>
-                    <img src={dep.icon_url || './iconsblocks/Grass_Block.png'} alt="icon" style={{ width: '60px', height: '60px', borderRadius: '0', background: '#fff' }} />
+                    <img src={dep.icon_url || './iconsblocks/Grass_Block_(inventory)_MCE.png'} alt="icon" style={{ width: '60px', height: '60px', borderRadius: '0', background: '#fff' }} />
                     <div>
                       <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '18px', marginBottom: '5px' }}>{dep.title}</div>
                       <div style={{ color: '#aaa', fontSize: '14px', lineHeight: 1.4 }}>{dep.description}</div>
@@ -816,11 +1081,87 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   </div>
                 ))
               ) : (
-                <div style={{ color: '#aaa', textAlign: 'center', marginTop: '50px', fontSize: '18px', fontFamily: '"Blocks", sans-serif' }}>Нет зависимостей</div>
+                <div style={{ color: '#aaa', textAlign: 'center', marginTop: '50px', fontSize: '18px', fontFamily: '"Blocks", sans-serif' }}>{t('mv.noDependencies')}</div>
               )}
             </div>
           )}
         </div>
+        {/* Перевод — маленькая квадратная пиксельная кнопка в углу: она нужна
+            одна на всё описание, а в полосу разрасталась бы на весь экран. */}
+        {activeTab === 'overview' && !loadingProject && (
+          <div style={{
+            position: 'absolute',
+            right: '26px',
+            bottom: '26px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            zIndex: 30
+          }}>
+            {(translating || translationNote) && (
+              <span style={{
+                background: 'rgba(18, 18, 18, 0.92)',
+                border: '1px solid #333',
+                padding: '6px 10px',
+                color: '#bbb',
+                fontSize: '11.5px',
+                fontFamily: '"Blocks", sans-serif',
+                maxWidth: '340px',
+                textAlign: 'right'
+              }}>
+                {translating && translateProgress && translateProgress.total > 1
+                  ? t('mv.translatingProgress', { p1: translateProgress.done, p2: translateProgress.total })
+                  : (translationNote || t('mv.translating'))}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleTranslateToggle}
+              disabled={translating}
+              title={translationVisible ? t('mv.showOriginal') : t('mv.translateButton')}
+              style={{
+                width: '34px',
+                height: '34px',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: translationVisible ? 'var(--pg-yellow)' : '#2b2b2b',
+                border: '2px solid #0b0b0b',
+                borderRadius: '0',
+                boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.22), inset 0 -2px 0 rgba(0,0,0,0.35), 0 3px 0 0 #0b0b0b',
+                color: translationVisible ? '#171200' : '#ffffff',
+                fontFamily: '"Blocks", sans-serif',
+                cursor: translating ? 'default' : 'pointer',
+                opacity: translating ? 0.6 : 1,
+                transition: 'outline 0.12s ease, transform 0.06s ease, box-shadow 0.06s ease'
+              }}
+              onMouseEnter={e => {
+                if (translating) return;
+                e.currentTarget.style.outline = '2px solid #ffffff';
+                e.currentTarget.style.outlineOffset = '2px';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.outline = 'none';
+                e.currentTarget.style.outlineOffset = '0';
+              }}
+              onMouseDown={e => {
+                if (translating) return;
+                e.currentTarget.style.transform = 'translateY(3px)';
+                e.currentTarget.style.boxShadow = 'inset 0 2px 0 rgba(255,255,255,0.12), inset 0 -2px 0 rgba(0,0,0,0.4), 0 0 0 0 #0b0b0b';
+              }}
+              onMouseUp={e => {
+                e.currentTarget.style.transform = 'none';
+                e.currentTarget.style.boxShadow = 'inset 0 2px 0 rgba(255,255,255,0.22), inset 0 -2px 0 rgba(0,0,0,0.35), 0 3px 0 0 #0b0b0b';
+              }}
+            >
+              {translating
+                ? <Loader2 size={15} className="mc-spin" />
+                : <TranslatePixelIcon size={18} on={translationVisible} />}
+            </button>
+          </div>
+        )}
+
       </div>
 
       {/* Lightbox Modal for Scaled / Fullscreen Viewing */}
@@ -911,7 +1252,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   fontFamily: '"Blocks", sans-serif',
                   transition: 'all 0.15s ease'
                 }}
-                title={isZoomed ? "Обычный размер" : "Приблизить (1.4x)"}
+                title={isZoomed ? t('mv.zoomNormal') : t('mv.zoomIn')}
               >
                 {isZoomed ? <ZoomOut size={16} /> : <ZoomIn size={16} />}
                 <span>{isZoomed ? "1.4x" : "1x"}</span>
@@ -949,7 +1290,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   e.currentTarget.style.borderColor = '#3a3a3a';
                   e.currentTarget.style.color = '#aaa';
                 }}
-                title="Закрыть (Esc)"
+                title={t('mv.closeEsc')}
               >
                 <X size={18} />
               </button>
@@ -1000,7 +1341,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
               onMouseUp={e => {
                 e.currentTarget.style.transform = 'none';
               }}
-              title="Предыдущая (←)"
+              title={t('mv.prevImage')}
             >
               <ChevronLeft size={32} />
             </button>
@@ -1022,7 +1363,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
           >
             <img
               src={galleryImages[currentImageIndex]?.url}
-              alt={galleryImages[currentImageIndex]?.title || 'Скриншот'}
+              alt={galleryImages[currentImageIndex]?.title || t('mv.screenshot')}
               onClick={() => setIsZoomed(prev => !prev)}
               style={{
                 width: '100%',
@@ -1038,7 +1379,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 transition: 'transform 0.25s ease',
                 userSelect: 'none'
               }}
-              title={isZoomed ? "Кликните для уменьшения" : "Кликните для приближения (1.4x)"}
+              title={isZoomed ? t('mv.clickToZoomOut') : t('mv.clickToZoomIn')}
             />
           </div>
 
@@ -1086,7 +1427,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
               onMouseUp={e => {
                 e.currentTarget.style.transform = 'none';
               }}
-              title="Следующая (→)"
+              title={t('mv.nextImage')}
             >
               <ChevronRight size={32} />
             </button>

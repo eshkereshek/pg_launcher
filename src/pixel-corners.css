@@ -1,0 +1,123 @@
+/* Ступенчатые углы для остальных элементов интерфейса.
+   Подключается последним, чтобы перебивать border-radius точечно.
+
+   Правило отбора: срез ставим только на плоские блоки — панели, диалоги,
+   поля ввода и кнопки без объёмной «подошвы». Элементы, у которых объём
+   держится на внешней box-shadow (`0 3px 0 #000` у mc-button, nav-btn,
+   mc-cube-btn, кнопок закрытия), не трогаем: clip-path обрезает тень вместе
+   с углами, и кнопка теряет вид. Списочные строки без зазоров (пункты
+   бокового меню, элементы выпадающих списков, табы) тоже пропускаем —
+   срез между соседними строками читается как дырка. */
+
+:root {
+  /* Малый вариант: угол 4 px двумя шагами по 2 px — для кнопок, полей,
+     чипов и иконок. Большие блоки используют --mc-step-clip (8 px). */
+  --mc-step-clip-sm: polygon(
+    0 4px,
+    2px 4px,
+    2px 2px,
+    4px 2px,
+    4px 0,
+    calc(100% - 4px) 0,
+    calc(100% - 4px) 2px,
+    calc(100% - 2px) 2px,
+    calc(100% - 2px) 4px,
+    100% 4px,
+    100% calc(100% - 4px),
+    calc(100% - 2px) calc(100% - 4px),
+    calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 4px) calc(100% - 2px),
+    calc(100% - 4px) 100%,
+    4px 100%,
+    4px calc(100% - 2px),
+    2px calc(100% - 2px),
+    2px calc(100% - 4px),
+    0 calc(100% - 4px)
+  );
+}
+
+/* Крупные блоки: диалоги, панели, карточки-контейнеры, зона перетаскивания. */
+.modal-box,
+.settings-panel,
+.tl-section,
+.modpack-card,
+.mods-empty,
+.mods-dropzone {
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+}
+
+/* Поля ввода и поиска. */
+.tl-input,
+.modal-input,
+.modal-select,
+.settings-text-input,
+.settings-select,
+.ram-number-input,
+.mods-search-container,
+.jl-dropdown,
+.tl-dropdown {
+  border-radius: 0;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+/* Кнопки без внешней тени.
+   Кнопки с пиксельной «подошвой» (.mc-card-btn и группа ниже) сюда не входят:
+   clip-path срезал бы подошву вместе с углами. */
+.mc-acc-type-btn,
+.mc-acc-icon-box,
+.tl-icon-btn,
+.mc-card-more {
+  border-radius: 0;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+/* Кнопка папки в левой панели — угол в одну ступеньку 8 px, как у карточек
+   каталога и пунктов меню. */
+.jl-bottom-btn.outlined {
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+}
+
+/* Пиксельные кнопки с 3D-нажатием — как у карточек.
+   Тёмный кант 2 px, светлая фаска сверху, тёмная снизу и «подошва» 4 px.
+   При нажатии кнопка утапливается ровно на её высоту и подошва исчезает. */
+.mods-btn-primary,
+.modal-create-btn,
+.create-modpack-btn,
+.settings-btn,
+.settings-change-btn {
+  border: 2px solid #0b0b0b;
+  border-radius: 0;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 4px 0 0 #0b0b0b;
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.mods-btn-primary:active:not(:disabled),
+.modal-create-btn:active:not(:disabled),
+.create-modpack-btn:active:not(:disabled),
+.settings-btn:active:not(:disabled),
+.settings-change-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.32),
+    0 0 0 0 #0b0b0b;
+}
+
+/* Чипы, иконки и служебные плашки.
+   .mc-card-icon сюда не входит: у него своя рамка на box-shadow, а clip-path
+   срезал бы её на углах. */
+.lobby-rec-badge,
+.lobby-rec-icon,
+.mc-card-loader,
+.mc-card-cat-icon,
+.mc-card-meta span,
+.mod-icon,
+.settings-warning {
+  border-radius: 0;
+  clip-path: var(--mc-step-clip-sm);
+}

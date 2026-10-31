@@ -1,18 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useTranslation, type Language } from './i18n'
-import { Trash, Folder } from 'lucide-react'
+import {
+  useTranslation,
+  translate,
+  type Language } from './i18n'
+import { Trash,
+  Blocks,
+  FlaskConical,
+  SlidersHorizontal,
+  ChevronRight,
+  Palette,
+} from 'lucide-react'
 import ModsMenu from './ModsMenu'
 import ModpacksMenu from './ModpacksMenu'
 import { ServersMenu } from './ServersMenu'
 import { McSelect, RussianFlag, AmericanFlag } from './McSelect'
+import { ProjectArt } from './ProjectArt'
+import { formatCount, projectLoaderLabel } from './projectMeta'
 import pkg from '../package.json'
-import WardrobeMenu from './WardrobeMenu'
 import PlayIcon from './PlayIcon'
 import HammerIcon from './HammerIcon'
 import ModpackBoxIcon from './ModpackBoxIcon'
 import ServersIcon from './ServersIcon'
 import AccountsIcon from './AccountsIcon'
 import SettingsIcon from './SettingsIcon'
+import LauncherLoadingScreen from './LauncherLoadingScreen'
+import LaunchStatusBar from './LaunchStatusBar'
+import MinecraftFace from './MinecraftFace'
+import IconImg from './IconImg'
+import { Pumpkin, useHalloween } from './Halloween'
+import CustomizationTab from './CustomizationTab'
+import PlayButton from './PlayButton'
+import { showError, showOk, errorText } from './Toasts'
+import { applyTheme, DEFAULT_THEME, presetTheme, sanitizeTheme, withMode, type ThemeConfig } from './theme'
+import { Folder, Download } from './PixelIcons'
 
 interface Modpack {
   name: string
@@ -20,12 +40,14 @@ interface Modpack {
   version: string
   installedMods: { id: string; title: string; type?: string }[]
   icon?: string
+  // Пусто — лаунчер берёт самую свежую версию загрузчика.
+  loaderVersion?: string
 }
 
 interface Account {
   id: string
   name: string
-  type: 'offline' | 'elyby' | 'microsoft' | 'pgsync'
+  type: 'offline' | 'elyby' | 'microsoft'
   uuid?: string
   token?: string
   clientToken?: string
@@ -84,7 +106,7 @@ const saveCompressedImage = (file: File, key: string, callback: (dataUrl: string
       callback(dataUrl);
     } catch (e) {
       console.error('Failed to save image to localStorage', e);
-      alert('Картинка слишком большая!');
+      showError(translate('app.imageTooBig'));
     }
   };
   img.src = URL.createObjectURL(file);
@@ -151,7 +173,7 @@ const renderLoaderIcon = (verName: string) => {
   return null;
 };
 
-const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], size = 46) => {
+const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], size = 46, isSnapshot = false) => {
   if (!selectedVersion) return <img src="./iconsblocks/Grass_Block_(inventory)_MCE.png" width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} alt="icon" />;
   const lower = selectedVersion.toLowerCase();
   if (lower.startsWith('mp:')) {
@@ -159,7 +181,7 @@ const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], siz
     const mp = modpacks.find(m => m.name === mpName);
     if (mp) {
       if (mp.icon) {
-        return <img src={mp.icon} width={size} height={size} style={{ objectFit: 'cover' }} alt="icon" />;
+        return <IconImg src={mp.icon} size={size} style={{ objectFit: 'cover' }} />;
       }
       const lLower = (mp.loader || '').toLowerCase();
       if (lLower.includes('forge')) {
@@ -180,7 +202,14 @@ const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], siz
           </svg>
         );
       }
-      return <img src={mp.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png'} width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} alt="icon" />;
+      return (
+        <IconImg
+          src={mp.icon}
+          size={size}
+          fallback="./iconsblocks/Grass_Block_(inventory)_MCE.png"
+          style={{ imageRendering: 'pixelated', objectFit: 'contain' }}
+        />
+      );
     }
   }
   if (lower.includes('forge')) {
@@ -201,39 +230,79 @@ const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], siz
       </svg>
     );
   }
-  return <img src="./iconsblocks/Grass_Block_(inventory)_MCE.png" width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} alt="icon" />;
+  return <img src={isSnapshot ? "./iconsblocks/MCE_Dirt_(inventory).png" : "./iconsblocks/Grass_Block_(inventory)_MCE.png"} width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} alt="icon" />;
 };
+
+/* «и ещё 2 аккаунта» — плашка в списке аккаунтов боковой панели. */
+const moreAccountsLabel = (n: number, english: boolean) => {
+  if (english) return `and ${n} more account${n === 1 ? '' : 's'}`
+  const ten = n % 10
+  const hundred = n % 100
+  if (ten === 1 && hundred !== 11) return `и ещё ${n} аккаунт`
+  if (ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14)) return `и ещё ${n} аккаунта`
+  return `и ещё ${n} аккаунтов`
+}
 
 export default function App() {
   const { t, language, setLanguage } = useTranslation();
-  const [view, setView] = useState<'play' | 'installations' | 'modpacks' | 'settings' | 'servers' | 'wardrobe' | 'accounts'>('play')
+  const { on: halloweenOn } = useHalloween();
+  const [view, setView] = useState<'play' | 'installations' | 'modpacks' | 'settings' | 'servers' | 'accounts'>('play')
   const [showAccountDropdown, setShowAccountDropdown] = useState(false)
   const [showVersionDropdown, setShowVersionDropdown] = useState(false)
   const [isClosingVersionDropdown, setIsClosingVersionDropdown] = useState(false)
   const [newAccountName, setNewAccountName] = useState('')
 
-  const [settingsTab, setSettingsTab] = useState<'customization' | 'main' | 'experimental'>('customization')
-  const [mainBgDataUrl, setMainBgDataUrl] = useState<string | null>(() => localStorage.getItem('mc_main_bg_data'))
-  const [secBgDataUrl, setSecBgDataUrl] = useState<string | null>(() => localStorage.getItem('mc_sec_bg_data'))
+  const [settingsTab, setSettingsTab] = useState<'appearance' | 'customization' | 'main' | 'experimental'>('appearance')
+
+  // Оформление. Читаем из localStorage сразу, чтобы не было вспышки
+  // стандартных цветов перед загрузкой настроек с диска.
+  const [theme, setTheme] = useState<ThemeConfig>(() => {
+    try {
+      const stored = localStorage.getItem('mc_theme')
+      return stored ? sanitizeTheme(JSON.parse(stored)) : DEFAULT_THEME
+    } catch {
+      return DEFAULT_THEME
+    }
+  })
+  // Один фон на лаунчер: тёмный, обои лобби или своё изображение.
+  const [bgMode, setBgMode] = useState<'dark' | 'wallpaper' | 'custom'>(() => {
+    const stored = localStorage.getItem('mc_bg_mode')
+    if (stored === 'dark' || stored === 'wallpaper' || stored === 'custom') return stored
+    // Миграция со старой пары «главный / вторичный фон»
+    return localStorage.getItem('mc_main_bg_data') ? 'custom' : 'dark'
+  })
+  const [bgImage, setBgImage] = useState<string | null>(() => localStorage.getItem('mc_main_bg_data'))
+  const [bgDim, setBgDim] = useState(() => {
+    const raw = localStorage.getItem('mc_bg_dim')
+    const parsed = raw === null ? NaN : Number(raw)
+    return Number.isFinite(parsed) ? Math.min(90, Math.max(0, parsed)) : 55
+  })
+  const [bgBlur, setBgBlur] = useState(() => {
+    const raw = localStorage.getItem('mc_bg_blur')
+    const parsed = raw === null ? NaN : Number(raw)
+    return Number.isFinite(parsed) ? Math.min(20, Math.max(0, parsed)) : 6
+  })
 
 
   // Ping the server to wake it up on launcher start
   useEffect(() => {
-    fetch('https://pg-sync-server.onrender.com/').catch(() => {});
+    // Старые настройки фона и прозрачности больше не используются
+    localStorage.removeItem('mc_sec_bg_data');
+    localStorage.removeItem('mc_menu_opacity');
   }, []);
 
   useEffect(() => {
     // @ts-ignore
     if (window.electronAPI && window.electronAPI.updateDiscordPresence) {
-      let stateStr = "В главном меню"
-      if (view === 'installations') stateStr = "Устанавливает версии"
-      if (view === 'modpacks') stateStr = "Выбирает моды"
-      if (view === 'settings') stateStr = "В настройках"
-      if (view === 'accounts') stateStr = "Управление аккаунтами"
+      let stateStr = translate('app.presenceMainMenu')
+      if (view === 'installations') stateStr = translate('app.presenceInstallations')
+      if (view === 'modpacks') stateStr = translate('app.presenceModpacks')
+      if (view === 'settings') stateStr = translate('app.presenceSettings')
+      if (view === 'accounts') stateStr = translate('app.presenceAccounts')
       
       // @ts-ignore
       window.electronAPI.updateDiscordPresence({
-        details: "В лаунчере",
+        details: translate('app.presenceInLauncher'),
         state: stateStr,
         largeImageKey: "logo",
         largeImageText: "Pagrysha Launcher"
@@ -254,14 +323,16 @@ export default function App() {
   const [skinTimestamp, setSkinTimestamp] = useState<number>(Date.now())
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
-  const [authType, setAuthType] = useState<'offline' | 'elyby' | 'microsoft' | 'pgsync'>('offline')
+  const [authType, setAuthType] = useState<'offline' | 'elyby' | 'microsoft'>('offline')
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [selectedAuthMethod, setSelectedAuthMethod] = useState<'offline' | 'elyby' | 'pgsync' | null>(null)
+  const [selectedAuthMethod, setSelectedAuthMethod] = useState<'offline' | 'elyby' | null>(null)
 
   const [rawVersions, setRawVersions] = useState<any[]>([])
   const [versions, setVersions] = useState<string[]>([])
+  // Сообщение о проблемах загрузки списка версий (нет сети, бэкенд недоступен)
+  const [versionsError, setVersionsError] = useState('')
   const [forgeVersions] = useState<string[]>(FORGE_VERSIONS.map(v => `${v} Forge`))
   const [installedVersions, setInstalledVersions] = useState<string[]>([])
   const [modpacks, setModpacks] = useState<Modpack[]>([])
@@ -275,6 +346,11 @@ export default function App() {
   const [isClosingDownloadsDropdown, setIsClosingDownloadsDropdown] = useState(false)
   const [justCompletedDownloads, setJustCompletedDownloads] = useState(false)
   const downloadsCloseTimerRef = useRef<any>(null)
+  // Страховка на случай, если окно игры так и не отзовётся: полоса прогресса
+  // не должна висеть вечно.
+  const launchReadyTimerRef = useRef<any>(null)
+  // Окно уже подтвердило запуск: таймер-страховка больше не нужен.
+  const launchReadyRef = useRef(false)
   const [updateInfo, setUpdateInfo] = useState<{hasUpdate: boolean, version?: string, downloadUrl?: string, body?: string}>({
     hasUpdate: false,
     version: '',
@@ -285,73 +361,6 @@ export default function App() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [progress, setProgress] = useState('')
 
-
-  const MinecraftFace = ({ acc, size = 32 }: { acc: Account, size?: number }) => {
-    const [useFallback, setUseFallback] = useState(false)
-
-    if ((acc.type !== 'elyby' && acc.type !== 'pgsync') || useFallback) {
-      const url = (!useFallback && acc.skinUrl) ? acc.skinUrl : `https://minotar.net/helm/${acc.name}/${size}.png`
-      return (
-        <img
-          src={url}
-          width={size}
-          height={size}
-          style={{ imageRendering: 'pixelated', borderRadius: 0, width: size, height: size }}
-          onError={(e) => {
-            e.currentTarget.onerror = null
-            e.currentTarget.src = `https://minotar.net/helm/Steve/${size}.png`
-          }}
-          alt="Skin"
-        />
-      )
-    }
-
-    const rawSkinUrl = acc.type === 'pgsync' 
-      ? `https://pg-sync-server.onrender.com/api/cosmetics/${acc.name}/skin.png?v=${skinTimestamp}` 
-      : `https://skinsystem.ely.by/skins/${acc.name}.png?v=${skinTimestamp}`
-
-    return (
-      <div style={{
-        width: size,
-        height: size,
-        position: 'relative',
-        overflow: 'hidden',
-        imageRendering: 'pixelated',
-        borderRadius: 0,
-        minWidth: size,
-        minHeight: size
-      }}>
-        <img
-          src={rawSkinUrl}
-          style={{
-            position: 'absolute',
-            top: -size,
-            left: -size,
-            width: size * 8,
-            height: size * 8,
-            maxWidth: 'none',
-            maxHeight: 'none'
-          }}
-          onError={() => setUseFallback(true)}
-          alt="Base"
-        />
-        <img
-          src={rawSkinUrl}
-          style={{
-            position: 'absolute',
-            top: -size,
-            left: -(size * 5),
-            width: size * 8,
-            height: size * 8,
-            maxWidth: 'none',
-            maxHeight: 'none'
-          }}
-          onError={() => setUseFallback(true)}
-          alt="Hat"
-        />
-      </div>
-    )
-  }
 
   // Settings State
   const [showSnapshots, setShowSnapshots] = useState(localStorage.getItem('mc_show_snapshots') === 'true')
@@ -401,18 +410,185 @@ export default function App() {
 
   const [maxRam, setMaxRam] = useState(8192)
   const [ramValue, setRamValue] = useState(Number(localStorage.getItem('mc_ram')) || 2048)
+  // Игра во весь экран и лаунчер в панель задач при запуске. Значения по
+  // умолчанию — «включено»; выключается в настройках, вкладка Minecraft.
+  const [launchFullscreen, setLaunchFullscreen] = useState(localStorage.getItem('mc_launch_fullscreen') !== 'false')
+  const [launchMinimize, setLaunchMinimize] = useState(localStorage.getItem('mc_launch_minimize') !== 'false')
+  // Профиль настроек игрока. Пустое значение = «не трогать» эту опцию в игре;
+  // диктора по умолчанию выключаем — это самое частое «опять он включился».
+  const [playerLang, setPlayerLang] = useState(localStorage.getItem('mc_player_lang') || '')
+  const [playerGuiScale, setPlayerGuiScale] = useState(localStorage.getItem('mc_player_guiscale') || '')
+  const [playerNarrator, setPlayerNarrator] = useState(localStorage.getItem('mc_player_narrator') ?? '0')
+  const [applyPlayerOptions, setApplyPlayerOptions] = useState(localStorage.getItem('mc_apply_player_options') !== 'false')
 
-  const [menuOpacity, setMenuOpacity] = useState(Number(localStorage.getItem('mc_menu_opacity') || 95))
+  // Интерфейс всегда непрозрачный: полупрозрачные панели ломали читаемость.
+  const [menuOpacity] = useState(100)
   const [enableServersTab, setEnableServersTab] = useState(localStorage.getItem('mc_enable_servers_tab') === 'true')
   const [enableTabAnimations, setEnableTabAnimations] = useState(localStorage.getItem('mc_enable_tab_animations') !== 'false')
   const [enableNewDesign] = useState(localStorage.getItem('mc_new_design') === 'true')
   const [autoOpenInstallSettings, setAutoOpenInstallSettings] = useState(false)
   const settingsLoadedRef = useRef(false)
+  // Имя сборки, которую только что переименовали. Нужно, чтобы фоновое
+  // перечитывание modpacks.json не приняло смену имени за удаление сборки
+  // и не сбросило выбор на первую версию.
+  const pendingRenameRef = useRef<string | null>(null)
   const [autoOpenInstallCreate, setAutoOpenInstallCreate] = useState(false)
   const [showPlayEditModal, setShowPlayEditModal] = useState(false)
   const [editPlayName, setEditPlayName] = useState('')
   const [editPlayIcon, setEditPlayIcon] = useState('')
   const [confirmPlayDelete, setConfirmPlayDelete] = useState(false)
+  // Лента рекомендаций на главной: популярные сборки Modrinth.
+  const [lobbyRecs, setLobbyRecs] = useState<any[]>([])
+  const [lobbyRecsLoading, setLobbyRecsLoading] = useState(true)
+  // How many cards fit into one row at the current window width: exactly
+  // that many are rendered, so no extra nodes stay behind a scrollbar.
+  const [recsVisible, setRecsVisible] = useState(0)
+  const lobbyRecsRowRef = useRef<HTMLDivElement | null>(null)
+  const recsVisibleRef = useRef(0)
+  // Поисковый запрос, с которым открывается каталог сборок из рекомендаций.
+  const [modpacksInitialQuery, setModpacksInitialQuery] = useState('')
+
+  const recsHoveredRef = useRef(false)
+  const recsAutoTimerRef = useRef<any>(null)
+
+  // Ширина карточки и промежуток совпадают с CSS ленты (.lobby-rec = 194px,
+  // gap = 12px): сколько таких карточек влезает в ряд, столько и показываем.
+  const RECS_CARD_MIN = 194
+  const RECS_GAP = 12
+
+  // The row turns by itself every 15-20 s: nothing is scrolled, the shown
+  // page is moved to the end of the pool instead. Hovering the row pauses
+  // the rotation so it does not get in the way of picking a pack.
+  const rotateLobbyRecs = () => {
+    if (recsHoveredRef.current) return
+    const step = recsVisibleRef.current
+    setLobbyRecs(prev => {
+      if (!step || prev.length <= step) return prev // весь пул влезает — крутить нечего
+      return [...prev.slice(step), ...prev.slice(0, step)]
+    })
+  }
+
+  const visibleCount = recsVisible || 6
+  const visibleRecs = lobbyRecs.slice(0, visibleCount)
+  // Always reserve the full set of columns: fewer cards than columns
+  // only leaves free space on the right instead of inflating the cards.
+  const recsColumns = visibleCount
+
+  // The card count depends on the row width only. It is measured through a
+  // ref callback instead of a [] effect: the row is unmounted every time
+  // another screen opens, so an effect would stay attached to a dead node
+  // and the stale count of a hidden row (one card across the whole screen)
+  // would be kept when the lobby appears again.
+  const measureLobbyRecs = () => {
+    const el = lobbyRecsRowRef.current
+    // A hidden or not yet laid out row reports 0 width: keeping the previous
+    // count is the only sane answer there.
+    if (!el || el.clientWidth <= 0) return
+    const next = Math.max(1, Math.floor((el.clientWidth + RECS_GAP) / (RECS_CARD_MIN + RECS_GAP)))
+    recsVisibleRef.current = next
+    setRecsVisible(prev => (prev === next ? prev : next))
+  }
+
+  const recsObserverRef = useRef<ResizeObserver | null>(null)
+
+  const attachLobbyRecsRow = (el: HTMLDivElement | null) => {
+    if (lobbyRecsRowRef.current === el) return
+    lobbyRecsRowRef.current = el
+    if (recsObserverRef.current) {
+      recsObserverRef.current.disconnect()
+      recsObserverRef.current = null
+    }
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => measureLobbyRecs())
+    observer.observe(el)
+    recsObserverRef.current = observer
+    measureLobbyRecs()
+  }
+
+  // Safety net: works even without ResizeObserver and reacts to any window
+  // resize, not only to the box of the row itself.
+  useEffect(() => {
+    measureLobbyRecs()
+    window.addEventListener('resize', measureLobbyRecs)
+    return () => window.removeEventListener('resize', measureLobbyRecs)
+  }, [])
+
+  useEffect(() => {
+    if (lobbyRecsLoading || lobbyRecs.length === 0) return
+    // Системная настройка «уменьшить движение» — автопрокрутку не включаем.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    let cancelled = false
+    const schedule = () => {
+      // 15–20 с: интервал каждый раз чуть разный, чтобы лента не ходила
+      // как метроном.
+      const delay = 15000 + Math.random() * 5000
+      recsAutoTimerRef.current = setTimeout(() => {
+        if (cancelled) return
+        rotateLobbyRecs()
+        schedule()
+      }, delay)
+    }
+    schedule()
+    return () => {
+      cancelled = true
+      if (recsAutoTimerRef.current) clearTimeout(recsAutoTimerRef.current)
+      recsAutoTimerRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lobbyRecsLoading, lobbyRecs.length])
+
+
+  useEffect(() => {
+    let cancelled = false
+    const loadRecommendations = async () => {
+      try {
+        // Загружаем пул из топа популярных сборок (3 страницы по 20 = топ 60),
+        // затем перемешиваем по алгоритму Фишера — Йетса.
+        // Так в рекомендациях остаются только качественные популярные сборки,
+        // но каждый запуск лаунчера их порядок и состав уникальны (не как в Modrinth).
+        const [p1, p2, p3] = await Promise.all([
+          // @ts-ignore
+          window.electronAPI.getPopularModpacks('all', 0, 'all', 'all', 'downloads').catch(() => null),
+          // @ts-ignore
+          window.electronAPI.getPopularModpacks('all', 20, 'all', 'all', 'downloads').catch(() => null),
+          // @ts-ignore
+          window.electronAPI.getPopularModpacks('all', 40, 'all', 'all', 'downloads').catch(() => null)
+        ])
+
+        const combined: any[] = [
+          ...(Array.isArray(p1?.hits) ? p1.hits : []),
+          ...(Array.isArray(p2?.hits) ? p2.hits : []),
+          ...(Array.isArray(p3?.hits) ? p3.hits : [])
+        ]
+
+        // Убираем дубликаты
+        const seen = new Set<string>()
+        const unique = combined.filter(item => {
+          const id = item?.project_id || item?.slug || item?.title
+          if (!id || seen.has(id)) return false
+          seen.add(id)
+          return true
+        })
+
+        // Перемешиваем (Fisher-Yates)
+        for (let i = unique.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [unique[i], unique[j]] = [unique[j], unique[i]]
+        }
+
+        if (!cancelled) {
+          setLobbyRecs(unique)
+        }
+      } catch (e) {
+        // Без сети лента просто останется пустой — лобби не должно ломаться.
+        console.error('Failed to load lobby recommendations:', e)
+      } finally {
+        if (!cancelled) setLobbyRecsLoading(false)
+      }
+    }
+    loadRecommendations()
+    return () => { cancelled = true }
+  }, [])
 
   // Java Runtime State
   const [customJava, setCustomJava] = useState(localStorage.getItem('mc_custom_java') || 'auto')
@@ -435,18 +611,18 @@ export default function App() {
     }
   }
 
-  const handleInstallJava = async (version: '8' | '17' | '21') => {
+  const handleInstallJava = async (version: '8' | '17' | '21' | '25') => {
     if (installingJava) return
     setInstallingJava(version)
     setJavaError('')
-    setJavaProgress({ version, status: `Подготовка к установке Java ${version}...`, progress: 5 })
+    setJavaProgress({ version, status: t('app.javaInstalling', { version }), progress: 5 })
     try {
       // @ts-ignore
       await window.electronAPI.installJava(version)
       await refreshInstalledJavas()
       setJavaProgress(null)
     } catch (err: any) {
-      setJavaError(err.message || 'Ошибка установки Java')
+      setJavaError(err.message || t('app.javaInstallError'))
     } finally {
       setInstallingJava(null)
     }
@@ -454,10 +630,11 @@ export default function App() {
 
   const handleInstallAllRecommended = async () => {
     if (installingJava) return
-    const toInstall: ('8' | '17' | '21')[] = []
+    const toInstall: ('8' | '17' | '21' | '25')[] = []
     if (!installedJavas['8']?.installed) toInstall.push('8')
     if (!installedJavas['17']?.installed) toInstall.push('17')
     if (!installedJavas['21']?.installed) toInstall.push('21')
+    if (!installedJavas['25']?.installed) toInstall.push('25')
 
     for (const v of toInstall) {
       await handleInstallJava(v)
@@ -487,44 +664,47 @@ export default function App() {
   const handleClearCacheClick = () => {
     setCustomModal({
       isOpen: true,
-      title: 'Очистка кэша',
-      message: 'Вы действительно хотите очистить кэш лаунчера? Будут удалены временные файлы обновлений, кэш загрузок сборок и сессий.',
-      confirmText: 'Очистить кэш',
-      cancelText: 'Отмена',
+      title: t('app.cacheClearTitle'),
+      message: t('app.cacheClearMsg'),
+      confirmText: t('app.cacheClearBtn'),
+      cancelText: t('ui.cancel'),
       isDanger: false,
       isAlert: false,
       onConfirm: async () => {
         try {
           // @ts-ignore
           const res = await window.electronAPI?.clearCache?.();
-          if (res?.status === 'success') {
+          if (res?.status === 'ok' || res?.status === 'success') {
             setCustomModal({
               isOpen: true,
-              title: 'Кэш очищен',
-              message: 'Кэш лаунчера успешно очищен.',
+              title: t('app.cacheClearedTitle'),
+              message: t('app.cacheClearedMsg'),
               isAlert: true,
-              confirmText: 'Понятно',
+              confirmText: t('app.gotIt'),
               isLoading: false
             });
           } else {
+            const reason = res?.status === 'error'
+              ? (res?.error || t('app.unknownError'))
+              : (res?.error || t('app.cacheUnknownResponse'))
             setCustomModal({
               isOpen: true,
-              title: 'Ошибка',
-              message: 'Не удалось очистить кэш: ' + (res?.error || 'Неизвестная ошибка'),
+              title: t('app.error'),
+              message: t('app.cacheFailedMsg', { reason }),
               isAlert: true,
               isDanger: true,
-              confirmText: 'Закрыть',
+              confirmText: t('ui.close'),
               isLoading: false
             });
           }
         } catch (e: any) {
           setCustomModal({
             isOpen: true,
-            title: 'Ошибка',
-            message: 'Ошибка при очистке кэша: ' + (e?.message || e),
+            title: t('app.error'),
+            message: t('app.cacheErrorMsg', { error: errorText(e, t('app.unknownError')) }),
             isAlert: true,
             isDanger: true,
-            confirmText: 'Закрыть',
+            confirmText: t('ui.close'),
             isLoading: false
           });
         }
@@ -535,10 +715,10 @@ export default function App() {
   const handleCleanUninstallJavaClick = () => {
     setCustomModal({
       isOpen: true,
-      title: 'Удаление Java',
-      message: 'Вы действительно хотите полностью удалить все версии Java Runtime? Будут принудительно завершены процессы Java и удалены все локальные среды исполнения Java (8, 17, 21). При необходимости лаунчер автоматически скачает нужную версию при запуске игры.',
-      confirmText: 'Удалить Java',
-      cancelText: 'Отмена',
+      title: t('app.javaRemoveTitle'),
+      message: t('app.javaRemoveMsg'),
+      confirmText: t('app.javaRemoveBtn'),
+      cancelText: t('ui.cancel'),
       isDanger: true,
       isAlert: false,
       onConfirm: async () => {
@@ -550,20 +730,20 @@ export default function App() {
           localStorage.setItem('mc_custom_java', 'auto');
           setCustomModal({
             isOpen: true,
-            title: 'Java удалена',
-            message: 'Все установленные компоненты Java Runtime были успешно и полностью удалены.',
+            title: t('app.javaRemovedTitle'),
+            message: t('app.javaRemovedMsg'),
             isAlert: true,
-            confirmText: 'Понятно',
+            confirmText: t('app.gotIt'),
             isLoading: false
           });
         } catch (e: any) {
           setCustomModal({
             isOpen: true,
-            title: 'Ошибка',
-            message: 'Ошибка при удалении Java: ' + (e?.message || e),
+            title: t('app.error'),
+            message: t('app.javaRemoveError', { error: errorText(e, t('app.unknownError')) }),
             isAlert: true,
             isDanger: true,
-            confirmText: 'Закрыть',
+            confirmText: t('ui.close'),
             isLoading: false
           });
         }
@@ -574,10 +754,10 @@ export default function App() {
   const handleResetSettingsClick = () => {
     setCustomModal({
       isOpen: true,
-      title: 'Сброс настроек',
-      message: 'Вы действительно хотите сбросить все настройки лаунчера? Будут возвращены исходные параметры лаунчера, сброшена память и очищен список сохранённых аккаунтов.',
-      confirmText: 'Сбросить всё',
-      cancelText: 'Отмена',
+      title: t('app.resetTitle'),
+      message: t('app.resetMsg'),
+      confirmText: t('app.resetBtn'),
+      cancelText: t('ui.cancel'),
       isDanger: true,
       isAlert: false,
       onConfirm: async () => {
@@ -601,46 +781,54 @@ export default function App() {
       } else {
         setCustomModal({
           isOpen: true,
-          title: 'Обновлений нет',
-          message: `У вас установлена последняя версия лаунчера (v${pkg.version}).`,
+          title: t('app.noUpdatesTitle'),
+          message: t('app.upToDateMsg', { p1: pkg.version }),
           isAlert: true,
-          confirmText: 'Понятно',
+          confirmText: t('app.gotIt'),
           isLoading: false
         })
       }
     } catch {
       setCustomModal({
         isOpen: true,
-        title: 'Ошибка',
-        message: 'Не удалось проверить наличие обновлений.',
+        title: t('app.error'),
+        message: t('app.updateCheckFailed'),
         isAlert: true,
         isDanger: true,
-        confirmText: 'Закрыть',
+        confirmText: t('ui.close'),
         isLoading: false
       })
     }
   };
 
   useEffect(() => {
-    // Intercept native window.alert to show our in-app Minecraft modal window instead of Electron native dialogs
-    window.alert = (msg: any) => {
-      setCustomModal({
-        isOpen: true,
-        title: 'Уведомление',
-        message: typeof msg === 'object' ? JSON.stringify(msg, null, 2) : String(msg),
-        isAlert: true,
-        confirmText: 'Понятно',
-        isLoading: false
-      });
-    };
-
+    // Перехват window.alert больше не нужен: места, где он использовался,
+    // переехали на тосты (см. Toasts.tsx). Присваивание к window.alert к тому
+    // же падает в браузерах, где это свойство недоступно для записи.
     refreshInstalledJavas()
+    // Подписку на прогресс Java сохраняем и снимаем при размонтировании
+    let unsubJavaProgress: (() => void) | null = null
+    let disposed = false
     // @ts-ignore
     if (window.electronAPI && window.electronAPI.onJavaInstallProgress) {
       // @ts-ignore
-      window.electronAPI.onJavaInstallProgress((data: any) => {
+      Promise.resolve(window.electronAPI.onJavaInstallProgress((data: any) => {
         setJavaProgress(data)
-      })
+      }))
+        .then((unlisten: any) => {
+          if (disposed) {
+            if (typeof unlisten === 'function') unlisten()
+          } else {
+            unsubJavaProgress = typeof unlisten === 'function' ? unlisten : null
+          }
+        })
+        .catch(() => { })
+    }
+
+    return () => {
+      disposed = true
+      if (unsubJavaProgress) unsubJavaProgress()
+      unsubJavaProgress = null
     }
   }, [])
 
@@ -696,22 +884,54 @@ export default function App() {
       lower.includes('не найден') ||
       lower.includes('failed');
 
+    // Текст ошибки не должен исчезать раньше, чем его успеют прочитать
+    const isError = progress.startsWith('Error:');
     if (isCompleted) {
       const timer = setTimeout(() => {
         setProgress('');
-      }, 3500);
+      }, isError ? 8000 : 3500);
       return () => clearTimeout(timer);
     }
   }, [progress]);
 
   useEffect(() => {
-    // @ts-ignore
-    window.electronAPI.onLaunchProgress((msg: string) => {
-      setProgress(msg)
-    })
+    // Обёртки listen возвращают Promise<unlisten>: сохраняем функции отписки и
+    // вызываем их в cleanup, иначе обработчики копятся при каждом монтировании.
+    let unsubs: Array<() => void> = []
+    let disposed = false
+    const subscribe = (register: Promise<() => void> | undefined) => {
+      if (!register) return
+      Promise.resolve(register)
+        .then((unlisten: any) => {
+          if (typeof unlisten !== 'function') return
+          if (disposed) unlisten()
+          else unsubs.push(unlisten)
+        })
+        .catch(() => { })
+    }
 
     // @ts-ignore
-    window.electronAPI.onDownloadUpdate((data: any) => {
+    subscribe(window.electronAPI.onLaunchProgress((msg: string) => {
+      setProgress(msg)
+    }))
+
+    // Процесс Java стартует мгновенно, а окно у сборок с модами появляется
+    // через 5–20 секунд. Запуск считаем завершённым только когда бэкенд
+    // увидел в логе игры созданное окно — иначе полоса исчезала сразу после
+    // клика, и ожидание выглядело как «ничего не происходит».
+    // @ts-ignore
+    subscribe(window.electronAPI.onGameReady(() => {
+      launchReadyRef.current = true
+      if (launchReadyTimerRef.current) {
+        clearTimeout(launchReadyTimerRef.current)
+        launchReadyTimerRef.current = null
+      }
+      setLaunching(false)
+      setProgress(t('app.progressGameStarted'))
+    }))
+
+    // @ts-ignore
+    subscribe(window.electronAPI.onDownloadUpdate((data: any) => {
       if (downloadsCloseTimerRef.current) {
         clearTimeout(downloadsCloseTimerRef.current)
         downloadsCloseTimerRef.current = null
@@ -728,10 +948,10 @@ export default function App() {
         }
         return [...prev, data]
       })
-    })
+    }))
 
     // @ts-ignore
-    window.electronAPI.onDownloadFinish((id: string) => {
+    subscribe(window.electronAPI.onDownloadFinish((id: string) => {
       setActiveDownloads(prev => {
         const next = prev.filter(d => d.id !== id)
         if (next.length === 0) {
@@ -750,28 +970,44 @@ export default function App() {
         }
         return next
       })
-    })
+    }))
 
     // @ts-ignore
-    window.electronAPI.onGameClosed(() => {
+    subscribe(window.electronAPI.onGameClosed(() => {
       setGameRunning(false)
+      // Игра закрылась раньше, чем появилось окно, — ждать больше нечего.
+      if (launchReadyTimerRef.current) {
+        clearTimeout(launchReadyTimerRef.current)
+        launchReadyTimerRef.current = null
+      }
+      setLaunching(false)
+      // Подпись «Игра запускается...» не должна пережить сам процесс.
+      setProgress('')
 
       // @ts-ignore
       if (window.electronAPI && window.electronAPI.updateDiscordPresence) {
         // @ts-ignore
         window.electronAPI.updateDiscordPresence({
-          details: "В лаунчере",
-          state: "В главном меню",
+          details: translate('app.presenceInLauncher'),
+          state: translate('app.presenceMainMenu'),
           largeImageKey: "logo",
           largeImageText: "Pagrysha Launcher"
         })
       }
-    })
+    }))
 
     // @ts-ignore
-    window.electronAPI.onGameCrashed((log: string) => {
+    subscribe(window.electronAPI.onGameCrashed((log: string) => {
+      // Игра упала — процесс уже мёртв, но без сброса кнопка навсегда осталась
+      // бы в состоянии «В ИГРЕ», и повторный запуск был бы недоступен.
+      setGameRunning(false)
+      if (launchReadyTimerRef.current) {
+        clearTimeout(launchReadyTimerRef.current)
+        launchReadyTimerRef.current = null
+      }
+      setLaunching(false)
       setCrashLog(log)
-    })
+    }))
 
     // @ts-ignore
     if (window.electronAPI && window.electronAPI.checkUpdates) {
@@ -788,27 +1024,51 @@ export default function App() {
       try {
         // @ts-ignore
         const v = await window.electronAPI.getVersions()
-        setRawVersions(v.releases || [])
-        setInstalledVersions(v.installed || [])
-      } catch (e) { console.error(e) }
+        const releases = Array.isArray(v?.releases) ? v.releases : []
+        const installed = Array.isArray(v?.installed) ? v.installed : []
+        // Бэкенд может работать без сети: releases пуст, но установленные версии есть.
+        // В этом случае строим список из installed, чтобы их можно было запускать.
+        if (releases.length === 0 && installed.length > 0) {
+          setRawVersions(installed.map((id: string) => ({ id, type: 'release' })))
+          setVersionsError(v?.offline
+            ? t('app.versionsOfflineOnlyInstalled')
+            : t('app.versionsEmptyList'))
+        } else {
+          setRawVersions(releases)
+          setVersionsError(v?.offline ? t('app.versionsOfflinePartial') : '')
+        }
+        setInstalledVersions(installed)
+      } catch (e: any) {
+        console.error(e)
+        setVersionsError(t('app.versionsLoadFailed'))
+      }
     }
     fetchVersions()
 
     // @ts-ignore
     window.electronAPI.getSystemInfo().then((info: any) => {
-      if (info && info.totalMemoryMB) {
-        setMaxRam(info.totalMemoryMB)
+      // Бэкенд может отдавать объём ОЗУ в одном из двух полей
+      const total = info?.totalMemoryMB ?? info?.totalRam
+      if (typeof total === 'number' && total > 0) {
+        setMaxRam(total)
         if (!localStorage.getItem('mc_ram')) {
-          setRamValue(Math.floor(info.totalMemoryMB / 2))
+          // Без сохранённого значения выделяем половину ОЗУ, но не меньше 1024 МБ
+          setRamValue(Math.max(1024, Math.floor(total / 2)))
         }
       }
-    })
+    }).catch(() => { })
 
     const loadAccounts = async () => {
       try {
         // @ts-ignore
-        const savedAccounts = await window.electronAPI.getAccounts()
-        if (Array.isArray(savedAccounts) && savedAccounts.length > 0) {
+        const raw = await window.electronAPI.getAccounts()
+        // Аккаунты PG-Sync больше не поддерживаются: в старом accounts.json они
+        // лежат с type 'pgsync'. Переводим их в офлайн, иначе такой аккаунт
+        // не находит ни одну ветку авторизации и остаётся без скина.
+        const savedAccounts = (Array.isArray(raw) ? raw : []).map((a: any) =>
+          a?.type === 'pgsync' ? { ...a, type: 'offline' } : a
+        )
+        if (savedAccounts.length > 0) {
           setAccounts(savedAccounts)
           const lastId = localStorage.getItem('activeAccountId')
           const found = savedAccounts.find(a => a.id === lastId)
@@ -847,6 +1107,33 @@ export default function App() {
             setRamValue(Number(disk.ramValue))
             localStorage.setItem('mc_ram', String(disk.ramValue))
           }
+          if (disk.launchFullscreen !== undefined) {
+            setLaunchFullscreen(Boolean(disk.launchFullscreen))
+            localStorage.setItem('mc_launch_fullscreen', String(Boolean(disk.launchFullscreen)))
+          }
+          if (disk.launchMinimizeLauncher !== undefined) {
+            setLaunchMinimize(Boolean(disk.launchMinimizeLauncher))
+            localStorage.setItem('mc_launch_minimize', String(Boolean(disk.launchMinimizeLauncher)))
+          }
+          // Профиль настроек игрока лежит одним объектом: так его удобнее
+          // переносить между машинами вместе с остальными настройками.
+          if (disk.applyPlayerOptions !== undefined) {
+            setApplyPlayerOptions(Boolean(disk.applyPlayerOptions))
+            localStorage.setItem('mc_apply_player_options', String(Boolean(disk.applyPlayerOptions)))
+          }
+          const savedPlayerOptions = disk.playerOptions || {}
+          const playerFields: Array<[string, (v: string) => void, string]> = [
+            ['lang', setPlayerLang, 'mc_player_lang'],
+            ['guiScale', setPlayerGuiScale, 'mc_player_guiscale'],
+            ['narrator', setPlayerNarrator, 'mc_player_narrator'],
+          ]
+          playerFields.forEach(([key, setter, storageKey]) => {
+            const raw = savedPlayerOptions[key]
+            if (raw === undefined) return
+            const value = String(raw)
+            setter(value)
+            localStorage.setItem(storageKey, value)
+          })
           if (disk.mcArgs !== undefined) {
             setMcArgs(String(disk.mcArgs))
             localStorage.setItem('mc_args', String(disk.mcArgs))
@@ -867,9 +1154,28 @@ export default function App() {
             setEnableServersTab(Boolean(disk.enableServersTab))
             localStorage.setItem('mc_enable_servers_tab', String(disk.enableServersTab))
           }
-          if (disk.menuOpacity !== undefined) {
-            setMenuOpacity(Number(disk.menuOpacity))
-            localStorage.setItem('mc_menu_opacity', String(disk.menuOpacity))
+          if (disk.theme) {
+            setTheme(sanitizeTheme(disk.theme))
+          }
+          if (disk.bgMode === 'dark' || disk.bgMode === 'wallpaper' || disk.bgMode === 'custom') {
+            setBgMode(disk.bgMode)
+            localStorage.setItem('mc_bg_mode', disk.bgMode)
+          }
+          if (disk.bgDim !== undefined) {
+            const parsed = Number(disk.bgDim)
+            if (Number.isFinite(parsed)) {
+              const safe = Math.min(90, Math.max(0, parsed))
+              setBgDim(safe)
+              localStorage.setItem('mc_bg_dim', String(safe))
+            }
+          }
+          if (disk.bgBlur !== undefined) {
+            const parsed = Number(disk.bgBlur)
+            if (Number.isFinite(parsed)) {
+              const safe = Math.min(20, Math.max(0, parsed))
+              setBgBlur(safe)
+              localStorage.setItem('mc_bg_blur', String(safe))
+            }
           }
         }
       } catch (e) {
@@ -879,7 +1185,19 @@ export default function App() {
       }
     }
     loadSettings()
+
+    return () => {
+      disposed = true
+      unsubs.forEach(u => { try { u() } catch { } })
+      unsubs = []
+    }
   }, [])
+
+  // Тема — это CSS-слой, который пересобирается на каждое изменение:
+  // предпросмотр в настройках и есть сам лаунчер.
+  useEffect(() => {
+    applyTheme(theme)
+  }, [theme])
 
   useEffect(() => {
     const fetchModpacks = async () => {
@@ -891,7 +1209,13 @@ export default function App() {
           if (selectedVersion.startsWith('mp:')) {
             const mpName = selectedVersion.replace('mp:', '')
             if (!saved.some((m: any) => m.name === mpName)) {
-              if (versions.length > 0) {
+              // Сначала проверяем, не переименована ли выбранная сборка:
+              // иначе «исчезновение» старого имени сбросило бы выбор.
+              const pending = pendingRenameRef.current
+              if (pending && saved.some((m: any) => `mp:${m.name}` === pending)) {
+                pendingRenameRef.current = null
+                handleSelectVersion(pending)
+              } else if (versions.length > 0) {
                 handleSelectVersion(versions[0])
               } else {
                 handleSelectVersion('')
@@ -902,6 +1226,24 @@ export default function App() {
       } catch (e) { console.error(e) }
     }
     fetchModpacks()
+    const handleUpdated = () => { fetchModpacks() }
+    // Переименование сборки: правим локальный список и выбранную версию без перезагрузки
+    const handleRenamed = (event: Event) => {
+      const detail = (event as CustomEvent<{ oldName?: string; newName?: string }>).detail
+      if (!detail?.oldName || !detail?.newName) return
+      const { oldName, newName } = detail
+      pendingRenameRef.current = `mp:${newName}`
+      setModpacks(prev => prev.map(m => (m.name === oldName ? { ...m, name: newName } : m)))
+      if (selectedVersion === `mp:${oldName}`) {
+        handleSelectVersion(`mp:${newName}`)
+      }
+    }
+    window.addEventListener('modpacks-updated', handleUpdated)
+    window.addEventListener('modpack-renamed', handleRenamed)
+    return () => {
+      window.removeEventListener('modpacks-updated', handleUpdated)
+      window.removeEventListener('modpack-renamed', handleRenamed)
+    }
   }, [view, versions, selectedVersion])
 
   useEffect(() => {
@@ -956,6 +1298,12 @@ export default function App() {
     if (!settingsLoadedRef.current) return
 
     localStorage.setItem('mc_ram', ramValue.toString())
+    localStorage.setItem('mc_launch_fullscreen', String(launchFullscreen))
+    localStorage.setItem('mc_launch_minimize', String(launchMinimize))
+    localStorage.setItem('mc_player_lang', playerLang)
+    localStorage.setItem('mc_player_guiscale', playerGuiScale)
+    localStorage.setItem('mc_player_narrator', playerNarrator)
+    localStorage.setItem('mc_apply_player_options', String(applyPlayerOptions))
     localStorage.setItem('mc_show_snapshots', showSnapshots.toString())
     localStorage.setItem('mc_show_modified', showModified.toString())
     localStorage.setItem('mc_show_old_releases', showOldReleases.toString())
@@ -963,15 +1311,26 @@ export default function App() {
     localStorage.setItem('mc_show_alpha', showAlpha.toString())
     localStorage.setItem('mc_args', mcArgs)
     localStorage.setItem('mc_custom_java', customJava)
-    localStorage.setItem('mc_menu_opacity', menuOpacity.toString())
+    localStorage.setItem('mc_bg_mode', bgMode)
+    localStorage.setItem('mc_bg_dim', bgDim.toString())
+    localStorage.setItem('mc_bg_blur', bgBlur.toString())
     localStorage.setItem('mc_enable_servers_tab', enableServersTab.toString())
     localStorage.setItem('mc_enable_tab_animations', enableTabAnimations.toString())
     localStorage.setItem('mc_new_design', enableNewDesign.toString())
+    localStorage.setItem('mc_theme', JSON.stringify(theme))
 
     // Also persist to disk settings.json
     // @ts-ignore
     window.electronAPI?.saveSettings?.({
       ramValue,
+      launchFullscreen,
+      launchMinimizeLauncher: launchMinimize,
+      applyPlayerOptions,
+      playerOptions: {
+        lang: playerLang,
+        guiScale: playerGuiScale,
+        narrator: playerNarrator,
+      },
       showSnapshots,
       showModified,
       showOldReleases,
@@ -979,14 +1338,23 @@ export default function App() {
       showAlpha,
       mcArgs,
       customJava,
-      menuOpacity,
+      bgMode,
+      bgDim,
+      bgBlur,
       enableServersTab,
       enableTabAnimations,
       enableNewDesign,
-      selectedVersion
+      selectedVersion,
+      theme
     })
   }, [
     ramValue,
+    launchFullscreen,
+    launchMinimize,
+    applyPlayerOptions,
+    playerLang,
+    playerGuiScale,
+    playerNarrator,
     showSnapshots,
     showModified,
     showOldReleases,
@@ -994,11 +1362,14 @@ export default function App() {
     showAlpha,
     mcArgs,
     customJava,
-    menuOpacity,
+    bgMode,
+    bgDim,
+    bgBlur,
     enableServersTab,
     enableTabAnimations,
     enableNewDesign,
-    selectedVersion
+    selectedVersion,
+    theme
   ])
 
   const handleOpenPlayEditModal = () => {
@@ -1021,22 +1392,24 @@ export default function App() {
     if (!mp || !editPlayName.trim()) return;
     const safeEditName = editPlayName.replace(/[<>:"/\\|?*]/g, '-');
 
-    if (safeEditName !== mp.name) {
+    const oldName = mp.name
+    if (safeEditName !== oldName) {
       try {
         // @ts-ignore
-        const res = await window.electronAPI.renameModpackFolder(mp.name, safeEditName);
-        if (res.status === 'error') {
-          alert('Не удалось переименовать папку сборки: ' + res.error);
+        const res = await window.electronAPI.renameModpackFolder(oldName, safeEditName);
+        if (res?.status === 'error') {
+          showError(t('app.renameFolderFailed', { error: res.error || t('app.unknownError') }));
           return;
         }
-      } catch (e) {
-        console.error(e);
+      } catch (e: any) {
+        // Ошибка не должна оставлять модалку в подвешенном состоянии
+        showError(t('app.renameFolderFailed', { error: errorText(e, t('app.unknownError')) }));
         return;
       }
     }
 
     const updated = modpacks.map(m => {
-      if (m.name === mp.name) {
+      if (m.name === oldName) {
         return { ...m, name: safeEditName, icon: editPlayIcon };
       }
       return m;
@@ -1045,7 +1418,14 @@ export default function App() {
     setModpacks(updated);
     // @ts-ignore
     await window.electronAPI.saveModpacks(updated);
-    handleSelectVersion(`mp:${safeEditName}`);
+    if (safeEditName !== oldName) {
+      if (selectedVersion === `mp:${oldName}`) {
+        pendingRenameRef.current = `mp:${safeEditName}`
+        handleSelectVersion(`mp:${safeEditName}`);
+      }
+      window.dispatchEvent(new CustomEvent('modpack-renamed', { detail: { oldName, newName: safeEditName } }))
+    }
+    window.dispatchEvent(new CustomEvent('modpacks-updated'))
     setShowPlayEditModal(false);
   };
 
@@ -1099,13 +1479,9 @@ export default function App() {
         // @ts-ignore
         const res = await window.electronAPI.authMicrosoft()
         newAcc = { id: Date.now().toString(), name: res.username, type: 'microsoft', uuid: res.uuid, token: res.token, skinUrl: res.skinUrl }
-      } else if (authType === 'elyby' || authType === 'pgsync') {
-        if (!authEmail || !authPassword) { setAuthError('Введите логин и пароль'); setAuthLoading(false); return }
-        const res = authType === 'elyby' 
-          // @ts-ignore
-          ? await window.electronAPI.authElyby(authEmail, authPassword)
-          // @ts-ignore
-          : await window.electronAPI.authPgsync(authEmail, authPassword);
+      } else if (authType === 'elyby') {
+        if (!authEmail || !authPassword) { setAuthError(t('auth.enterLoginPassword')); setAuthLoading(false); return }
+        const res = await window.electronAPI.authElyby(authEmail, authPassword)
         
         newAcc = { id: Date.now().toString(), name: res.username, type: authType, uuid: res.uuid, token: res.token, clientToken: res.clientToken, skinUrl: res.skinUrl }
       }
@@ -1121,7 +1497,7 @@ export default function App() {
     } catch (e: any) {
       let errMsg = e.message || String(e)
       if (errMsg.includes('Неверный логин или пароль')) {
-        errMsg = 'Неверный логин или пароль'
+        errMsg = t('auth.invalidCredentials')
       } else if (errMsg.includes('Error invoking remote method')) {
         const parts = errMsg.split('Error:')
         errMsg = parts[parts.length - 1].trim()
@@ -1135,40 +1511,69 @@ export default function App() {
 
   const removeAccount = (id: string) => {
     if (accounts.length <= 1) return
-    const newAccounts = accounts.filter(a => a.id !== id)
-    saveAccounts(newAccounts, newAccounts[0])
+    const target = accounts.find(a => a.id === id)
+    if (!target) return
+
+    setCustomModal({
+      isOpen: true,
+      title: t('app.deleteAccountTitle'),
+      message: t('app.deleteAccountMsg', { name: target.name }),
+      confirmText: t('app.delete'),
+      cancelText: t('ui.cancel'),
+      isDanger: true,
+      isAlert: false,
+      onConfirm: async () => {
+        const remaining = accounts.filter(a => a.id !== id)
+        if (remaining.length === 0) {
+          setCustomModal(prev => ({ ...prev, isOpen: false }))
+          return
+        }
+        // Неактивный аккаунт не должен менять текущий активный
+        const nextActive = activeAccount && activeAccount.id !== id
+          ? (remaining.find(a => a.id === activeAccount.id) || remaining[0])
+          : remaining[0]
+        try {
+          await saveAccounts(remaining, nextActive)
+        } finally {
+          setCustomModal(prev => ({ ...prev, isOpen: false }))
+        }
+      }
+    })
+  }
+
+  // Берёт язык, масштаб интерфейса и диктора из options.txt выбранной сборки:
+  // человек один раз настроил игру, а профиль лаунчера подхватит это сам.
+  const handleTakePlayerOptions = async () => {
+    const instanceId = selectedVersion.startsWith('mp:') ? selectedVersion.slice(3) : undefined
+    try {
+      // @ts-ignore
+      const values = await window.electronAPI?.readGameOptions?.(instanceId)
+      if (!values || (!values.lang && !values.guiScale && !values.narrator)) {
+        showError(t('settings.playerNothing'))
+        return
+      }
+      if (values.lang) setPlayerLang(String(values.lang))
+      if (values.guiScale) setPlayerGuiScale(String(values.guiScale))
+      if (values.narrator !== undefined) setPlayerNarrator(String(values.narrator))
+      setApplyPlayerOptions(true)
+      showOk(t('settings.playerTaken', { name: instanceId || t('settings.navMinecraft') }))
+    } catch (e) {
+      showError(errorText(e, t('app.unknownError')))
+    }
   }
 
   const handleLaunch = async () => {
     if (gameRunning) return;
     if (!activeAccount) {
-      alert('Пожалуйста, выберите или добавьте аккаунт для игры!');
+      showError(t('app.pickAccountToPlay'));
       setView('accounts');
       return;
     }
     setGameRunning(true)
     setLaunching(true)
+    launchReadyRef.current = false
     
-    // Ping server to wake it up if it's sleeping (Render free tier)
-    setProgress('Пробуждаем сервер (до 1 мин)...')
-    let serverReady = false
-    let retries = 0
-    while (!serverReady && retries < 30) { // Up to 60 seconds (30 * 2s)
-      try {
-        const res = await fetch('https://pg-sync-server.onrender.com/')
-        if (res.ok) {
-          serverReady = true
-        } else {
-          await new Promise(r => setTimeout(r, 2000))
-          retries++
-        }
-      } catch (e) {
-        await new Promise(r => setTimeout(r, 2000))
-        retries++
-      }
-    }
-
-    setProgress('Инициализация запуска...')
+    setProgress(t('app.progressInit'))
 
     // Check if a modpack is selected
     const isModpack = selectedVersion.startsWith('mp:')
@@ -1179,18 +1584,32 @@ export default function App() {
       token: activeAccount.token,
       clientToken: activeAccount.clientToken,
       authType: activeAccount.type,
-      memory: { max: `${ramValue}M`, min: '1024M' },
+      maxRam: ramValue,
       instanceId: selectedVersion,
       onPlayBehavior: 'keep',
-      jvmArgs: mcArgs,
+      customArgs: mcArgs.trim() ? mcArgs.trim().split(/\s+/) : undefined,
       javaPath: customJava === '8'
         ? (installedJavas['8']?.path || undefined)
         : customJava === '17'
         ? (installedJavas['17']?.path || undefined)
         : customJava === '21'
         ? (installedJavas['21']?.path || undefined)
+        : customJava === '25'
+        ? (installedJavas['25']?.path || undefined)
         : customJava !== 'auto' && customJava
         ? customJava
+        : undefined,
+      // Rust: fullscreen пишется в options.txt сборки, minimizeLauncher
+      // сворачивает окно лаунчера по событию game-ready.
+      fullscreen: launchFullscreen,
+      minimizeLauncher: launchMinimize,
+      // Пустые поля Rust пропускает: опция остаётся той, что уже стоит в игре.
+      playerOptions: applyPlayerOptions
+        ? {
+            lang: playerLang || undefined,
+            guiScale: playerGuiScale || undefined,
+            narrator: playerNarrator || undefined,
+          }
         : undefined
     }
 
@@ -1201,8 +1620,12 @@ export default function App() {
         launchOpts.version = mp.version
         launchOpts.loader = mp.loader
         launchOpts.modpackName = mp.name
+        launchOpts.loaderVersion = mp.loaderVersion || undefined
         launchOpts.instanceId = mp.name
       }
+    } else if (selectedVersion.endsWith(' Forge')) {
+      launchOpts.version = selectedVersion.replace(' Forge', '')
+      launchOpts.loader = 'forge'
     }
 
     try {
@@ -1210,8 +1633,8 @@ export default function App() {
       if (window.electronAPI && window.electronAPI.updateDiscordPresence) {
         // @ts-ignore
         window.electronAPI.updateDiscordPresence({
-          details: "Играет в Minecraft",
-          state: `Версия: ${isModpack ? selectedVersion.replace('mp:', '') : selectedVersion}`,
+          details: translate('app.presencePlaying'),
+          state: t('app.presenceVersion', { p1: isModpack ? selectedVersion.replace('mp:', '') : selectedVersion }),
           startTimestamp: Date.now(),
           largeImageKey: "logo",
           largeImageText: "Pagrysha Launcher"
@@ -1220,25 +1643,123 @@ export default function App() {
       
       // @ts-ignore
       await window.electronAPI.launchGame(launchOpts)
-      setProgress('Игра запущена')
+      // Команда вернулась сразу после `spawn`: окна ещё нет. Полосу гасит
+      // событие `game-ready`, а таймер — страховка, если игра так и не
+      // напишет в лог (тогда запуск считаем состоявшимся, но не висим вечно).
+      setProgress(t('app.progressGameLaunching'))
+      if (!launchReadyRef.current) {
+        if (launchReadyTimerRef.current) clearTimeout(launchReadyTimerRef.current)
+        launchReadyTimerRef.current = setTimeout(() => {
+          if (launchReadyRef.current) return
+          setLaunching(false)
+          setProgress('')
+        }, 120000)
+      }
     } catch (e: any) {
-      setProgress(`Error: ${e.message}`)
+      // Tauri отклоняет invoke строкой, а не объектом Error — иначе в
+      // сообщении было бы «Error: undefined».
+      const text = typeof e === 'string' ? e : (e?.message || String(e))
+      setProgress(`Error: ${text}`)
       setGameRunning(false)
+      setLaunching(false)
     }
-    setLaunching(false)
   }
 
   // @ts-ignore
-  const openFolder = () => window.electronAPI.openFolder()
+  const openFolder = () => {
+    // Для сборки открываем папку инстанса, иначе — общий игровой каталог
+    const instanceId = selectedVersion.startsWith('mp:') ? selectedVersion.replace('mp:', '') : undefined
+    // @ts-ignore
+    return window.electronAPI.openFolder(instanceId)
+  }
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (isUpdating) return;
-    if (updateInfo.downloadUrl) {
-      setIsUpdating(true);
+    if (!updateInfo.downloadUrl) return;
+    setIsUpdating(true);
+    try {
       // @ts-ignore
-      window.electronAPI.downloadAndRunUpdate(updateInfo.downloadUrl)
+      const res = await window.electronAPI.downloadAndRunUpdate(updateInfo.downloadUrl)
+      if (res && res.status === 'error') {
+        setCustomModal({
+          isOpen: true,
+          title: t('app.updaterErrorTitle'),
+          message: t('app.updateLoadFailed', { error: res.error || t('app.unknownError') }),
+          isAlert: true,
+          isDanger: true,
+          confirmText: t('ui.close')
+        })
+      }
+    } catch (e: any) {
+      setCustomModal({
+        isOpen: true,
+        title: t('app.updaterErrorTitle'),
+        message: t('app.updateLoadFailed', { error: errorText(e, t('app.unknownError')) }),
+        isAlert: true,
+        isDanger: true,
+        confirmText: t('ui.close')
+      })
+    } finally {
+      setIsUpdating(false)
     }
   }
+
+  // Небольшая подпись с прогрессом запуска рядом с кнопкой Play.
+  // Абсолютное позиционирование и pointerEvents: 'none' — layout не сдвигается.
+  const renderLaunchProgress = (anchor?: React.CSSProperties) => {
+    if (!progress) return null
+    const isError = progress.startsWith('Error:')
+    return (
+      <div
+        title={progress}
+        style={{
+          position: 'absolute',
+          bottom: '100%',
+          marginBottom: '6px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          // Якорь можно переопределить (например, прижать к правому краю)
+          ...anchor,
+          maxWidth: '320px',
+          fontFamily: '"Blocks", sans-serif',
+          fontSize: '11px',
+          lineHeight: 1.3,
+          color: isError ? '#e74c3c' : 'var(--pg-yellow)',
+          textAlign: 'center',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          textShadow: '1px 1px 0 rgba(0,0,0,0.85)',
+          pointerEvents: 'none',
+          zIndex: 20
+        }}
+      >
+        {progress}
+      </div>
+    )
+  }
+
+  // Снапшоты отмечаем землёй вместо травы. Тип версии есть только в исходном
+  // манифесте — в `versions` лежат одни id.
+  const snapshotIds = new Set<string>(
+    rawVersions.filter(rv => rv.type === 'snapshot').map(rv => rv.id)
+  )
+
+  // Полоса прогресса запуска внизу главного экрана.
+  // Видна, пока идёт запуск, и пока не погас текст ошибки: общий эффект выше
+  // очищает `progress` через 8 секунд, и полоса исчезает вместе с ним.
+  const launchIsError = progress.startsWith('Error:')
+  const launchBarVisible = launching || (launchIsError && progress.length > 0)
+  // Точный процент есть только у установки Java; у этапов запуска его нет,
+  // поэтому полоса показывает «бегущее» заполнение.
+  const launchPercent =
+    launching && javaProgress && typeof javaProgress.progress === 'number' && javaProgress.progress > 0
+      ? javaProgress.progress
+      : null
+
+  // Обои живут только на лобби: рабочие экраны всегда на сплошной подложке.
+  const lobbyWallpaperUrl = bgMode === 'custom' ? bgImage : bgMode === 'wallpaper' ? '/bg-minecraft.png' : null
+  const showLobbyWallpaper = view === 'play' && Boolean(lobbyWallpaperUrl)
 
   return (
     <div className="app-container just-style">
@@ -1269,11 +1790,8 @@ export default function App() {
                   top: '100%',
                   right: 0,
                   marginTop: '10px',
-                  width: '300px',
-                  background: 'var(--pg-black)',
-                  border: '2px solid #111',
-                  boxShadow: 'inset 0 2px 0 0 #444, inset 2px 0 0 0 #333, inset 0 -4px 0 0 #000, inset -2px 0 0 0 #222, 0 4px 10px rgba(0,0,0,0.5)',
-                  padding: '10px',
+                   width: '300px',
+                   padding: '10px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '10px',
@@ -1291,21 +1809,21 @@ export default function App() {
                   justCompletedDownloads ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '16px 0' }}>
                       <div style={{ color: 'var(--pg-yellow)', fontFamily: '"Blocks", sans-serif', fontSize: '13px' }}>
-                        ✓ ВСЕ УСТАНОВКИ ЗАВЕРШЕНЫ
+                        {t('installs.allDone')}
                       </div>
                     </div>
                   ) : (
-                    <div style={{ color: '#888', textAlign: 'center', padding: '20px 0', fontSize: '12px' }}>Нет активных загрузок</div>
+                    <div style={{ color: 'var(--pg-text-muted)', textAlign: 'center', padding: '20px 0', fontSize: '12px' }}>{t('app.noActiveDownloads')}</div>
                   )
                 ) : (
                   activeDownloads.map(d => (
-                    <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: '5px', background: '#1a1a1a', padding: '10px', border: '2px solid #222' }}>
+                    <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: '5px', background: 'var(--pg-dark)', padding: '10px', border: '2px solid var(--border-soft)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                        <span style={{ color: 'white', fontWeight: 'bold' }}>{d.name}</span>
+                        <span style={{ color: 'var(--pg-text)', fontWeight: 'bold' }}>{d.name}</span>
                         <span style={{ color: 'var(--pg-yellow)' }}>{d.progress}%</span>
                       </div>
-                      <div style={{ fontSize: '10px', color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.text}</div>
-                      <div style={{ height: '4px', background: '#111', width: '100%', marginTop: '5px' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--pg-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.text}</div>
+                      <div style={{ height: '4px', background: 'var(--pg-track)', width: '100%', marginTop: '5px' }}>
                         <div style={{ height: '100%', width: `${d.progress}%`, background: 'var(--pg-yellow)', transition: 'width 0.2s' }}></div>
                       </div>
                     </div>
@@ -1325,34 +1843,39 @@ export default function App() {
         {/* Sidebar */}
         {/* Sidebar */}
         <div className="jl-sidebar" style={{ position: 'relative' }}>
-          <div className="jl-profile" onClick={() => setShowAccountDropdown(!showAccountDropdown)}>
-            <MinecraftFace acc={activeAccount} size={40} />
-            <div className="jl-profile-info">
-              <span className="jl-profile-name">{activeAccount.name}</span>
-              <span className="jl-profile-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {activeAccount.type === 'microsoft' && <>Лицензия</>}
-                {activeAccount.type === 'elyby' && <>Ely.by</>}
-                {activeAccount.type === 'pgsync' && <>Pagrysha</>}
-                {activeAccount.type === 'offline' && <>Offline</>}
-              </span>
+          <div style={{ position: 'relative' }}>
+            <div className="jl-profile" onClick={() => setShowAccountDropdown(!showAccountDropdown)}>
+              <div className="jl-profile-avatar">
+                <MinecraftFace acc={activeAccount} size={38} skinTimestamp={skinTimestamp} />
+              </div>
+              <div className="jl-profile-info">
+                <span className="jl-profile-name">{activeAccount.name}</span>
+                <span className="jl-profile-status">
+                  <span className="jl-profile-dot" />
+                  {activeAccount.type === 'microsoft' && <>{t('app.licenseBadge')}</>}
+                  {activeAccount.type === 'elyby' && <>Ely.by</>}
+                  {activeAccount.type === 'offline' && <>Offline</>}
+                </span>
+              </div>
+              <span className={`jl-profile-caret${showAccountDropdown ? ' open' : ''}`} />
             </div>
-            <span style={{ marginLeft: 'auto', color: '#888', fontFamily: '"Blocks", sans-serif', fontSize: '11px', transform: showAccountDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>v</span>
-          </div>
 
-          {showAccountDropdown && (
-            <div className="account-dropdown" style={{
-              position: 'absolute',
-              top: '81px',
-              left: 0,
-              width: '100%',
-              background: '#1b1b1b',
-              borderBottom: '1px solid var(--pg-dark3)',
-              zIndex: 100,
-              boxShadow: '0 8px 16px rgba(0,0,0,0.5)',
-              display: 'flex',
-              flexDirection: 'column'
-            }}>
-              {accounts.map(acc => (
+            {showAccountDropdown && (
+              <div className="account-dropdown" style={{
+                position: 'absolute',
+                top: '100%',
+                left: '10px',
+                width: 'calc(100% - 20px)',
+                background: 'var(--pg-dark)',
+                borderBottom: '1px solid var(--pg-dark3)',
+                zIndex: 100,
+                boxShadow: '0 8px 16px rgba(0,0,0,0.5)',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
+              {/* Показываем не больше трёх аккаунтов: раньше список рос вместе
+                  с их числом и строчка «Изменить» уезжала за нижний край. */}
+              {accounts.slice(0, 3).map(acc => (
                 <div
                   key={acc.id}
                   onClick={() => {
@@ -1361,49 +1884,54 @@ export default function App() {
                   }}
                   className={`account-dropdown-item ${activeAccount.id === acc.id ? 'active' : ''}`}
                 >
-                  <MinecraftFace acc={acc} size={32} />
-                  <span style={{ color: 'white', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '13px' }}>{acc.name}</span>
+                  <MinecraftFace acc={acc} size={38} skinTimestamp={skinTimestamp} />
+                  <span style={{ color: 'var(--pg-text)', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '13px' }}>{acc.name}</span>
                 </div>
               ))}
+              {/* Список ограничен тремя аккаунтами, поэтому «Изменить» всегда
+                  на месте: привычная подпись и стрелка, а спрятанные аккаунты
+                  показаны просто жёлтой цифрой слева. */}
               <div
                 onClick={() => {
                   setShowAccountDropdown(false);
                   setView('accounts');
                   setSelectedAuthMethod(null);
                 }}
-                className="account-dropdown-item"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderTop: '1px solid var(--pg-dark3)',
-                  background: 'rgba(0,0,0,0.2)'
-                }}
+                className="account-dropdown-item account-dropdown-manage"
+                title={accounts.length > 3
+                  ? moreAccountsLabel(accounts.length - 3, language === 'en')
+                  : undefined}
               >
-                <span style={{ color: '#ccc', fontSize: '13px', fontFamily: '"Blocks", sans-serif' }}>{t("app.change")}</span>
-                <span style={{ color: '#888', fontSize: '14px', fontFamily: '"Blocks", sans-serif' }}>&gt;</span>
+                <span className="account-dropdown-manage-label">
+                  {accounts.length > 3 && (
+                    <span className="account-dropdown-count">{accounts.length - 3}</span>
+                  )}
+                  {t("app.change")}
+                </span>
+                <span className="account-dropdown-manage-arrow">&gt;</span>
               </div>
             </div>
           )}
+          </div>
 
           <div className="jl-nav">
             <div className={`jl-nav-item ${view === 'play' ? 'active' : ''}`} onClick={() => setView('play')}>
-              <div className="jl-nav-icon">
-                <PlayIcon size={24} opacity={view === 'play' ? 1 : 0.75} />
+              <div className="jl-nav-icon jl-nav-icon-play">
+                <PlayIcon size={24} opacity={view === 'play' ? 1 : 0.6} />
               </div>
               <span className="jl-nav-text">{t("app.sidebarPlay")}</span>
             </div>
 
             <div className={`jl-nav-item ${view === 'installations' ? 'active' : ''}`} onClick={() => setView('installations')}>
               <div className="jl-nav-icon">
-                <HammerIcon size={24} opacity={view === 'installations' ? 1 : 0.75} />
+                <HammerIcon size={24} opacity={view === 'installations' ? 1 : 0.6} />
               </div>
               <span className="jl-nav-text">{t("app.installations")}</span>
             </div>
 
-            <div className={`jl-nav-item ${view === 'modpacks' ? 'active' : ''}`} onClick={() => setView('modpacks')}>
+            <div className={`jl-nav-item ${view === 'modpacks' ? 'active' : ''}`} onClick={() => { setModpacksInitialQuery(''); setView('modpacks') }}>
               <div className="jl-nav-icon">
-                <ModpackBoxIcon size={24} opacity={view === 'modpacks' ? 1 : 0.75} />
+                <ModpackBoxIcon size={24} opacity={view === 'modpacks' ? 1 : 0.6} />
               </div>
               <span className="jl-nav-text">{t("app.sidebarModpacks")}</span>
             </div>
@@ -1411,37 +1939,25 @@ export default function App() {
             {enableServersTab && (
               <div className={`jl-nav-item ${view === 'servers' ? 'active' : ''}`} onClick={() => setView('servers')}>
                 <div className="jl-nav-icon">
-                  <ServersIcon size={24} opacity={view === 'servers' ? 1 : 0.75} />
+                  <ServersIcon size={24} opacity={view === 'servers' ? 1 : 0.6} />
                 </div>
                 <span className="jl-nav-text">{t("app.sidebarServers")}</span>
               </div>
             )}
 
-            {activeAccount.type === 'pgsync' && (
-              <div className={`jl-nav-item ${view === 'wardrobe' ? 'active' : ''}`} onClick={() => setView('wardrobe')}>
-                <div className="jl-nav-icon">
-                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{
-                    opacity: view === 'wardrobe' ? 1 : 0.75
-                  }}>
-                    <path d="M20.38 3.46L16 2a8.5 8.5 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>
-                  </svg>
-                </div>
-                <span className="jl-nav-text">{t("app.sidebarWardrobe")}</span>
-              </div>
-            )}
           </div>
 
           <div className="jl-bottom">
             <div className={`jl-nav-item ${view === 'accounts' ? 'active' : ''}`} onClick={() => { setView('accounts'); setSelectedAuthMethod(null); }}>
               <div className="jl-nav-icon">
-                <AccountsIcon size={24} opacity={view === 'accounts' ? 1 : 0.75} />
+                <AccountsIcon size={24} opacity={view === 'accounts' ? 1 : 0.6} />
               </div>
               <span className="jl-nav-text">{t("app.accounts")}</span>
             </div>
 
             <div className={`jl-nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>
               <div className="jl-nav-icon">
-                <SettingsIcon size={24} opacity={view === 'settings' ? 1 : 0.75} />
+                <SettingsIcon size={24} opacity={view === 'settings' ? 1 : 0.6} />
               </div>
               <span className="jl-nav-text">{t("app.sidebarSettings")}</span>
             </div>
@@ -1453,46 +1969,132 @@ export default function App() {
         </div>
 
         {/* Main Content */}
-        <div className="jl-main" style={view === 'play' ? { backgroundImage: mainBgDataUrl ? `url("${mainBgDataUrl}")` : 'url("./faq.png")' } : { backgroundImage: secBgDataUrl ? `url("${secBgDataUrl}")` : 'url("./bg-minecraft.png")' }}>
+        <div
+          className={`jl-main${showLobbyWallpaper ? ' has-wallpaper' : ''}`}
+          style={showLobbyWallpaper ? ({
+            '--jl-wallpaper': `url("${lobbyWallpaperUrl}")`,
+            '--jl-wallpaper-dim': String(bgDim / 100),
+            '--jl-wallpaper-blur': `${bgBlur}px`
+          } as React.CSSProperties) : undefined}
+        >
+          <LaunchStatusBar
+            visible={launchBarVisible}
+            error={launchIsError}
+            percent={launchPercent}
+          />
           <div
             key={view}
             className={enableTabAnimations ? 'subtle-tab-transition' : ''}
             style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden' }}
           >
             {view === 'play' && (
-            <div className="jl-content" style={enableNewDesign ? { justifyContent: 'flex-end', height: '100%' } : {}}>
+            <div className="jl-content lobby-content">
               {!enableNewDesign ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', padding: '0 40px', width: '100%' }}>
-                  <div className="jl-play-bar" style={{ display: 'flex', gap: '20px', alignItems: 'center', padding: '10px 20px', background: 'rgba(26,26,26,0.95)', border: '3px solid #111', boxShadow: 'inset 0 3px 0 0 #444, inset 3px 0 0 0 #333, inset 0 -6px 0 0 #000, inset -3px 0 0 0 #222', position: 'relative' }}>
-                    <div className="jl-version-selector" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <label style={{ fontSize: '12px', color: '#aaa', textTransform: 'uppercase', fontWeight: 'bold' }}>{t("app.currentVersion")}</label>
-                      <div
-                        className="custom-dropdown"
-                        onClick={() => {
-                          if (showVersionDropdown) handleCloseVersionDropdown()
-                          else setShowVersionDropdown(true)
-                        }}
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: '200px' }}
-                      >
-                        <div style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {renderSelectedVersionIcon(selectedVersion, modpacks, 32)}
+                <>
+                  <section className="lobby-recs">
+                    <div className="lobby-recs-head">
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <h2>{t('app.recommended')}</h2>
+                          {halloweenOn && <Pumpkin className='hw-pumpkin-inline' />}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '14px', color: 'white', fontWeight: 'bold' }}>
-                            {selectedVersion.startsWith('mp:') ? selectedVersion.replace('mp:', '') : selectedVersion || t("app.selectVersion")}
-                          </span>
-                          {selectedVersion.startsWith('mp:') && (
-                            <span style={{ fontSize: '11px', color: '#aaa' }}>
-                              {modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.loader} {modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.version}
+                        <p>{t('app.recommendedDesc')}</p>
+                      </div>
+                      {/* Стрелок ручного перелистывания нет: лента листается
+                          сама, а колесиком/свайпом крутить и так можно. */}
+                      <div className="lobby-recs-actions">
+                        <button
+                          type="button"
+                          className="lobby-recs-all"
+                          onClick={() => { setModpacksInitialQuery(''); setView('modpacks') }}
+                        >
+                          {t('app.allModpacks')} <ChevronRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      className="lobby-recs-row"
+                      ref={attachLobbyRecsRow}
+                      style={{ gridTemplateColumns: `repeat(${recsColumns}, minmax(0, 1fr))` }}
+                      onMouseEnter={() => { recsHoveredRef.current = true }}
+                      onMouseLeave={() => { recsHoveredRef.current = false }}
+                    >
+                      {lobbyRecsLoading ? (
+                        Array.from({ length: visibleCount }).map((_, i) => (
+                          <div key={i} className="lobby-rec skeleton" aria-hidden="true" />
+                        ))
+                      ) : lobbyRecs.length > 0 ? (
+                        visibleRecs.map((pack: any, index: number) => (
+                          <button
+                            key={pack.project_id || pack.slug || pack.title}
+                            type="button"
+                            className="lobby-rec"
+                            onClick={() => { setModpacksInitialQuery(pack.title || ''); setView('modpacks') }}
+                            style={{ animationDelay: `${Math.min(index * 35, 210)}ms` }}
+                          >
+                            <span className="lobby-rec-cover">
+                              <ProjectArt project={pack} />
+                              <span className="lobby-rec-badge">{projectLoaderLabel(pack)}</span>
                             </span>
-                          )}
-                        </div>
+                            <span className="lobby-rec-info">
+                              <span className="lobby-rec-head">
+                                <IconImg
+                                  className="lobby-rec-icon"
+                                  src={pack.icon_url}
+                                  loading="lazy"
+                                />
+                                <strong>{pack.title}</strong>
+                              </span>
+                              <span className="lobby-rec-meta">
+                                <Download size={12} />
+                                {formatCount(pack.downloads)}
+                                <span className="lobby-rec-dot">·</span>
+                                {projectLoaderLabel(pack)}
+                              </span>
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <button type="button" className="lobby-recs-empty" onClick={() => { setModpacksInitialQuery(''); setView('modpacks') }}>
+                          {t('app.catalogUnavailable')}
+                        </button>
+                      )}
+                    </div>
+                  </section>
+
+                  <div className="lobby-play-row">
+                    {/* Рамку и тени панели задаёт CSS (.jl-play-bar): раньше они жили
+                        в инлайн-стилях и не перекрашивались темой. */}
+                    <div className="jl-play-bar">
+                      <div className="jl-version-selector" style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '12px', color: 'var(--pg-text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>{t("app.currentVersion")}</label>
+                        <div
+                          className="custom-dropdown"
+                          onClick={() => {
+                            if (showVersionDropdown) handleCloseVersionDropdown()
+                            else setShowVersionDropdown(true)
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: '200px' }}
+                        >
+                          <div style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {renderSelectedVersionIcon(selectedVersion, modpacks, 32, snapshotIds.has(selectedVersion))}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '14px', color: 'var(--pg-text)', fontWeight: 'bold' }}>
+                              {selectedVersion.startsWith('mp:') ? selectedVersion.replace('mp:', '') : selectedVersion || t("app.selectVersion")}
+                            </span>
+                            {selectedVersion.startsWith('mp:') && (
+                              <span style={{ fontSize: '11px', color: 'var(--pg-text-muted)' }}>
+                                {modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.loader} {modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.version}
+                              </span>
+                            )}
+                          </div>
                         <span
                           style={{
                             marginLeft: 'auto',
                             fontFamily: '"Blocks", sans-serif',
                             fontSize: '11px',
-                            color: '#888',
+                            color: 'var(--pg-text-muted)',
                             display: 'inline-block',
                             transform: (showVersionDropdown && !isClosingVersionDropdown) ? 'rotate(180deg)' : 'rotate(0deg)',
                             transition: 'transform 0.2s ease',
@@ -1505,24 +2107,24 @@ export default function App() {
                       </div>
 
                       {(showVersionDropdown || isClosingVersionDropdown) && (
-                        <div className={`dropdown-menu ${isClosingVersionDropdown ? 'closing' : ''}`} style={{ position: 'absolute', bottom: '100%', left: 0, width: '100%', background: '#1a1a1a', border: '2px solid #333', maxHeight: '300px', overflowY: 'auto', zIndex: 50 }}>
+                        <div className={`dropdown-menu ${isClosingVersionDropdown ? 'closing' : ''}`} style={{ position: 'absolute', bottom: '100%', left: 0, width: '100%', background: 'var(--pg-dark)', border: '2px solid var(--pg-dark3)', maxHeight: '300px', overflowY: 'auto', zIndex: 50 }}>
                           {modpacks.length > 0 && (
                             <>
-                              <div style={{ padding: '8px 10px', fontSize: '11px', color: '#aaa', background: '#222', textTransform: 'uppercase' }}>{t("app.myModpacks")}</div>
+                              <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>{t("app.myModpacks")}</div>
                               {modpacks.map(mp => (
                                 <div
                                   key={mp.name}
                                   className="dropdown-item"
                                   onClick={() => { handleSelectVersion(`mp:${mp.name}`); handleCloseVersionDropdown(); }}
-                                  style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid #2a2a2a' }}
+                                  style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--border-soft)' }}
                                 >
-                                  <img src={mp.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png'} width={24} height={24} style={{ objectFit: 'cover' }} />
-                                  <span style={{ color: 'white', fontSize: '13px', flex: 1 }}>{mp.name}</span>
+                                  <IconImg src={mp.icon} size={24} fallback="./iconsblocks/Grass_Block_(inventory)_MCE.png" style={{ objectFit: 'cover' }} />
+                                  <span style={{ color: 'var(--pg-text)', fontSize: '13px', flex: 1 }}>{mp.name}</span>
                                 </div>
                               ))}
                             </>
                           )}
-                          <div style={{ padding: '8px 10px', fontSize: '11px', color: '#aaa', background: '#222', textTransform: 'uppercase' }}>{t("app.officialReleases")}</div>
+                          <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>{t("app.officialReleases")}</div>
                           {versions.map(v => {
                             const isVanillaInstalled = installedVersions.includes(v);
                             const isForgeInstalled = installedVersions.some(iv =>
@@ -1540,10 +2142,10 @@ export default function App() {
                                     if (isVanillaInstalled) {
                                       setCustomModal({
                                         isOpen: true,
-                                        title: 'Переустановка версии',
-                                        message: `Вы уверены, что хотите переустановить ${v}? Все файлы этой версии будут загружены заново.`,
-                                        confirmText: 'Переустановить',
-                                        cancelText: 'Отмена',
+                                        title: t('app.reinstallVersionTitle'),
+                                        message: t('app.reinstallVersionMsg', { version: v }),
+                                        confirmText: t('app.reinstall'),
+                                        cancelText: t('ui.cancel'),
                                         isDanger: false,
                                         onConfirm: async () => {
                                           // @ts-ignore
@@ -1555,14 +2157,14 @@ export default function App() {
                                     }
                                   }}
                                   style={{
-                                    padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: hasForge ? 'none' : '1px solid #2a2a2a',
-                                    background: isVanillaInstalled ? 'rgba(255, 255, 255, 0.05)' : 'transparent'
+                                    padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: hasForge ? 'none' : '1px solid var(--border-soft)',
+                                    background: isVanillaInstalled ? 'var(--surface-3)' : 'transparent'
                                   }}
                                 >
-                                  <img src={v?.toLowerCase()?.match(/(forge|fabric|optifine|quilt|lite)/) ? "./iconsblocks/Anvil.png" : "./iconsblocks/Grass_Block_(inventory)_MCE.png"} width={24} height={24} />
-                                  <span style={{ color: isVanillaInstalled ? '#fff' : '#aaa', fontSize: '13px', fontWeight: isVanillaInstalled ? 'bold' : 'normal', flex: 1 }}>
-                                    {v} {isVanillaInstalled && t('app.downloaded')}
-                                  </span>
+                                  <IconImg size={24} src={v?.toLowerCase()?.match(/(forge|fabric|optifine|quilt|lite)/) ? "./iconsblocks/Anvil.png" : snapshotIds.has(v) ? "./iconsblocks/MCE_Dirt_(inventory).png" : "./iconsblocks/Grass_Block_(inventory)_MCE.png"} />
+                                  <span style={{ color: isVanillaInstalled ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: isVanillaInstalled ? 'bold' : 'normal', flex: 1 }}>
+                                     {v} {isVanillaInstalled && t('app.downloaded')}
+                                   </span>
                                 </div>
                                 {hasForge && (
                                   <div
@@ -1573,10 +2175,10 @@ export default function App() {
                                       if (isForgeInstalled) {
                                         setCustomModal({
                                           isOpen: true,
-                                          title: 'Переустановка Forge',
-                                          message: `Вы уверены, что хотите переустановить ${forgeLabel}?`,
-                                          confirmText: 'Переустановить',
-                                          cancelText: 'Отмена',
+                                          title: t('app.reinstallForgeTitle'),
+                                          message: t('app.reinstallForgeMsg', { version: forgeLabel }),
+                                          confirmText: t('app.reinstall'),
+                                          cancelText: t('ui.cancel'),
                                           isDanger: false,
                                           onConfirm: async () => {
                                             const forgeFolders = installedVersions.filter(iv =>
@@ -1596,12 +2198,12 @@ export default function App() {
                                     }}
                                     style={{
                                       padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-                                      borderBottom: '1px solid #2a2a2a',
-                                      background: isForgeInstalled ? 'rgba(255, 255, 255, 0.05)' : 'transparent'
+                                      borderBottom: '1px solid var(--border-soft)',
+                                      background: isForgeInstalled ? 'var(--surface-3)' : 'transparent'
                                     }}
                                   >
                                     <img src="./iconsblocks/Anvil.png" width={24} height={24} />
-                                    <span style={{ color: isForgeInstalled ? '#fff' : '#aaa', fontSize: '13px', fontWeight: isForgeInstalled ? 'bold' : 'normal', flex: 1 }}>
+                                    <span style={{ color: isForgeInstalled ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: isForgeInstalled ? 'bold' : 'normal', flex: 1 }}>
                                       {forgeLabel} {isForgeInstalled && t('app.downloaded')}
                                     </span>
                                   </div>
@@ -1613,7 +2215,6 @@ export default function App() {
                       )}
                     </div>
                   </div>
-
                   <div
                     className="jl-play-btn-wrapper"
                     onClick={(!launching && !gameRunning) ? handleLaunch : undefined}
@@ -1623,14 +2224,17 @@ export default function App() {
                       display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}
                   >
-                    <img src="./play_empty.png" alt="Play" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'contain' }} />
-                    <span style={{
+                    <PlayButton />
+                    {halloweenOn && <Pumpkin className='hw-pumpkin-on-play' />}
+                    <span className="pg-play-label" style={{
                       position: 'relative', zIndex: 2,
                       fontFamily: '"MinecraftTen", "Blocks", monospace',
-                      fontSize: '16px', color: '#ffffff', WebkitTextFillColor: '#ffffff', WebkitTextStroke: '1px #f9ca24', textShadow: '2px 2px 0px rgba(0,0,0,0.5)', letterSpacing: '2px',
+                      // Плитка красится акцентом темы — цвет надписи берём из
+                      // готового токена: на светлом акценте он чёрный, на тёмном — белый.
+                      fontSize: '16px', color: 'var(--pg-on-accent)', WebkitTextFillColor: 'var(--pg-on-accent)', WebkitTextStroke: '0', textShadow: '0 1px 0 rgba(255,255,255,0.28)', letterSpacing: '2px',
                       userSelect: 'none', transition: 'transform 0.1s'
                     }}>
-                      {gameRunning ? t('app.gameRunning') : (() => {
+                      {launching ? t('app.launching') : gameRunning ? t('app.gameRunning') : (() => {
                         if (!selectedVersion) return t('app.playBtn');
                         if (selectedVersion.startsWith('mp:')) return t('app.playBtn');
                         if (selectedVersion?.endsWith(' Forge')) {
@@ -1642,7 +2246,9 @@ export default function App() {
                       })()}
                     </span>
                   </div>
-                </div>
+                  {renderLaunchProgress({ left: 'auto', right: '20px', transform: 'none' })}
+                  </div>
+                </>
               ) : (
                 // Console-style New Design
                 <div style={{ width: '100%', background: '#141414', borderTop: '3px solid #111', padding: '10px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', height: '76px', boxSizing: 'border-box' }}>
@@ -1655,13 +2261,13 @@ export default function App() {
                     style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer', zIndex: 11, position: 'relative' }}
                   >
                     <div style={{ width: '46px', height: '46px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {renderSelectedVersionIcon(selectedVersion, modpacks, 46)}
+                      {renderSelectedVersionIcon(selectedVersion, modpacks, 46, snapshotIds.has(selectedVersion))}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{
                           fontSize: '15px',
-                          color: 'white',
+                          color: 'var(--pg-text)',
                           fontWeight: 'bold',
                           fontFamily: '"Blocks", sans-serif',
                           maxWidth: '160px',
@@ -1694,7 +2300,7 @@ export default function App() {
                           ) : selectedVersion?.endsWith(' Forge') ? (
                             'ForgeOptiFine ' + selectedVersion.replace(' Forge', '')
                           ) : (
-                            'Official Release ' + selectedVersion
+                            t('app.officialReleasePrefix') + ' ' + selectedVersion
                           )}
                         </span>
                         {/* Custom decorative loader icon (anvil, paper, etc.) */}
@@ -1703,24 +2309,24 @@ export default function App() {
                     </div>
 
                     {(showVersionDropdown || isClosingVersionDropdown) && (
-                      <div className={`dropdown-menu ${isClosingVersionDropdown ? 'closing' : ''}`} style={{ position: 'absolute', bottom: '100%', left: 0, width: '280px', background: '#1a1a1a', border: '2px solid #333', maxHeight: '300px', overflowY: 'auto', zIndex: 50 }}>
+                      <div className={`dropdown-menu ${isClosingVersionDropdown ? 'closing' : ''}`} style={{ position: 'absolute', bottom: '100%', left: 0, width: '280px', background: 'var(--pg-dark)', border: '2px solid var(--pg-dark3)', maxHeight: '300px', overflowY: 'auto', zIndex: 50 }}>
                         {modpacks.length > 0 && (
                           <>
-                            <div style={{ padding: '8px 10px', fontSize: '11px', color: '#aaa', background: '#222', textTransform: 'uppercase' }}>{t("app.myModpacks")}</div>
+                            <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>{t("app.myModpacks")}</div>
                             {modpacks.map(mp => (
                               <div
                                 key={mp.name}
                                 className="dropdown-item"
                                 onClick={(e) => { e.stopPropagation(); handleSelectVersion(`mp:${mp.name}`); handleCloseVersionDropdown(); }}
-                                style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid #2a2a2a' }}
+                                style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--border-soft)' }}
                               >
-                                <img src={mp.icon || './iconsblocks/Grass_Block_(inventory)_MCE.png'} width={24} height={24} style={{ objectFit: 'cover' }} />
-                                <span style={{ color: 'white', fontSize: '13px', flex: 1 }}>{mp.name}</span>
+                                <IconImg src={mp.icon} size={24} fallback="./iconsblocks/Grass_Block_(inventory)_MCE.png" style={{ objectFit: 'cover' }} />
+                                <span style={{ color: 'var(--pg-text)', fontSize: '13px', flex: 1 }}>{mp.name}</span>
                               </div>
                             ))}
                           </>
                         )}
-                        <div style={{ padding: '8px 10px', fontSize: '11px', color: '#aaa', background: '#222', textTransform: 'uppercase' }}>{t("app.officialReleases")}</div>
+                        <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>{t("app.officialReleases")}</div>
                         {versions.map(v => {
                           const isVanillaInstalled = installedVersions.includes(v);
                           const isForgeInstalled = installedVersions.some(iv =>
@@ -1739,10 +2345,10 @@ export default function App() {
                                   if (isVanillaInstalled) {
                                     setCustomModal({
                                       isOpen: true,
-                                      title: 'Переустановка версии',
-                                      message: `Вы уверены, что хотите переустановить ${v}? Все файлы этой версии будут загружены заново.`,
-                                      confirmText: 'Переустановить',
-                                      cancelText: 'Отмена',
+                                      title: t('app.reinstallVersionTitle'),
+                                      message: t('app.reinstallVersionMsg', { version: v }),
+                                      confirmText: t('app.reinstall'),
+                                      cancelText: t('ui.cancel'),
                                       isDanger: false,
                                       onConfirm: async () => {
                                         // @ts-ignore
@@ -1754,14 +2360,14 @@ export default function App() {
                                   }
                                 }}
                                 style={{
-                                  padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: hasForge ? 'none' : '1px solid #2a2a2a',
-                                  background: isVanillaInstalled ? 'rgba(255, 255, 255, 0.05)' : 'transparent'
+                                  padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: hasForge ? 'none' : '1px solid var(--border-soft)',
+                                  background: isVanillaInstalled ? 'var(--surface-3)' : 'transparent'
                                 }}
                               >
-                                <img src={v?.toLowerCase()?.match(/(forge|fabric|optifine|quilt|lite)/) ? "./iconsblocks/Anvil.png" : "./iconsblocks/Grass_Block_(inventory)_MCE.png"} width={24} height={24} />
-                                <span style={{ color: isVanillaInstalled ? '#fff' : '#aaa', fontSize: '13px', fontWeight: isVanillaInstalled ? 'bold' : 'normal', flex: 1 }}>
-                                  {v} {isVanillaInstalled && t('app.downloaded')}
-                                </span>
+                                <IconImg size={24} src={v?.toLowerCase()?.match(/(forge|fabric|optifine|quilt|lite)/) ? "./iconsblocks/Anvil.png" : snapshotIds.has(v) ? "./iconsblocks/MCE_Dirt_(inventory).png" : "./iconsblocks/Grass_Block_(inventory)_MCE.png"} />
+                                <span style={{ color: isVanillaInstalled ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: isVanillaInstalled ? 'bold' : 'normal', flex: 1 }}>
+                                     {v} {isVanillaInstalled && t('app.downloaded')}
+                                   </span>
                               </div>
                               {hasForge && (
                                 <div
@@ -1773,10 +2379,10 @@ export default function App() {
                                     if (isForgeInstalled) {
                                       setCustomModal({
                                         isOpen: true,
-                                        title: 'Переустановка Forge',
-                                        message: `Вы уверены, что хотите переустановить ${forgeLabel}?`,
-                                        confirmText: 'Переустановить',
-                                        cancelText: 'Отмена',
+                                        title: t('app.reinstallForgeTitle'),
+                                        message: t('app.reinstallForgeMsg', { version: forgeLabel }),
+                                        confirmText: t('app.reinstall'),
+                                        cancelText: t('ui.cancel'),
                                         isDanger: false,
                                         onConfirm: async () => {
                                           const forgeFolders = installedVersions.filter(iv =>
@@ -1796,12 +2402,12 @@ export default function App() {
                                   }}
                                   style={{
                                     padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-                                    borderBottom: '1px solid #2a2a2a',
-                                    background: isForgeInstalled ? 'rgba(255, 255, 255, 0.05)' : 'transparent'
+                                    borderBottom: '1px solid var(--border-soft)',
+                                    background: isForgeInstalled ? 'var(--surface-3)' : 'transparent'
                                   }}
                                 >
                                   <img src="./iconsblocks/Anvil.png" width={24} height={24} />
-                                  <span style={{ color: isForgeInstalled ? '#fff' : '#aaa', fontSize: '13px', fontWeight: isForgeInstalled ? 'bold' : 'normal', flex: 1 }}>
+                                  <span style={{ color: isForgeInstalled ? 'var(--pg-text)' : 'var(--pg-text-muted)', fontSize: '13px', fontWeight: isForgeInstalled ? 'bold' : 'normal', flex: 1 }}>
                                     {forgeLabel} {isForgeInstalled && t('app.downloaded')}
                                   </span>
                                 </div>
@@ -1831,16 +2437,17 @@ export default function App() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontFamily: '"MinecraftTen", "Blocks", monospace',
-                      color: '#ffffff',
-                      textShadow: '2px 2px 0px rgba(0,0,0,0.7)',
-                      WebkitTextStroke: '1px #ab7d00',
+                      // Жёлтая кнопка — чёрные буквы: белые на ней почти сливались.
+                      color: '#141414',
+                      textShadow: '0 1px 0 rgba(255,255,255,0.35)',
+                      WebkitTextStroke: '0',
                       fontSize: '17px',
                       userSelect: 'none'
                     }}
                     className="jl-flat-yellow-btn hover-scale-btn active-press-btn"
                   >
                     <span>
-                      {gameRunning ? t('app.gameRunning') : (() => {
+                      {launching ? t('app.launching') : gameRunning ? t('app.gameRunning') : (() => {
                         if (!selectedVersion) return t('app.playBtn');
                         if (selectedVersion.startsWith('mp:')) return t('app.playBtn');
                         if (selectedVersion?.endsWith(' Forge')) {
@@ -1852,6 +2459,7 @@ export default function App() {
                       })()}
                     </span>
                   </div>
+                  {renderLaunchProgress()}
 
                   {/* Right: Square Quick Action Buttons */}
                   <div style={{ display: 'flex', gap: '8px', zIndex: 11 }}>
@@ -1882,7 +2490,7 @@ export default function App() {
                         opacity: selectedVersion.startsWith('mp:') ? 1 : 0.4
                       }}
                       className="mc-btn-primary hover-scale-btn"
-                      title={selectedVersion.startsWith('mp:') ? "Редактировать сборку" : "Редактировать можно только кастомные сборки"}
+                      title={selectedVersion.startsWith('mp:') ? t('app.editModpack') : t('app.editModpackDisabled')}
                       disabled={!selectedVersion.startsWith('mp:')}
                     >
                       {/* Pencil icon */}
@@ -1924,489 +2532,248 @@ export default function App() {
               onCloseAutoOpenCreate={() => setAutoOpenInstallCreate(false)}
             />
           )}
-          {view === 'modpacks' && <ModpacksMenu currentVersion={selectedVersion} opacity={menuOpacity} />}
+          {view === 'modpacks' && <ModpacksMenu currentVersion={selectedVersion} opacity={menuOpacity} initialQuery={modpacksInitialQuery} />}
           {view === 'servers' && <ServersMenu opacity={menuOpacity} />}
           {view === 'settings' && (
-            <div 
-              className="jl-content settings-tab-view" 
-              style={{ 
-                flex: 1,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                background: `rgba(18, 18, 18, ${menuOpacity / 100})`,
-                overflow: 'hidden',
-                boxSizing: 'border-box'
-              }}
-            >
-              {/* Fixed Top Sub-Tabs Header */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '30px',
-                borderBottom: `2px solid rgba(0, 0, 0, ${Math.max(0.4, (menuOpacity / 100) * 0.8)})`,
-                boxShadow: '0 1px 0 rgba(255, 255, 255, 0.05)',
-                padding: '24px 45px 0 45px',
-                userSelect: 'none',
-                flexShrink: 0,
-                background: `rgba(18, 18, 18, ${Math.max(0.65, menuOpacity / 100)})`,
-                backdropFilter: 'blur(6px)',
-                zIndex: 10
-              }}>
-                {[
-                  { id: 'customization', label: 'ЛАУНЧЕР' },
-                  { id: 'main', label: 'MINECRAFT' },
-                  { id: 'experimental', label: 'ЭКСПЕРИМЕНТАЛЬНЫЕ' }
-                ].map(tab => {
-                  const isActive = settingsTab === tab.id;
-                  return (
-                    <div
-                      key={tab.id}
-                      onClick={() => setSettingsTab(tab.id as any)}
-                      style={{
-                        position: 'relative',
-                        fontSize: '15px',
-                        fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                        color: isActive ? '#ffffff' : '#888888',
-                        paddingBottom: '12px',
-                        cursor: 'pointer',
-                        letterSpacing: '1px',
-                        transition: 'color 0.2s ease',
-                        display: 'flex',
-                        alignItems: 'center',
-                        userSelect: 'none'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isActive) e.currentTarget.style.color = '#cccccc';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isActive) e.currentTarget.style.color = '#888888';
-                      }}
+            <div className="settings-view">
+              {/* Вертикальная навигация вместо верхних вкладок */}
+              <aside className="settings-nav">
+                <div className="settings-nav-head">
+                  <SlidersHorizontal size={15} />
+                  <span>{t('settings.navTitle')}</span>
+                </div>
+                <nav className="settings-nav-list">
+                  {[
+                    { id: 'appearance', label: t('settings.navAppearance'), icon: <Palette size={15} /> },
+                    { id: 'customization', label: t('settings.navLauncher'), icon: <SlidersHorizontal size={15} /> },
+                    { id: 'main', label: t('settings.navMinecraft'), icon: <Blocks size={15} /> },
+                    { id: 'experimental', label: t('settings.navExperimental'), icon: <FlaskConical size={15} /> }
+                  ].map(item => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`settings-nav-item ${settingsTab === item.id ? 'active' : ''}`}
+                      onClick={() => setSettingsTab(item.id as any)}
                     >
-                      {tab.label}
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: '-2px',
-                          left: 0,
-                          right: 0,
-                          height: '3px',
-                          backgroundColor: 'var(--pg-yellow)',
-                          boxShadow: isActive ? '0 0 10px rgba(241, 196, 15, 0.65)' : 'none',
-                          transform: isActive ? 'scaleX(1)' : 'scaleX(0)',
-                          transformOrigin: 'center',
-                          opacity: isActive ? 1 : 0,
-                          transition: 'transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease'
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                      <span className="settings-nav-icon">{item.icon}</span>
+                      <span className="settings-nav-label">{item.label}</span>
+                    </button>
+                  ))}
+                </nav>
+                <div className="settings-nav-foot">Pagrysha Launcher v{pkg.version}</div>
+              </aside>
 
-              {/* Scrollable Settings Content Area */}
-              <div 
-                className="custom-scrollbar" 
-                style={{ 
-                  flex: 1, 
-                  overflowY: 'auto', 
-                  padding: '25px 45px 35px 45px',
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
+              <div className="settings-pane custom-scrollbar">
+                <div className="settings-pane-inner">
+                  <header className="settings-pane-head">
+                    <h1>
+                      {settingsTab === 'appearance'
+                        ? t('settings.navAppearance')
+                        : settingsTab === 'customization'
+                          ? t('settings.navLauncher')
+                          : settingsTab === 'main'
+                            ? t('settings.navMinecraft')
+                            : t('settings.navExperimental')}
+                    </h1>
+                    <p>
+                      {settingsTab === 'appearance'
+                        ? t('settings.descAppearance')
+                        : settingsTab === 'customization'
+                          ? t('settings.descLauncher')
+                          : settingsTab === 'main'
+                            ? t('settings.descMinecraft')
+                            : t('settings.descExperimental')}
+                    </p>
+                  </header>
+                {settingsTab === 'appearance' && (
+                  <>
+                    <CustomizationTab
+                      theme={theme}
+                      onChange={(patch) => setTheme(prev => ({ ...prev, ...patch }))}
+                      onPreset={(id) => setTheme(presetTheme(id))}
+                      onMode={(mode) => setTheme(prev => withMode(prev, mode))}
+                      onReset={() => setTheme(DEFAULT_THEME)}
+                    />
+
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('app.bgTitle')}</h2>
+                        <p>{t('settings.bgDesc')}</p>
+                      </div>
+
+                      <div className="bg-mode-grid">
+                        {[
+                          { id: 'dark', title: t('app.bgModeDark'), desc: t('app.bgModeDarkDesc') },
+                          { id: 'wallpaper', title: t('app.bgModeWallpaper'), desc: t('app.bgModeWallpaperDesc') },
+                          { id: 'custom', title: t('app.bgModeCustom'), desc: t('app.bgModeCustomDesc') }
+                        ].map(mode => {
+                          const active = bgMode === mode.id
+                          const previewSrc = mode.id === 'custom' ? (bgImage || './bg-minecraft.png') : './bg-minecraft.png'
+                          return (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              className={`bg-mode ${active ? 'active' : ''}`}
+                              onClick={() => setBgMode(mode.id as 'dark' | 'wallpaper' | 'custom')}
+                            >
+                              <span className={`bg-mode-preview ${mode.id === 'dark' ? 'dark' : ''}`}>
+                                {mode.id !== 'dark' && (
+                                  <img
+                                    src={previewSrc}
+                                    alt=""
+                                    style={{ filter: mode.id === 'custom' ? 'blur(2px) brightness(.45)' : 'brightness(.6)' }}
+                                  />
+                                )}
+                              </span>
+                              <span className="bg-mode-body">
+                                <span className="bg-mode-title">{mode.title}</span>
+                                <span className="bg-mode-desc">{mode.desc}</span>
+                              </span>
+                              <span className="bg-mode-check" />
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {bgMode === 'custom' && (
+                        <div className="settings-inline">
+                          <label className="settings-action-btn primary" style={{ cursor: 'pointer' }}>
+                            {t('app.selectFile')}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={(e: any) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => {
+                                    setBgImage(url);
+                                    setBgMode('custom');
+                                    window.dispatchEvent(new Event('storage'));
+                                  });
+                                }
+                              }}
+                            />
+                          </label>
+                          {bgImage && (
+                            <button
+                              type="button"
+                              className="settings-action-btn danger"
+                              onClick={() => {
+                                localStorage.removeItem('mc_main_bg_data');
+                                setBgImage(null);
+                                setBgMode('dark');
+                                window.dispatchEvent(new Event('storage'));
+                              }}
+                            >
+                              <Trash size={12} /> {t('app.reset')}
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      <div className={`settings-sliders ${bgMode === 'dark' ? 'disabled' : ''}`}>
+                        <div className="settings-slider-row">
+                          <span className="settings-slider-label">{t('app.bgDim')}</span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="90"
+                            step="5"
+                            className="ram-slider"
+                            value={bgDim}
+                            disabled={bgMode === 'dark'}
+                            onChange={e => setBgDim(Number(e.target.value))}
+                            style={{ flex: 1, background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${(bgDim / 90) * 100}%, var(--pg-track, #0e0e0e) ${(bgDim / 90) * 100}%, var(--pg-track, #0e0e0e) 100%)` }}
+                          />
+                          <span className="settings-slider-value">{bgDim}%</span>
+                        </div>
+                        <div className="settings-slider-row">
+                          <span className="settings-slider-label">{t('app.bgBlur')}</span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="20"
+                            step="1"
+                            className="ram-slider"
+                            value={bgBlur}
+                            disabled={bgMode === 'dark'}
+                            onChange={e => setBgBlur(Number(e.target.value))}
+                            style={{ flex: 1, background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${(bgBlur / 20) * 100}%, var(--pg-track, #0e0e0e) ${(bgBlur / 20) * 100}%, var(--pg-track, #0e0e0e) 100%)` }}
+                          />
+                          <span className="settings-slider-value">{bgBlur} px</span>
+                        </div>
+                      </div>
+
+                      <div className="settings-hint">
+                        {t('app.bgHint')}
+                      </div>
+                    </section>
+                  </>
+                )}
+
                 {/* Tab 1: ЛАУНЧЕР (Customization) */}
                 {settingsTab === 'customization' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '650px' }}>
-                    {/* Section: Язык */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Язык / Language
+                  <>
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.languageTitle')}</h2>
+                        <p>{t('settings.languageDesc')}</p>
                       </div>
-                      <div>
-                        <McSelect 
-                          value={language} 
-                          onChange={(v) => setLanguage(v as Language)} 
-                          options={[
-                            { value: 'ru', label: 'Русский - Россия', icon: <RussianFlag /> },
-                            { value: 'en', label: 'English - United States', icon: <AmericanFlag /> }
-                          ]} 
-                          style={{ width: '300px' }} 
-                        />
+                      <McSelect 
+                        value={language} 
+                        onChange={(v) => setLanguage(v as Language)} 
+                        options={[
+                          { value: 'ru', label: 'Русский - Россия', icon: <RussianFlag /> },
+                          { value: 'en', label: 'English - United States', icon: <AmericanFlag /> }
+                        ]} 
+                        style={{ width: '300px' }} 
+                      />
+                    </section>
+
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.maintenanceTitle')}</h2>
+                        <p>{t('settings.maintenanceDesc')}</p>
                       </div>
-                    </div>
-
-                    {/* Section: Прозрачность и темы */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Прозрачность интерфейса
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <div style={{ flex: 1, maxWidth: '400px' }}>
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="100" 
-                            step="5" 
-                            className="ram-slider" 
-                            value={menuOpacity} 
-                            onChange={e => setMenuOpacity(Number(e.target.value))} 
-                            style={{ 
-                              width: '100%',
-                              background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${menuOpacity}%, #0e0e0e ${menuOpacity}%, #0e0e0e 100%)`
-                            }} 
-                          />
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white', fontFamily: '"Inter", sans-serif', fontWeight: 500 }}>
-                          <input type="number" className="mc-input" value={menuOpacity} onChange={e => setMenuOpacity(Number(e.target.value))} style={{ width: '60px', padding: '5px', textAlign: 'center' }} /> %
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Section: Фоновые изображения */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        {t('app.bgImages')}
-                      </div>
-                      <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(285px, 1fr))', 
-                        gap: '16px', 
-                        maxWidth: '650px', 
-                        width: '100%' 
-                      }}>
-                        {/* Main Screen Frame */}
-                        <div style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          background: `rgba(20, 20, 20, ${Math.max(0.25, (menuOpacity / 100) * 0.95)})`,
-                          border: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`,
-                          boxShadow: `inset 1px 1px 0 rgba(255, 255, 255, ${0.08 * (menuOpacity / 100)}), inset -1px -1px 0 rgba(0, 0, 0, ${0.6 * (menuOpacity / 100)}), 0 4px 14px rgba(0, 0, 0, 0.35)`,
-                          borderRadius: '0px',
-                          overflow: 'hidden',
-                          transition: 'background 0.2s ease, border 0.2s ease'
-                        }}>
-                          {/* Header Bar */}
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '10px 14px',
-                            background: `rgba(32, 32, 32, ${Math.max(0.3, menuOpacity / 100)})`,
-                            borderBottom: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`
-                          }}>
-                            <span style={{
-                              fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                              fontSize: '13px',
-                              color: '#ffffff',
-                              letterSpacing: '0.6px',
-                              textShadow: '1px 1px 0 #000'
-                            }}>
-                              {t('app.mainScreen')}
-                            </span>
-                            {mainBgDataUrl && (
-                              <span style={{
-                                fontSize: '10px',
-                                fontFamily: '"Inter", sans-serif',
-                                fontWeight: 600,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                padding: '2px 8px',
-                                borderRadius: '2px',
-                                background: 'rgba(46, 204, 113, 0.18)',
-                                border: '1px solid rgba(46, 204, 113, 0.45)',
-                                color: '#2ecc71'
-                              }}>
-                                {language === 'ru' ? 'Свой фон' : 'Custom'}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Body */}
-                          <div style={{
-                            padding: '14px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '14px'
-                          }}>
-                            {/* 16:9 Thumbnail Frame */}
-                            <div style={{
-                              width: '108px',
-                              height: '61px',
-                              flexShrink: 0,
-                              background: `rgba(10, 10, 10, ${Math.max(0.3, menuOpacity / 100)})`,
-                              border: `2px solid rgba(0, 0, 0, ${Math.max(0.5, menuOpacity / 100)})`,
-                              boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.4)',
-                              overflow: 'hidden',
-                              position: 'relative',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}>
-                              <img 
-                                src={mainBgDataUrl || './faq.png'} 
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = './faq.png'; }}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
-                                alt="Main Screen Preview" 
-                              />
-                            </div>
-
-                            {/* Actions */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '11px', color: '#8c8c8c', fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
-                                1920×1080 • PNG / JPG
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <label 
-                                  className="mc-btn-primary hover-scale-btn" 
-                                  style={{ 
-                                    cursor: 'pointer', 
-                                    padding: '6px 14px', 
-                                    fontSize: '11.5px', 
-                                    color: '#000', 
-                                    whiteSpace: 'nowrap',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                  }}
-                                >
-                                  {t('app.selectFile')}
-                                  <input 
-                                    type="file" 
-                                    accept="image/*" 
-                                    style={{ display: 'none' }} 
-                                    onChange={(e: any) => {
-                                      if (e.target.files && e.target.files[0]) {
-                                        saveCompressedImage(e.target.files[0], 'mc_main_bg_data', (url) => {
-                                          setMainBgDataUrl(url);
-                                          window.dispatchEvent(new Event('storage'));
-                                        });
-                                      }
-                                    }} 
-                                  />
-                                </label>
-                                {mainBgDataUrl && (
-                                  <button 
-                                    type="button" 
-                                    className="mc-btn-danger hover-scale-btn" 
-                                    style={{ 
-                                      padding: '6px 10px', 
-                                      fontSize: '11px', 
-                                      display: 'inline-flex', 
-                                      alignItems: 'center', 
-                                      gap: '5px' 
-                                    }} 
-                                    title={t('app.resetBg')} 
-                                    onClick={() => { 
-                                      localStorage.removeItem('mc_main_bg_data'); 
-                                      setMainBgDataUrl(null); 
-                                      window.dispatchEvent(new Event('storage'));
-                                    }}
-                                  >
-                                    <Trash size={12} />
-                                    <span>{t('app.reset')}</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Secondary Screen Frame */}
-                        <div style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          background: `rgba(20, 20, 20, ${Math.max(0.25, (menuOpacity / 100) * 0.95)})`,
-                          border: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`,
-                          boxShadow: `inset 1px 1px 0 rgba(255, 255, 255, ${0.08 * (menuOpacity / 100)}), inset -1px -1px 0 rgba(0, 0, 0, ${0.6 * (menuOpacity / 100)}), 0 4px 14px rgba(0, 0, 0, 0.35)`,
-                          borderRadius: '0px',
-                          overflow: 'hidden',
-                          transition: 'background 0.2s ease, border 0.2s ease'
-                        }}>
-                          {/* Header Bar */}
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '10px 14px',
-                            background: `rgba(32, 32, 32, ${Math.max(0.3, menuOpacity / 100)})`,
-                            borderBottom: `2px solid rgba(0, 0, 0, ${Math.max(0.4, menuOpacity / 100)})`
-                          }}>
-                            <span style={{
-                              fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                              fontSize: '13px',
-                              color: '#ffffff',
-                              letterSpacing: '0.6px',
-                              textShadow: '1px 1px 0 #000'
-                            }}>
-                              {t('app.secondaryScreen')}
-                            </span>
-                            {secBgDataUrl && (
-                              <span style={{
-                                fontSize: '10px',
-                                fontFamily: '"Inter", sans-serif',
-                                fontWeight: 600,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                padding: '2px 8px',
-                                borderRadius: '2px',
-                                background: 'rgba(46, 204, 113, 0.18)',
-                                border: '1px solid rgba(46, 204, 113, 0.45)',
-                                color: '#2ecc71'
-                              }}>
-                                {language === 'ru' ? 'Свой фон' : 'Custom'}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Body */}
-                          <div style={{
-                            padding: '14px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '14px'
-                          }}>
-                            {/* 16:9 Thumbnail Frame */}
-                            <div style={{
-                              width: '108px',
-                              height: '61px',
-                              flexShrink: 0,
-                              background: `rgba(10, 10, 10, ${Math.max(0.3, menuOpacity / 100)})`,
-                              border: `2px solid rgba(0, 0, 0, ${Math.max(0.5, menuOpacity / 100)})`,
-                              boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.4)',
-                              overflow: 'hidden',
-                              position: 'relative',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}>
-                              <img 
-                                src={secBgDataUrl || './bg-minecraft.png'} 
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = './bg-minecraft.png'; }}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} 
-                                alt="Secondary Screen Preview" 
-                              />
-                            </div>
-
-                            {/* Actions */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '11px', color: '#8c8c8c', fontFamily: '"Inter", sans-serif', lineHeight: 1.3 }}>
-                                1920×1080 • PNG / JPG
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                <label 
-                                  className="mc-btn-primary hover-scale-btn" 
-                                  style={{ 
-                                    cursor: 'pointer', 
-                                    padding: '6px 14px', 
-                                    fontSize: '11.5px', 
-                                    color: '#000', 
-                                    whiteSpace: 'nowrap',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
-                                  }}
-                                >
-                                  {t('app.selectFile')}
-                                  <input 
-                                    type="file" 
-                                    accept="image/*" 
-                                    style={{ display: 'none' }} 
-                                    onChange={(e: any) => {
-                                      if (e.target.files && e.target.files[0]) {
-                                        saveCompressedImage(e.target.files[0], 'mc_sec_bg_data', (url) => {
-                                          setSecBgDataUrl(url);
-                                          window.dispatchEvent(new Event('storage'));
-                                        });
-                                      }
-                                    }} 
-                                  />
-                                </label>
-                                {secBgDataUrl && (
-                                  <button 
-                                    type="button" 
-                                    className="mc-btn-danger hover-scale-btn" 
-                                    style={{ 
-                                      padding: '6px 10px', 
-                                      fontSize: '11px', 
-                                      display: 'inline-flex', 
-                                      alignItems: 'center', 
-                                      gap: '5px' 
-                                    }} 
-                                    title={t('app.resetBg')} 
-                                    onClick={() => { 
-                                      localStorage.removeItem('mc_sec_bg_data'); 
-                                      setSecBgDataUrl(null); 
-                                      window.dispatchEvent(new Event('storage'));
-                                    }}
-                                  >
-                                    <Trash size={12} />
-                                    <span>{t('app.reset')}</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Section: Кэш и настройки лаунчера */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Кэш и управление данными
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                        <button 
-                          type="button"
-                          className="mc-btn-primary hover-scale-btn" 
-                          style={{ padding: '8px 16px', fontSize: '12px' }} 
-                          onClick={handleCheckUpdatesClick}
-                        >
-                          Проверить обновления
+                      <div className="settings-actions-row">
+                        <button type="button" className="settings-action-btn" onClick={handleCheckUpdatesClick}>
+                          {t('settings.checkUpdatesBtn')}
                         </button>
 
-                        <button 
-                          type="button"
-                          className="mc-btn-primary hover-scale-btn" 
-                          style={{ padding: '8px 16px', fontSize: '12px' }} 
-                          onClick={handleClearCacheClick}
-                        >
-                          Очистить кэш лаунчера
-                        </button>
-
-                        <button 
-                          type="button"
-                          className="mc-btn-danger hover-scale-btn"
-                          style={{ padding: '8px 16px', fontSize: '12px' }}
-                          onClick={handleCleanUninstallJavaClick}
-                        >
-                          Полное удаление Java
-                        </button>
-
-                        <button 
-                          type="button"
-                          className="mc-btn-danger hover-scale-btn"
-                          style={{ padding: '8px 16px', fontSize: '12px' }}
-                          onClick={handleResetSettingsClick}
-                        >
-                          Сбросить настройки лаунчера
+                        <button type="button" className="settings-action-btn" onClick={handleClearCacheClick}>
+                          {t('settings.clearCacheBtn')}
                         </button>
                       </div>
-                    </div>
-                  </div>
+                    </section>
+
+                    <section className="settings-card danger-zone">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.dangerTitle')}</h2>
+                        <p>{t('settings.dangerDesc')}</p>
+                      </div>
+                      <div className="settings-actions-row">
+                        <button type="button" className="settings-action-btn danger" onClick={handleCleanUninstallJavaClick}>
+                          {t('settings.removeJavaBtn')}
+                        </button>
+
+                        <button type="button" className="settings-action-btn danger" onClick={handleResetSettingsClick}>
+                          {t('settings.resetAllBtn')}
+                        </button>
+                      </div>
+                    </section>
+                  </>
                 )}
 
                 {/* Tab 2: MINECRAFT (Main) */}
                 {settingsTab === 'main' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '650px' }}>
-                    {/* Section: Память ОЗУ */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Выделение оперативной памяти (ОЗУ)
+                  <>
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.ramTitle')}</h2>
+                        <p>{t('settings.ramDesc')}</p>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <div style={{ flex: 1, maxWidth: '400px' }}>
+                      <div className="settings-ram">
+                        <div className="settings-ram-slider">
                           <input 
                             type="range" 
                             min="512" 
@@ -2417,10 +2784,10 @@ export default function App() {
                             onChange={e => setRamValue(Number(e.target.value))} 
                             style={{ 
                               width: '100%',
-                              background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${Math.max(0, Math.min(100, Math.round(((ramValue - 512) / (maxRam - 512)) * 100)))}%, #0e0e0e ${Math.max(0, Math.min(100, Math.round(((ramValue - 512) / (maxRam - 512)) * 100)))}%, #0e0e0e 100%)`
+                              background: `linear-gradient(to right, var(--pg-yellow) 0%, var(--pg-yellow) ${Math.max(0, Math.min(100, Math.round(((ramValue - 512) / (maxRam - 512)) * 100)))}%, var(--pg-track, #0e0e0e) ${Math.max(0, Math.min(100, Math.round(((ramValue - 512) / (maxRam - 512)) * 100)))}%, var(--pg-track, #0e0e0e) 100%)`
                             }} 
                           />
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#888', marginTop: '4px' }}>
+                          <div className="settings-ram-scale">
                             <span>512M</span>
                             <span>{Math.floor(maxRam * 0.25)}M</span>
                             <span>{Math.floor(maxRam * 0.5)}M</span>
@@ -2428,50 +2795,160 @@ export default function App() {
                             <span>MAX ({maxRam}M)</span>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'white', fontFamily: '"Inter", sans-serif', fontWeight: 500 }}>
-                          <input type="number" className="mc-input" value={ramValue} onChange={e => setRamValue(Number(e.target.value))} style={{ width: '75px', padding: '5px', textAlign: 'center' }} /> MB
+                        <div className="settings-ram-value">
+                          <input type="number" className="mc-input" value={ramValue} onChange={e => {
+                            const raw = e.target.value
+                            if (raw.trim() === '') return
+                            const parsed = Number(raw)
+                            if (!Number.isFinite(parsed)) return
+                            // Пока пользователь набирает число, не поджимаем его к
+                            // границам: иначе первая цифра «8» сразу стала бы 512.
+                            setRamValue(parsed)
+                          }} onBlur={() => setRamValue(v => Math.min(maxRam, Math.max(512, Math.round(v))))} style={{ width: '78px', padding: '5px', textAlign: 'center' }} />
+                          <span>MB</span>
                         </div>
                       </div>
-                    </div>
+                    </section>
 
-                    {/* Section: Список версий */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Отображаемые категории версий
+                    {/* Окно игры: полный экран + сворачивание лаунчера. */}
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('app.launchWindowCard')}</h2>
+                        <p>{t('app.launchWindowDesc')}</p>
                       </div>
-                      <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#141414', padding: '16px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showSnapshots} onChange={e => handleToggleSnapshots(e.target.checked)} /> {t("app.showSnapshots")}
+                      <div className="settings-check-list">
+                        <label className="settings-check">
+                          <input type="checkbox" checked={launchFullscreen} onChange={e => setLaunchFullscreen(e.target.checked)} />
+                          <span>{t("app.launchFullscreen")}</span>
                         </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showModified} onChange={e => handleToggleModified(e.target.checked)} /> {t("app.showForge")}
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showOldReleases} onChange={e => handleToggleOldReleases(e.target.checked)} /> {t("app.showOldReleases")}
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showBeta} onChange={e => handleToggleBeta(e.target.checked)} /> {t("app.showBeta")}
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={showAlpha} onChange={e => handleToggleAlpha(e.target.checked)} /> {t("app.showAlpha")}
+                        <label className="settings-check">
+                          <input type="checkbox" checked={launchMinimize} onChange={e => setLaunchMinimize(e.target.checked)} />
+                          <span>{t("app.launchMinimize")}</span>
                         </label>
                       </div>
-                    </div>
+                    </section>
 
-                    {/* Section: Аргументы JVM */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Аргументы запуска Minecraft (JVM)
+                    {/* Профиль настроек игрока: язык, интерфейс, диктор. */}
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.playerCard')}</h2>
+                        <p>{t('settings.playerDesc')}</p>
                       </div>
-                      <input type="text" value={mcArgs} onChange={e => setMcArgs(e.target.value)} placeholder="-Xmx4G -XX:+UseG1GC" className="mc-input" style={{ width: '100%', maxWidth: '500px' }} />
-                    </div>
 
-                    {/* Section: Java Runtime */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Выбор версии Java
+                      <div className="settings-check-list" style={{ marginBottom: 14 }}>
+                        <label className="settings-check">
+                          <input type="checkbox" checked={applyPlayerOptions} onChange={e => setApplyPlayerOptions(e.target.checked)} />
+                          <span>{t('settings.playerApply')}</span>
+                        </label>
                       </div>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, opacity: applyPlayerOptions ? 1 : 0.5 }}>
+                        <div>
+                          <div className="settings-hint" style={{ marginBottom: 6 }}>{t('settings.playerLang')}</div>
+                          <McSelect
+                            value={playerLang}
+                            onChange={setPlayerLang}
+                            disabled={!applyPlayerOptions}
+                            style={{ width: '320px' }}
+                            options={[
+                              { value: '', label: t('settings.playerNone') },
+                              { value: 'ru_ru', label: 'Русский' },
+                              { value: 'en_us', label: 'English' },
+                              { value: 'uk_ua', label: 'Українська' },
+                              { value: 'be_by', label: 'Беларуская' },
+                              { value: 'de_de', label: 'Deutsch' },
+                              { value: 'es_es', label: 'Español' },
+                              { value: 'fr_fr', label: 'Français' },
+                              { value: 'it_it', label: 'Italiano' },
+                              { value: 'pl_pl', label: 'Polski' },
+                              { value: 'pt_br', label: 'Português (Brasil)' },
+                              { value: 'tr_tr', label: 'Türkçe' },
+                            ]}
+                          />
+                        </div>
+                        <div>
+                          <div className="settings-hint" style={{ marginBottom: 6 }}>{t('settings.playerGui')}</div>
+                          <McSelect
+                            value={playerGuiScale}
+                            onChange={setPlayerGuiScale}
+                            disabled={!applyPlayerOptions}
+                            style={{ width: '320px' }}
+                            options={[
+                              { value: '', label: t('settings.playerNone') },
+                              { value: '0', label: t('settings.playerAuto') },
+                              { value: '1', label: '1' },
+                              { value: '2', label: '2' },
+                              { value: '3', label: '3' },
+                              { value: '4', label: '4' },
+                            ]}
+                          />
+                        </div>
+                        <div>
+                          <div className="settings-hint" style={{ marginBottom: 6 }}>{t('settings.playerNarrator')}</div>
+                          <McSelect
+                            value={playerNarrator}
+                            onChange={setPlayerNarrator}
+                            disabled={!applyPlayerOptions}
+                            style={{ width: '320px' }}
+                            options={[
+                              { value: '', label: t('settings.playerNone') },
+                              { value: '0', label: t('settings.playerNarratorOff') },
+                              { value: '1', label: t('settings.playerNarratorSelect') },
+                              { value: '2', label: t('settings.playerNarratorAll') },
+                            ]}
+                          />
+                        </div>
+                        <div className="settings-actions-row">
+                          <button type="button" className="settings-action-btn" onClick={handleTakePlayerOptions} disabled={!applyPlayerOptions}>
+                            {t('settings.playerTake')}
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.versionListTitle')}</h2>
+                        <p>{t('settings.versionListDesc')}</p>
+                      </div>
+                      <div className="settings-check-list">
+                        <label className="settings-check">
+                          <input type="checkbox" checked={showSnapshots} onChange={e => handleToggleSnapshots(e.target.checked)} />
+                          <span>{t("app.showSnapshots")}</span>
+                        </label>
+                        <label className="settings-check">
+                          <input type="checkbox" checked={showModified} onChange={e => handleToggleModified(e.target.checked)} />
+                          <span>{t("app.showForge")}</span>
+                        </label>
+                        <label className="settings-check">
+                          <input type="checkbox" checked={showOldReleases} onChange={e => handleToggleOldReleases(e.target.checked)} />
+                          <span>{t("app.showOldReleases")}</span>
+                        </label>
+                        <label className="settings-check">
+                          <input type="checkbox" checked={showBeta} onChange={e => handleToggleBeta(e.target.checked)} />
+                          <span>{t("app.showBeta")}</span>
+                        </label>
+                        <label className="settings-check">
+                          <input type="checkbox" checked={showAlpha} onChange={e => handleToggleAlpha(e.target.checked)} />
+                          <span>{t("app.showAlpha")}</span>
+                        </label>
+                      </div>
+                    </section>
+
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.jvmTitle')}</h2>
+                        <p>{t('settings.jvmDesc')}</p>
+                      </div>
+                      <input type="text" value={mcArgs} onChange={e => setMcArgs(e.target.value)} placeholder="-Xmx4G -XX:+UseG1GC" className="mc-input settings-input" />
+                    </section>
+
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>Java</h2>
+                        <p>{t('settings.javaRuntimeDesc')}</p>
+                      </div>
+                      <div className="settings-inline">
                         <McSelect 
                           value={customJava} 
                           onChange={(val: string) => {
@@ -2479,154 +2956,154 @@ export default function App() {
                             localStorage.setItem('mc_custom_java', val)
                           }} 
                           options={[
-                            { value: 'auto', label: 'Автовыбор (рекомендуется)' },
-                            ...(installedJavas['8']?.installed ? [{ value: '8', label: 'Java 8 (для 1.0 — 1.16.5, Alpha, Beta)' }] : []),
-                            ...(installedJavas['17']?.installed ? [{ value: '17', label: 'Java 17 (для 1.17 — 1.20.4)' }] : []),
-                            ...(installedJavas['21']?.installed ? [{ value: '21', label: 'Java 21 (для 1.20.5+)' }] : []),
-                            ...(!['auto', '8', '17', '21'].includes(customJava) && customJava ? [{ value: customJava, label: `Пользовательский: ${customJava}` }] : [])
+                            { value: 'auto', label: t('settings.javaAuto') },
+                            ...(installedJavas['8']?.installed ? [{ value: '8', label: t('settings.java8') }] : []),
+                            ...(installedJavas['17']?.installed ? [{ value: '17', label: t('settings.java17') }] : []),
+                            ...(installedJavas['21']?.installed ? [{ value: '21', label: t('settings.java21') }] : []),
+                            ...(installedJavas['25']?.installed ? [{ value: '25', label: t('settings.java25') }] : []),
+                            ...(!['auto', '8', '17', '21', '25'].includes(customJava) && customJava ? [{ value: customJava, label: t('settings.javaCustom', { p1: customJava }) }] : [])
                           ]} 
                           style={{ width: '320px' }} 
                         />
                         <button 
-                          className="mc-btn-primary" 
+                          className="settings-action-btn" 
                           onClick={() => { setShowJavaManagerModal(true); refreshInstalledJavas(); }}
-                          style={{ padding: '8px 16px', fontSize: '13px' }}
                         >
-                          Компоненты Java
+                          {t('settings.javaComponents')}
                         </button>
                       </div>
-                    </div>
-                  </div>
+                    </section>
+                  </>
                 )}
 
                 {/* Tab 3: ЭКСПЕРИМЕНТАЛЬНЫЕ (Experimental) */}
                 {settingsTab === 'experimental' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '650px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '13px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Функционал в разработке
-                      </div>
-                      <div className="settings-checkbox-group" style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#141414', padding: '16px', border: '2px solid #000', boxShadow: 'inset -2px -2px 0 0 #0d0d0d, inset 2px 2px 0 0 #2a2a2a' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={enableServersTab} onChange={e => {
-                            setEnableServersTab(e.target.checked);
-                            localStorage.setItem('mc_enable_servers_tab', e.target.checked.toString());
-                          }} /> Включить вкладку "Сервера"
-                        </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ddd', fontSize: '13px', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={enableTabAnimations} onChange={e => {
-                            setEnableTabAnimations(e.target.checked);
-                            localStorage.setItem('mc_enable_tab_animations', e.target.checked.toString());
-                          }} /> Плавная анимация переключения вкладок
-                        </label>
-                      </div>
+                  <section className="settings-card">
+                    <div className="settings-card-head">
+                      <h2>{t('settings.experimentalTitle')}</h2>
+                      <p>{t('settings.experimentalDesc')}</p>
                     </div>
-                  </div>
+                    <div className="settings-check-list">
+                      <label className="settings-check">
+                        <input type="checkbox" checked={enableServersTab} onChange={e => {
+                          setEnableServersTab(e.target.checked);
+                          localStorage.setItem('mc_enable_servers_tab', e.target.checked.toString());
+                        }} />
+                        <span className="settings-check-text">
+                          <span className="settings-check-title">{t('settings.serversTabTitle')}</span>
+                          <span className="settings-check-desc">{t('settings.serversTabDesc')}</span>
+                        </span>
+                      </label>
+                      <label className="settings-check">
+                        <input type="checkbox" checked={enableTabAnimations} onChange={e => {
+                          setEnableTabAnimations(e.target.checked);
+                          localStorage.setItem('mc_enable_tab_animations', e.target.checked.toString());
+                        }} />
+                        <span className="settings-check-text">
+                          <span className="settings-check-title">{t('settings.tabsAnimationTitle')}</span>
+                          <span className="settings-check-desc">{t('settings.tabsAnimationDesc')}</span>
+                        </span>
+                      </label>
+                    </div>
+                  </section>
                 )}
+                </div>
               </div>
             </div>
           )}
 
-          {view === 'wardrobe' && <WardrobeMenu account={activeAccount} opacity={menuOpacity} onSkinChange={() => setSkinTimestamp(Date.now())} />}
+         
 
           {view === 'accounts' && (
-            <div 
-              className="accounts-tab-view" 
-              style={{ 
-                flex: 1, 
-                height: '100%', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                justifyContent: 'flex-start',
-                background: `rgba(18, 18, 18, ${menuOpacity / 100})`, 
-                overflow: 'hidden', 
-                boxSizing: 'border-box',
-                padding: '24px 40px'
+            <div
+              className="accounts-tab-view accounts-page"
+              style={{
+                flex: 1,
+                height: '100%',
+                background: `rgba(18, 18, 18, ${menuOpacity / 100})`,
+                overflow: 'hidden',
+                boxSizing: 'border-box'
               }}
             >
-              <div style={{ 
-                maxWidth: '650px', 
-                width: '100%', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: '16px', 
-                margin: '0 auto' 
-              }}>
-                <div>
-                  <h1 style={{ color: '#fff', fontSize: '22px', textTransform: 'uppercase', letterSpacing: '1px', margin: 0, fontFamily: '"Blocks", sans-serif' }}>
-                    {selectedAuthMethod === null 
-                      ? t("app.chooseAccountType") 
-                      : (selectedAuthMethod === 'offline' ? 'Вход без регистрации' : 'Вход в аккаунт')}
-                  </h1>
-                  <span style={{ color: '#888', fontSize: '12px', marginTop: '4px', display: 'block' }}>
-                    {selectedAuthMethod === null 
-                      ? t("app.chooseAccountDesc") 
-                      : (selectedAuthMethod === 'offline' ? 'Укажите никнейм игрока для локального входа' : 'Введите имя пользователя/E-mail и пароль')}
-                  </span>
-                </div>
-
-                {/* Existing accounts list */}
-                {selectedAuthMethod === null && accounts.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '12px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                      Ваши аккаунты
+              <div className="accounts-inner">
+                {/* Шапка: заголовок и подпись текущего шага. */}
+                <header className="accounts-hero">
+                  <div>
+                    <div className="accounts-kicker">
+                      {selectedAuthMethod === null ? t('app.accountsStep1') : t('app.accountsStep2')}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', maxHeight: '190px', overflowY: 'auto', paddingRight: '4px' }}>
-                      {accounts.map(acc => (
-                        <div 
-                          key={acc.id} 
-                          className="mc-acc-list-item" 
-                          onClick={() => saveAccounts(accounts, acc)}
-                          style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '12px', 
-                            padding: '8px 14px', 
-                            background: activeAccount.id === acc.id ? 'rgba(241, 196, 15, 0.12)' : '#141414', 
-                            border: '2px solid', 
-                            borderColor: activeAccount.id === acc.id ? 'var(--pg-yellow)' : '#262626', 
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
-                          <MinecraftFace acc={acc} size={34} />
-                          <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                            <span style={{ color: 'white', fontWeight: activeAccount.id === acc.id ? 'bold' : 'normal', fontSize: '14px', fontFamily: '"Blocks", sans-serif' }}>{acc.name}</span>
-                            <span style={{ color: '#888', fontSize: '10px', textTransform: 'uppercase', marginTop: '1px' }}>{acc.type === 'offline' ? t("app.typeOffline") : acc.type}</span>
-                          </div>
-                          {activeAccount.id === acc.id && (
-                            <span style={{ fontSize: '10px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', color: 'var(--pg-yellow)', padding: '2px 6px', background: 'rgba(241,196,15,0.2)', border: '1px solid var(--pg-yellow)' }}>
-                              АКТИВЕН
-                            </span>
-                          )}
-                          {accounts.length > 1 && (
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }} 
-                              className="mc-btn-danger" 
-                              style={{ padding: '5px 10px', marginLeft: 'auto', display: 'flex', alignItems: 'center' }}
-                              title="Удалить аккаунт"
-                            >
-                              <Trash size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <h1 className="accounts-title">
+                      {selectedAuthMethod === null
+                        ? t("app.chooseAccountType")
+                        : (selectedAuthMethod === 'offline' ? t('app.loginOffline') : t('app.loginAccount'))}
+                    </h1>
+                    <p className="accounts-sub">
+                      {selectedAuthMethod === null
+                        ? t("app.chooseAccountDesc")
+                        : (selectedAuthMethod === 'offline' ? t('app.nickHint') : t('app.credsHint'))}
+                    </p>
                   </div>
-                )}
 
-                {/* Add new account section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: selectedAuthMethod === null ? '1px solid #282828' : 'none', paddingTop: selectedAuthMethod === null ? '12px' : '0px' }}>
-                  {selectedAuthMethod === null ? (
-                    /* Step 1: Method selection cards */
-                    <>
-                      <div style={{ fontFamily: '"MinecraftTen", "Blocks", sans-serif', fontSize: '12px', color: '#aaaaaa', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        Добавить новый аккаунт
+                </header>
+
+                {selectedAuthMethod === null ? (
+                  <>
+                    {/* Список: карточки вместо плотных строк с инлайновыми рамками. */}
+                    <section className="accounts-section">
+                      <div className="accounts-section-head">
+                        <h2 className="accounts-section-title">{t('app.yourAccounts')}</h2>
+                        <span className="accounts-count">{accounts.length}</span>
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div 
-                          className="mc-acc-type-btn" 
+                      {accounts.length === 0 ? (
+                        <div className="accounts-empty">
+                          {t('app.noAccounts')}
+                        </div>
+                      ) : (
+                        <div className="accounts-grid">
+                          {accounts.map(acc => (
+                            <div
+                              key={acc.id}
+                              className={`accounts-card${activeAccount.id === acc.id ? ' active' : ''}`}
+                              onClick={() => saveAccounts(accounts, acc)}
+                              title={t('app.makeActive')}
+                            >
+                              <div className="accounts-card-fill" />
+                              <MinecraftFace acc={acc} size={44} skinTimestamp={skinTimestamp} />
+                              {/* 1 1 90px: ник тянется, но у бейджа и кнопки
+                                  удаления свои неизменяемые места. */}
+                              <div style={{ flex: '1 1 90px', minWidth: 0 }}>
+                                <span className="accounts-card-name">{acc.name}</span>
+                                <span className="accounts-card-type">
+                                  {acc.type === 'offline' ? t("app.typeOffline") : acc.type}
+                                </span>
+                              </div>
+                              {activeAccount.id === acc.id && (
+                                <span className="accounts-card-badge">{t('app.active')}</span>
+                              )}
+                              {accounts.length > 1 && (
+                                <button
+                                  className="accounts-card-del"
+                                  title={t('app.deleteAccountTitle')}
+                                  onClick={(e) => { e.stopPropagation(); removeAccount(acc.id) }}
+                                >
+                                  <Trash size={14} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="accounts-section">
+                      <div className="accounts-section-head">
+                        <h2 className="accounts-section-title">{t('app.addAccount')}</h2>
+                      </div>
+
+                      <div className="accounts-methods">
+                        <div
+                          className="mc-acc-type-btn"
                           onClick={() => { setSelectedAuthMethod('elyby'); setAuthType('elyby'); setAuthError(''); }}
                           style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
@@ -2638,25 +3115,12 @@ export default function App() {
                           <div className="mc-acc-arrow">{'>'}</div>
                         </div>
 
-                        <div 
-                          className="mc-acc-type-btn" 
-                          onClick={() => { setSelectedAuthMethod('pgsync'); setAuthType('pgsync'); setAuthError(''); }}
-                          style={{ cursor: 'pointer', padding: '8px 16px' }}
-                        >
-                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={22} /></div>
-                          <div className="mc-acc-text">
-                            <span className="subtitle" style={{ fontSize: '11px' }}>PG-SYNC</span>
-                            <span className="title" style={{ fontSize: '14px' }}>{t("app.pgsyncAccount")}</span>
-                          </div>
-                          <div className="mc-acc-arrow">{'>'}</div>
-                        </div>
-
-                        <div 
-                          className="mc-acc-type-btn" 
+                        <div
+                          className="mc-acc-type-btn"
                           onClick={() => { setSelectedAuthMethod('offline'); setAuthType('offline'); setAuthError(''); }}
                           style={{ cursor: 'pointer', padding: '8px 16px' }}
                         >
-                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="https://minotar.net/helm/Steve/40.png" width={22} style={{ imageRendering: 'pixelated' }} /></div>
+                          <div className="mc-acc-icon-box" style={{ width: '40px', height: '40px' }}><img src="./steve-head-Djx_sDkf.png" width={32} style={{ imageRendering: 'pixelated' }} /></div>
                           <div className="mc-acc-text">
                             <span className="subtitle" style={{ fontSize: '11px' }}>{t("app.offlineTitle")}</span>
                             <span className="title" style={{ fontSize: '14px' }}>{t("app.offlineAccount")}</span>
@@ -2664,124 +3128,122 @@ export default function App() {
                           <div className="mc-acc-arrow">{'>'}</div>
                         </div>
                       </div>
-                    </>
-                  ) : (
-                    /* Step 2: Dedicated Form Panel */
-                    <div className="mc-acc-form-panel" style={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      gap: '12px', 
-                      background: '#121212', 
-                      padding: '18px 24px', 
-                      border: '2px solid #2d2d2d',
-                      boxShadow: '0 8px 25px rgba(0,0,0,0.6)'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #282828', paddingBottom: '15px' }}>
-                        <button 
-                          className="hover-scale-btn" 
-                          onClick={() => { setSelectedAuthMethod(null); setAuthError(''); }}
-                          style={{ 
-                            padding: '6px 14px', 
-                            fontSize: '12px', 
-                            background: '#222', 
-                            color: '#ccc', 
-                            border: '1px solid #444', 
-                            cursor: 'pointer',
-                            fontFamily: '"Blocks", sans-serif'
-                          }}
-                        >
-                          ← Назад
-                        </button>
+                    </section>
+                  </>
+                ) : (
+                  /* Форма входа. Рамка — фон панели, заливка — отдельный слой,
+                     иначе clip-path съедал уголки. */
+                  <section className="accounts-form">
+                    <div className="accounts-form-fill" />
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} />}
-                          {selectedAuthMethod === 'pgsync' && <img src="https://raw.githubusercontent.com/eshkereshek/pg_website/main/public/newicon.png" width={20} />}
-                          {selectedAuthMethod === 'offline' && <img src="https://minotar.net/helm/Steve/20.png" width={20} style={{ imageRendering: 'pixelated' }} />}
-                          <span style={{ fontFamily: '"Blocks", sans-serif', fontSize: '15px', color: '#fff', textTransform: 'uppercase' }}>
-                            {selectedAuthMethod === 'elyby' && t("app.elybyAccount")}
-                            {selectedAuthMethod === 'pgsync' && t("app.pgsyncAccount")}
-                            {selectedAuthMethod === 'offline' && t("app.offlineAccount")}
-                          </span>
-                        </div>
+                    <div className="accounts-form-top">
+                      <button
+                        className="accounts-back"
+                        onClick={() => { setSelectedAuthMethod(null); setAuthError(''); }}
+                      >
+                        {t('app.back')}
+                      </button>
+
+                      <div className="accounts-form-who">
+                        {selectedAuthMethod === 'elyby' && <img src="https://ely.by/favicon.ico" width={20} />}
+                        {selectedAuthMethod === 'offline' && <img src="./steve-head-Djx_sDkf.png" width={24} style={{ imageRendering: 'pixelated' }} />}
+                        <span>
+                          {selectedAuthMethod === 'elyby' && t("app.elybyAccount")}
+                          {selectedAuthMethod === 'offline' && t("app.offlineAccount")}
+                        </span>
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '5px' }}>
-                        {selectedAuthMethod === 'offline' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ fontSize: '12px', color: '#aaa', fontFamily: '"Blocks", sans-serif' }}>Никнейм игрока</label>
-                            <input 
-                              type="text" 
-                              className="mc-input" 
-                              placeholder={t("app.nicknamePlaceholder")} 
-                              value={newAccountName} 
-                              onChange={e => setNewAccountName(e.target.value)} 
-                              onKeyDown={e => e.key === 'Enter' && addAccount()} 
+                      <span className="accounts-form-step">{t('app.stepOf')}</span>
+                    </div>
+
+                    <div className="accounts-form-body">
+                      {selectedAuthMethod === 'offline' && (
+                        <div className="accounts-field">
+                          <label className="accounts-field-label">{t('app.nickname')}</label>
+                          <div className="accounts-field-row">
+                            <input
+                              type="text"
+                              className="mc-input"
+                              placeholder={t("app.nicknamePlaceholder")}
+                              value={newAccountName}
+                              onChange={e => setNewAccountName(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && addAccount()}
                               autoFocus
                             />
                           </div>
-                        )}
+                          <span className="accounts-field-hint">{t('app.nicknameDesc')}</span>
+                        </div>
+                      )}
 
-                        {(selectedAuthMethod === 'elyby' || selectedAuthMethod === 'pgsync') && (
-                          <>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              <label style={{ fontSize: '12px', color: '#aaa', fontFamily: '"Blocks", sans-serif' }}>
-                                {selectedAuthMethod === 'pgsync' ? "Имя пользователя" : "E-mail"}
-                              </label>
-                              <input 
-                                type="text" 
-                                className="mc-input" 
-                                placeholder={selectedAuthMethod === 'pgsync' ? "Имя пользователя" : "E-mail"} 
-                                disabled={authLoading} 
-                                value={authEmail} 
-                                onChange={e => setAuthEmail(e.target.value)} 
+                      {selectedAuthMethod === 'elyby' && (
+                        <>
+                          <div className="accounts-field">
+                            <label className="accounts-field-label">{t('app.emailOrNick')}</label>
+                            <div className="accounts-field-row">
+                              <input
+                                type="text"
+                                className="mc-input"
+                                placeholder="E-mail"
+                                disabled={authLoading}
+                                value={authEmail}
+                                onChange={e => setAuthEmail(e.target.value)}
                                 autoFocus
                               />
                             </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                              <label style={{ fontSize: '12px', color: '#aaa', fontFamily: '"Blocks", sans-serif' }}>Пароль</label>
-                              <div style={{ position: 'relative' }}>
-                                <input 
-                                  type={showPassword ? "text" : "password"} 
-                                  className="mc-input" 
-                                  placeholder={t("app.passwordPlaceholder")} 
-                                  disabled={authLoading} 
-                                  value={authPassword} 
-                                  onChange={e => setAuthPassword(e.target.value)} 
-                                  onKeyDown={e => e.key === 'Enter' && addAccount()} 
-                                  style={{ width: '100%', paddingRight: '40px' }} 
-                                />
-                                <button 
-                                  onClick={() => setShowPassword(!showPassword)}
-                                  style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer' }}
-                                  type="button"
-                                >
-                                  {showPassword ? (
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22"/></svg>
-                                  ) : (
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          </>
-                        )}
-
-                        {authError && (
-                          <div style={{ color: '#e74c3c', fontSize: '13px', padding: '8px 12px', background: 'rgba(231, 76, 60, 0.15)', border: '1px solid #e74c3c' }}>
-                            {authError}
                           </div>
-                        )}
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '10px' }}>
-                          <button className="mc-btn-primary" style={{ padding: '10px 25px', textTransform: 'uppercase', letterSpacing: '1px' }} onClick={addAccount} disabled={authLoading}>
-                            {authLoading ? t("app.loading") : t("app.add")}
-                          </button>
+                          <div className="accounts-field">
+                            <label className="accounts-field-label">{t('app.password')}</label>
+                            <div className="accounts-field-row">
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                className="mc-input"
+                                placeholder={t("app.passwordPlaceholder")}
+                                disabled={authLoading}
+                                value={authPassword}
+                                onChange={e => setAuthPassword(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && addAccount()}
+                              />
+                              <button
+                                className="accounts-eye"
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                title={showPassword ? t('app.hidePassword') : t('app.showPassword')}
+                              >
+                                {showPassword ? (
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22" /></svg>
+                                ) : (
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                                )}
+                              </button>
+                            </div>
+                            <span className="accounts-field-hint">{t('app.elybyNote')}</span>
+                          </div>
+                        </>
+                      )}
+
+                      {authError && (
+                        <div className="accounts-error">
+                          <span style={{ flex: 1 }}>
+                            <b>{t('app.loginFailed')}</b>
+                            {authError}
+                          </span>
                         </div>
+                      )}
+
+                      <div className="accounts-form-actions">
+                        <button
+                          className="mc-btn-primary"
+                          style={{ padding: '11px 26px', textTransform: 'uppercase', letterSpacing: '1px' }}
+                          onClick={addAccount}
+                          disabled={authLoading}
+                        >
+                          {authLoading ? t("app.loading") : t("app.add")}
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </section>
+                )}
               </div>
             </div>
           )}
@@ -2801,12 +3263,12 @@ export default function App() {
                   <rect x="7" y="5" width="2" height="4" fill="#ffffff"/>
                   <rect x="7" y="10" width="2" height="2" fill="#ffffff"/>
                 </svg>
-                <span>ИГРА КРАШНУЛАСЬ!</span>
+                <span>{t('app.gameCrashed')}</span>
               </div>
               <button
                 onClick={() => setCrashLog(null)}
                 className="mc-close-cube-btn"
-                title="Закрыть"
+                title={t('ui.close')}
               >
                 <CubicCrossIcon />
               </button>
@@ -2814,7 +3276,7 @@ export default function App() {
             
             <div className="mc-dialog-content" style={{ padding: '12px' }}>
               <div style={{ color: '#888', fontSize: '11px', marginBottom: '8px', fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase' }}>
-                Лог ошибки запуска Minecraft:
+                {t('app.launchErrorLog')}
               </div>
               <div style={{ 
                 background: '#0a0a0a', 
@@ -2839,14 +3301,14 @@ export default function App() {
                 type="button"
                 className="mc-cube-btn neutral"
                 onClick={() => {
-                  navigator.clipboard.writeText(crashLog);
-                  setCustomModal({ isOpen: true, title: 'Уведомление', message: 'Лог ошибки скопирован в буфер обмена!', isAlert: true, confirmText: 'Понятно' });
+                  navigator.clipboard?.writeText(crashLog)?.catch(() => {});
+                  setCustomModal({ isOpen: true, title: t('app.noticeTitle'), message: t('app.logCopied'), isAlert: true, confirmText: t('app.gotIt') });
                 }}
               >
-                Скопировать лог
+                {t('app.copyLog')}
               </button>
               <button type="button" className="mc-cube-btn gold" onClick={() => setCrashLog(null)}>
-                Закрыть
+                {t('ui.close')}
               </button>
             </div>
           </div>
@@ -2858,11 +3320,11 @@ export default function App() {
           <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '460px', maxWidth: '92vw' }}>
             <div className="mc-dialog-header">
               <div className="mc-dialog-title warning">
-                <span>НАСТРОЙКИ СБОРКИ</span>
+                <span>{t('app.modpackSettingsTitle')}</span>
               </div>
               <button 
                 className="mc-close-cube-btn" 
-                title="Закрыть" 
+                title={t('ui.close')} 
                 onClick={() => setShowPlayEditModal(false)}
               >
                 <CubicCrossIcon />
@@ -2873,14 +3335,14 @@ export default function App() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                    Название сборки
+                    {t('app.modpackName')}
                   </label>
                   <input type="text" className="mc-input" value={editPlayName} onChange={e => setEditPlayName(e.target.value)} style={{ fontFamily: '"Blocks", sans-serif' }} />
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                    Иконка
+                    {t('app.iconLabel')}
                   </label>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     <label
@@ -2891,7 +3353,7 @@ export default function App() {
                         if (dataUrl) setEditPlayIcon(dataUrl);
                       }}
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
-                      title="Выбрать свой файл"
+                      title={t('app.chooseFile')}
                     >
                       <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
                     </label>
@@ -2928,10 +3390,10 @@ export default function App() {
                   }
                 }}
               >
-                {confirmPlayDelete ? 'Точно удалить?' : 'Удалить'}
+                {confirmPlayDelete ? t('app.confirmDelete') : t('app.delete')}
               </button>
               <button type="button" className="mc-cube-btn gold" onClick={handleSavePlayEdit}>
-                Сохранить
+                {t('app.save')}
               </button>
             </div>
           </div>
@@ -2944,11 +3406,11 @@ export default function App() {
           <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '620px', maxWidth: '94vw', maxHeight: '90vh' }}>
             <div className="mc-dialog-header">
               <div className="mc-dialog-title warning">
-                <span>☕ КОМПОНЕНТЫ JAVA RUNTIME</span>
+                <span>{t('app.javaRuntimeTitle')}</span>
               </div>
               <button 
                 className="mc-close-cube-btn" 
-                title="Закрыть" 
+                title={t('ui.close')} 
                 onClick={() => setShowJavaManagerModal(false)}
               >
                 <CubicCrossIcon />
@@ -2957,7 +3419,7 @@ export default function App() {
 
             <div className="mc-dialog-content" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
               <p style={{ margin: '0 0 12px 0', fontSize: '12.5px', color: '#ccc', lineHeight: '1.5' }}>
-                Лаунчер автоматически выбирает нужную версию Java для каждой версии игры. Вы можете установить недостающие версии вручную:
+                {t('app.javaAutoNote')}
               </p>
 
               {javaError && (
@@ -2971,20 +3433,26 @@ export default function App() {
                   {
                     version: '8' as const,
                     title: 'Java 8 (JRE 8)',
-                    desc: 'Для старых и классических версий (1.0 — 1.16.5, Alpha, Beta, Classic)',
+                    desc: t('app.java8Note'),
                     badge: '<= 1.16.5'
                   },
                   {
                     version: '17' as const,
                     title: 'Java 17 (JRE 17)',
-                    desc: 'Для версий Minecraft 1.17 — 1.20.4',
+                    desc: t('app.java17Note'),
                     badge: '1.17 — 1.20.4'
                   },
                   {
                     version: '21' as const,
                     title: 'Java 21 (JRE 21)',
-                    desc: 'Для современных версий игры (1.20.5 — 1.21+)',
+                    desc: t('app.java21Note'),
                     badge: '1.20.5+'
+                  },
+                  {
+                    version: '25' as const,
+                    title: 'Java 25 (JRE 25)',
+                    desc: t('app.java25Note'),
+                    badge: '26.x+ / Snapshots'
                   }
                 ].map(item => {
                   const isInst = !!installedJavas[item.version]?.installed
@@ -3013,7 +3481,7 @@ export default function App() {
                         <div>
                           {isInst ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2ecc71', fontSize: '12px', fontWeight: 'bold' }}>
-                              <span>✓</span> Установлена
+                              <span>✓</span> {t('app.installed')}
                             </div>
                           ) : (
                             <button
@@ -3023,7 +3491,7 @@ export default function App() {
                               className="mc-cube-btn gold"
                               style={{ padding: '6px 14px', fontSize: '11px' }}
                             >
-                              {isThisInstalling ? 'Установка...' : 'Установить'}
+                              {isThisInstalling ? t('app.installing') : t('app.install')}
                             </button>
                           )}
                         </div>
@@ -3039,7 +3507,7 @@ export default function App() {
                             }}></div>
                           </div>
                           <div style={{ fontSize: '10px', color: 'var(--pg-yellow)', marginTop: '4px', fontFamily: 'monospace' }}>
-                            {javaProgress?.status || 'Загрузка...'}
+                            {javaProgress?.status || t('app.loading')}
                           </div>
                         </div>
                       )}
@@ -3057,7 +3525,7 @@ export default function App() {
                   onClick={handleInstallAllRecommended}
                   className="mc-cube-btn gold"
                 >
-                  Установить все
+                  {t('app.installAll')}
                 </button>
                 <button
                   type="button"
@@ -3065,7 +3533,7 @@ export default function App() {
                   onClick={handleCleanUninstallJavaClick}
                   className="mc-cube-btn danger"
                 >
-                  Удалить Java
+                  {t('app.removeJavaButton')}
                 </button>
               </div>
               <button
@@ -3073,7 +3541,7 @@ export default function App() {
                 onClick={() => setShowJavaManagerModal(false)}
                 className="mc-cube-btn neutral"
               >
-                Закрыть
+                {t('ui.close')}
               </button>
             </div>
           </div>
@@ -3113,7 +3581,7 @@ export default function App() {
               {!customModal.isLoading && (
                 <button 
                   className="mc-close-cube-btn"
-                  title="Закрыть"
+                  title={t('ui.close')}
                   onClick={() => setCustomModal(prev => ({ ...prev, isOpen: false }))}
                 >
                   <CubicCrossIcon />
@@ -3138,7 +3606,7 @@ export default function App() {
                   }}
                   className="mc-cube-btn neutral"
                 >
-                  {customModal.cancelText || 'Отмена'}
+                  {customModal.cancelText || t('ui.cancel')}
                 </button>
               )}
 
@@ -3159,7 +3627,7 @@ export default function App() {
                 }}
                 className={`mc-cube-btn ${customModal.isDanger ? 'danger' : 'gold'}`}
               >
-                {customModal.isLoading ? 'Выполнение...' : (customModal.confirmText || (customModal.isAlert ? 'Понятно' : 'Подтвердить'))}
+                {customModal.isLoading ? t('app.working') : (customModal.confirmText || (customModal.isAlert ? t('app.gotIt') : t('app.confirm')))}
               </button>
             </div>
           </div>
@@ -3181,14 +3649,14 @@ export default function App() {
             {/* Header */}
             <div className="mc-update-header">
               <div className="mc-update-title">
-                ОБНОВЛЕНИЕ ЛАУНЧЕРА
+                {t('app.updaterTitle')}
               </div>
               <button 
                 type="button" 
                 className="mc-close-cube-btn"
                 disabled={isUpdating}
                 onClick={() => setShowUpdateModal(false)}
-                title="Закрыть"
+                title={t('ui.close')}
               >
                 <CubicCrossIcon />
               </button>
@@ -3201,7 +3669,7 @@ export default function App() {
               </div>
 
               <div className="mc-update-section-title">
-                ИСПРАВЛЕНО
+                {t('app.changelogFixed')}
               </div>
 
               <div className="mc-update-changelog">
@@ -3212,9 +3680,9 @@ export default function App() {
                     .filter(line => line.length > 0 && !line.startsWith('#'))
                     .map(line => line.replace(/^[-*]\s*/, ''))
                     .slice(0, 8)
-                    .join('\n') || 'Загрузка некоторых сборок и запуск установок с fabric.'
+                    .join('\n') || t('app.changelogFixNote')
                 ) : (
-                  'Загрузка некоторых сборок и запуск установок с fabric.'
+                  t('app.changelogFixNote')
                 )}
               </div>
 
@@ -3236,7 +3704,7 @@ export default function App() {
                     }} />
                   </div>
                   <div style={{ fontSize: '11.5px', color: 'var(--pg-yellow)', marginTop: '6px', fontFamily: 'monospace' }}>
-                    {activeDownloads.find(d => d.id === 'app_update')?.text || 'Загрузка обновления...'}
+                    {activeDownloads.find(d => d.id === 'app_update')?.text || t('app.downloadingUpdate')}
                   </div>
                 </div>
               )}
@@ -3250,7 +3718,7 @@ export default function App() {
                 onClick={handleUpdate}
                 className="mc-cube-btn gold"
               >
-                {isUpdating ? 'Загрузка...' : 'Обновить'}
+                {isUpdating ? t('app.loading') : t('app.updateNow')}
               </button>
 
               <button 
@@ -3259,12 +3727,14 @@ export default function App() {
                 onClick={() => setShowUpdateModal(false)}
                 className="mc-cube-btn neutral"
               >
-                Позже
+                {t('app.later')}
               </button>
             </div>
           </div>
         </div>
       )}
+
+
 
       <div style={{
         position: 'absolute',

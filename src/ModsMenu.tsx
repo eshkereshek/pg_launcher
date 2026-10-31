@@ -1,8 +1,23 @@
-import { useState, useEffect, useRef } from 'react'
+import {
+  useState,
+  useEffect,
+  useRef } from 'react'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { useTranslation } from './i18n'
-import { Plus, Package, Settings, Search, Power, Trash2 } from 'lucide-react'
+import { Plus,
+  Package,
+  Search,
+  Power,
+  Trash2,
+} from 'lucide-react'
 import { McSelect } from './McSelect'
 import ModViewer from './ModViewer'
+import ModpackCreatePage, { PRESET_ICONS } from './ModpackCreatePage'
+import { ProjectArt } from './ProjectArt'
+import { PROJECT_FALLBACK_ICON, formatCount } from './projectMeta'
+import { showOk, showError, errorText } from './Toasts'
+import IconImg from './IconImg'
+import { Settings } from './PixelIcons'
 const CubicCrossIcon: React.FC<{ size?: number; color?: string }> = ({ size = 14, color = 'currentColor' }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill={color} style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges' }}>
     <rect x="2" y="2" width="2" height="2" />
@@ -30,33 +45,6 @@ interface Modpack {
 const normalizeModFilename = (filename: string) => {
   return (filename || '').toLowerCase().trim().replace(/\.disabled$/, '')
 }
-
-const PRESET_ICONS = [
-  './iconsblocks/Grass_Block_(inventory)_MCE.png',
-  './iconsblocks/MCE_Dirt_(inventory).png',
-  './iconsblocks/Cobblestone_(inventory)_MCE.png',
-  './iconsblocks/Oak_Wood_Planks_(inventory)_MCE.png',
-  './iconsblocks/Oak_Log_(inventory)_MCE.png',
-  './iconsblocks/Jungle_Leaves_(inventory)_MCE.png',
-  './iconsblocks/Crafting_Table_(inventory)_MCE.png',
-  './iconsblocks/Furnace_(inventory)_MCE.png',
-  './iconsblocks/Chest_(inventory)_MCE.png',
-  './iconsblocks/MCE_Diamond_Ore_(inventory).png',
-  './iconsblocks/Emerald_Block_(inventory)_MCE.png',
-  './iconsblocks/MCE_Bedrock_(inventory).png',
-  './iconsblocks/Obsidian_(inventory)_MCE.png',
-  './iconsblocks/Netherrack_(inventory)_MCE.png',
-  './iconsblocks/End_Stone_(inventory)_MCE.png',
-  './iconsblocks/Bookshelf_(inventory)_MCE.png',
-  './iconsblocks/Brick_Block_(inventory)_MCE.png',
-  './iconsblocks/Coarse_Dirt_(inventory)_MCE.png',
-  './iconsblocks/MCE_Dark_Prismarine_(inventory).png',
-  './iconsblocks/MCE_Sticky_Piston_(inventory).png',
-  './iconsblocks/Melon_(inventory)_MCE.png',
-  './iconsblocks/Mycelium_(inventory)_MCE.png',
-  './iconsblocks/Packed_Ice_(inventory)_MCE.png',
-  './iconsblocks/Bucket_of_Pufferfish_(inventory)_MCE.png'
-]
 
 const getCategoryIcon = (cat: string) => {
   const base = "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/";
@@ -104,17 +92,25 @@ export default function ModsMenu({
   const { t } = useTranslation();
   const [modpacks, setModpacks] = useState<Modpack[]>([])
   const [activeModpack, setActiveModpack] = useState<Modpack | null>(null)
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showCreatePage, setShowCreatePage] = useState(false)
+  // Создание не мгновенное: OptiFine и фикс скинов качаются. Всё это время
+  // страница остаётся на экране с занятой кнопкой, а не исчезает из-под
+  // курсора, и второй клик не создаёт дубль.
+  const [creatingModpack, setCreatingModpack] = useState(false)
   const [showModpackSettingsModal, setShowModpackSettingsModal] = useState(false)
   const [editModpackName, setEditModpackName] = useState('')
   const [editModpackIcon, setEditModpackIcon] = useState('')
-  const [bgImage, setBgImage] = useState<string | null>(() => localStorage.getItem('mc_sec_bg_data'))
+  // Вкладка «Установлено» / «Каталог» — вместо двух параллельных списков
+  const [activeTab, setActiveTab] = useState<'installed' | 'catalog'>('installed')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [installOptifine, setInstallOptifine] = useState(false)
   const [installElybySkins, setInstallElybySkins] = useState(false)
   const [selectedModForViewer, setSelectedModForViewer] = useState<any>(null)
   const [installedSearchQuery, setInstalledSearchQuery] = useState('')
   const [contextMenuModId, setContextMenuModId] = useState<string | null>(null)
+  // Название и иконка из манифеста внутри jar, по имени файла:
+  // `{ "worldedit-mod-7.2.15.jar": { name: "WorldEdit", icon: "data:..." } }`
+  const [modMeta, setModMeta] = useState<Record<string, { name?: string; icon?: string; version?: string }>>({})
 
   useEffect(() => {
     const handleClose = () => setContextMenuModId(null);
@@ -123,10 +119,14 @@ export default function ModsMenu({
   }, []);
 
   const [newName, setNewName] = useState('')
-  const [newLoader, setNewLoader] = useState('forge')
+  const [newLoader, setNewLoader] = useState('fabric')
   const [newVersion, setNewVersion] = useState((currentVersion && !currentVersion.startsWith('mp:')) ? currentVersion : '1.20.1')
 
   const [newIcon, setNewIcon] = useState(PRESET_ICONS[0])
+  // Pin for the loader version. Empty means "take the latest one",
+  // which is exactly what the launcher always did.
+  const [newLoaderVersion, setNewLoaderVersion] = useState('')
+  const [loaderVersions, setLoaderVersions] = useState<string[]>([])
 
   const [query, setQuery] = useState('')
   const [projectType, setProjectType] = useState('mod')
@@ -157,6 +157,27 @@ export default function ModsMenu({
     '1.7.10'
   ]
 
+  // Loader version lists are fetched in Rust: the CSP of the webview
+  // allows Modrinth only, meta.fabricmc.net and BMCLAPI are blocked there.
+  useEffect(() => {
+    if (!showCreatePage) return
+    let disposed = false
+    setLoaderVersions([])
+    // @ts-ignore
+    const request = window.electronAPI?.listLoaderVersions?.(newLoader, newVersion)
+    if (!request) return
+    request
+      .then((list: string[]) => {
+        if (!disposed) setLoaderVersions(Array.isArray(list) ? list : [])
+      })
+      .catch(() => {
+        // No list came back: only the automatic option remains.
+      })
+    return () => {
+      disposed = true
+    }
+  }, [showCreatePage, newLoader, newVersion])
+
   // Load modpacks
   useEffect(() => {
     const load = async () => {
@@ -173,15 +194,6 @@ export default function ModsMenu({
       } catch (e) { console.error(e) }
     }
     load()
-
-    const updateBg = () => {
-      const customBg = localStorage.getItem('mc_sec_bg_data')
-      setBgImage(customBg || null)
-    }
-    updateBg()
-    window.addEventListener('storage', updateBg)
-
-    return () => window.removeEventListener('storage', updateBg)
   }, [])
 
   useEffect(() => {
@@ -198,7 +210,7 @@ export default function ModsMenu({
     if (autoOpenCreate) {
       const cleanVer = currentVersion.replace(' Forge', '');
       setNewVersion(cleanVer);
-      setShowCreateModal(true);
+      setShowCreatePage(true);
       if (onCloseAutoOpenCreate) onCloseAutoOpenCreate();
     }
   }, [autoOpenCreate, currentVersion]);
@@ -235,67 +247,36 @@ export default function ModsMenu({
   }
 
   const selectModpack = async (mp: Modpack) => {
-    // Sync installed mods with actual files in directory
+    // Список установленного собирается с диска: папка знает и тип файла
+    // (мод, ресурспак, шейдер), и то, что он ещё на месте. Из modpacks.json
+    // берутся только данные проекта — по ним каталог помечает «Установлено».
     try {
       // @ts-ignore
       const localMods: { id: string; title: string; type?: string; isLocal?: boolean; isEnabled?: boolean }[] = await window.electronAPI.getInstalledMods(mp.name) || []
-      
-      const localFileMap = new Map<string, { id: string; title: string; isEnabled?: boolean }>()
-      for (const lm of localMods) {
-        localFileMap.set(normalizeModFilename(lm.title || lm.id), lm)
+
+      const savedByName = new Map<string, NonNullable<Modpack['installedMods']>[number]>()
+      for (const item of mp.installedMods || []) {
+        savedByName.set(normalizeModFilename(item.title || item.id), item)
       }
 
-      // Preserve non-mod items (shaders, resource packs) as they are stored in other folders
-      const nonModItems = (mp.installedMods || []).filter(m => m.type && m.type !== 'mod')
-      
-      // Existing mod items
-      const existingModItems = (mp.installedMods || []).filter(m => !m.type || m.type === 'mod')
-      
-      const reconciledMods: typeof mp.installedMods = []
-      const seenFilenames = new Set<string>()
-
-      for (const item of existingModItems) {
-        const norm = normalizeModFilename(item.title || item.id)
-        if (seenFilenames.has(norm)) {
-          // Prune duplicates that were previously saved in mp.installedMods
-          continue
+      // Диск — источник правды. Файла нет в папке — нет и строки в списке,
+      // файл скопировали руками — строка появляется. Раньше список собирался
+      // из modpacks.json, и всё, что не было туда записано (а ресурспаки и
+      // шейдеры не записывались), в интерфейсе не показывалось вовсе.
+      const installedMods: Modpack['installedMods'] = localMods.map(lm => {
+        const saved = savedByName.get(normalizeModFilename(lm.title || lm.id))
+        return {
+          id: lm.id,
+          title: lm.title,
+          type: lm.type || 'mod',
+          isLocal: saved ? Boolean(saved.isLocal) : true,
+          isEnabled: lm.isEnabled !== false,
+          projectId: saved?.projectId
         }
-        seenFilenames.add(norm)
+      })
 
-        const localMatch = localFileMap.get(norm)
-        if (localMatch) {
-          reconciledMods.push({
-            ...item,
-            id: item.id || localMatch.id,
-            title: localMatch.title,
-            type: 'mod',
-            isEnabled: localMatch.isEnabled !== false
-          })
-          // Mark as accounted for
-          localFileMap.delete(norm)
-        }
-      }
-
-      // Any remaining files in localFileMap are newly added files (e.g. manually imported / copied)
-      for (const remaining of localFileMap.values()) {
-        const norm = normalizeModFilename(remaining.title || remaining.id)
-        if (!seenFilenames.has(norm)) {
-          seenFilenames.add(norm)
-          reconciledMods.push({
-            id: remaining.id,
-            title: remaining.title,
-            type: 'mod',
-            isLocal: true,
-            isEnabled: remaining.isEnabled !== false
-          })
-        }
-      }
-
-      const finalInstalledMods = [...reconciledMods, ...nonModItems]
-
-      // Check if installedMods changed
-      if (JSON.stringify(finalInstalledMods) !== JSON.stringify(mp.installedMods)) {
-        mp.installedMods = finalInstalledMods
+      if (JSON.stringify(installedMods) !== JSON.stringify(mp.installedMods)) {
+        mp.installedMods = installedMods
         setModpacks(prev => {
           const updated = prev.map(p => p.name === mp.name ? mp : p)
           // @ts-ignore
@@ -313,102 +294,133 @@ export default function ModsMenu({
     loadRecommended(mp, 0, false)
   }
 
+  const closeCreatePage = () => {
+    // Пока сборка пишется на диск, назад нельзя: это середина процесса.
+    if (creatingModpack) return
+    setShowCreatePage(false)
+  }
+
   const createModpack = async () => {
-    if (!newName.trim()) return
+    if (!newName.trim() || creatingModpack) return
     const safeName = newName.replace(/[<>:"/\\|?*]/g, '-')
+
+    // Дубликат имени проверяем до любых действий — иначе перезапишем чужую сборку
+    if (modpacks.some(m => m.name === safeName)) {
+      showError(t('mods.duplicateName'))
+      return
+    }
+
     const shouldInstallOptifine = installOptifine
     const shouldInstallElyby = installElybySkins
     const createdName = safeName
     const createdVersion = newVersion
     const createdLoader = newLoader
     const createdIcon = newIcon
+    const createdLoaderVersion = newLoaderVersion
 
-    setShowCreateModal(false)
-    setNewName('')
-    setNewIcon(PRESET_ICONS[0])
-    setInstallOptifine(false)
-    setInstallElybySkins(false)
+    // Диалог закрывался до начала работы, и весь прогресс уходил в фон.
+    setCreatingModpack(true)
+    try {
 
-    const initialInstalledMods: { id: string; title: string; type?: string; isEnabled?: boolean; projectId?: string }[] = []
+      const initialInstalledMods: { id: string; title: string; type?: string; isEnabled?: boolean; projectId?: string }[] = []
 
-    if (createdLoader === 'forge' && shouldInstallOptifine) {
-      try {
-        // @ts-ignore
-        const result = await window.electronAPI.installOptifine(createdVersion, createdName)
-        if (result.status === 'success' && result.filenames) {
-          result.filenames.forEach((filename: string) => {
-            initialInstalledMods.push({ id: filename, title: filename, type: 'mod', isEnabled: true })
-          })
-        } else if (result.status === 'error') {
-          alert(t('mods.failedOptifine') + ' ' + result.error)
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
-
-    // For Ely.by skins:
-    // If Forge with OptiFine, DO NOT install CustomSkinLoader mod as it causes bytecode collision / crash with OptiFine.
-    // Instead, hasElybySkins activates native authlib-injector in launch-game!
-    let hasElybySkins = false
-    if (shouldInstallElyby) {
-      hasElybySkins = true
-      if (!(createdLoader === 'forge' && shouldInstallOptifine)) {
+      if (createdLoader === 'forge' && shouldInstallOptifine) {
         try {
           // @ts-ignore
-          const cslRes = await window.electronAPI.downloadMod('customskinloader', createdVersion, createdLoader, createdName)
-          if (cslRes?.filenames) {
-            cslRes.filenames.forEach((fn: string) => {
-              initialInstalledMods.push({ id: fn, projectId: 'customskinloader', title: fn, type: 'mod', isEnabled: true })
+          const result = await window.electronAPI.installOptifine(createdVersion, createdName)
+          // Бэкенд возвращает и filenames, и filename — поддерживаем оба варианта
+          const files = result.filenames || (result.filename ? [result.filename] : [])
+          if (result.status === 'success' && files.length > 0) {
+            files.forEach((filename: string) => {
+              initialInstalledMods.push({ id: filename, title: filename, type: 'mod', isEnabled: true })
             })
+          } else if (result.status === 'error') {
+            showError(t('mods.optifineFailed', { error: result.error || t('app.unknownError') }))
           }
-        } catch (e) {
-          console.error('Failed to install CustomSkinLoader:', e)
+        } catch (e: any) {
+          // Раньше ошибка молча терялась: сборка создавалась без OptiFine,
+          // и пользователь не понимал, почему мода нет в списке.
+          console.error(e)
+          showError(t('mods.optifineFailed', { error: errorText(e, t('app.unknownError')) }))
         }
       }
+
+      // For Ely.by skins:
+      // If Forge with OptiFine, DO NOT install CustomSkinLoader mod as it causes bytecode collision / crash with OptiFine.
+      // Instead, hasElybySkins activates native authlib-injector in launch-game!
+      let hasElybySkins = false
+      if (shouldInstallElyby) {
+        hasElybySkins = true
+        if (!(createdLoader === 'forge' && shouldInstallOptifine)) {
+          try {
+            // @ts-ignore
+            const cslRes = await window.electronAPI.downloadMod('customskinloader', createdVersion, createdLoader, createdName)
+            if (cslRes?.filenames) {
+              cslRes.filenames.forEach((fn: string) => {
+                initialInstalledMods.push({ id: fn, projectId: 'customskinloader', title: fn, type: 'mod', isEnabled: true })
+              })
+            }
+          } catch (e) {
+            console.error('Failed to install CustomSkinLoader:', e)
+          }
+        }
+      }
+
+      const mp: Modpack = {
+        name: safeName,
+        loader: createdLoader,
+        version: createdVersion,
+        loaderVersion: createdLoaderVersion || undefined,
+        installedMods: initialInstalledMods,
+        icon: createdIcon,
+        hasElybySkins: hasElybySkins
+      }
+
+      setModpacks(prev => {
+        const updated = [...prev, mp]
+        // @ts-ignore
+        window.electronAPI.saveModpacks(updated)
+        return updated
+      })
+      window.dispatchEvent(new CustomEvent('modpacks-updated'))
+
+      await selectModpack(mp)
+
+      // Форма очищается и закрывается только когда сборка создана и выбрана.
+      setNewName('')
+      setNewIcon(PRESET_ICONS[0])
+      setNewLoaderVersion('')
+      setInstallOptifine(false)
+      setInstallElybySkins(false)
+      setShowCreatePage(false)
+    } finally {
+      setCreatingModpack(false)
     }
-
-    const mp: Modpack = {
-      name: safeName,
-      loader: createdLoader,
-      version: createdVersion,
-      loaderVersion: undefined,
-      installedMods: initialInstalledMods,
-      icon: createdIcon,
-      hasElybySkins: hasElybySkins
-    }
-
-    setModpacks(prev => {
-      const updated = [...prev, mp]
-      // @ts-ignore
-      window.electronAPI.saveModpacks(updated)
-      return updated
-    })
-
-    await selectModpack(mp)
   }
 
   const saveModpackSettings = async () => {
     if (!activeModpack || !editModpackName.trim()) return
     const safeEditName = editModpackName.replace(/[<>:"/\\|?*]/g, '-')
+    const oldName = activeModpack.name
 
-    if (safeEditName !== activeModpack.name) {
+    if (safeEditName !== oldName) {
       try {
         // @ts-ignore
-        const res = await window.electronAPI.renameModpackFolder(activeModpack.name, safeEditName)
-        if (res.status === 'error') {
-          alert('Не удалось переименовать папку сборки: ' + res.error)
+        const res = await window.electronAPI.renameModpackFolder(oldName, safeEditName)
+        if (res && res.status === 'error') {
+          showError(t('app.renameFolderFailed', { error: res.error || t('app.unknownError') }))
           return
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error(e)
+        showError(t('app.renameFolderFailed', { error: errorText(e, t('app.unknownError')) }))
         return
       }
     }
 
     setModpacks(prev => {
       const updated = prev.map(mp => {
-        if (mp.name === activeModpack.name) {
+        if (mp.name === oldName) {
           return { ...mp, name: safeEditName, icon: editModpackIcon }
         }
         return mp
@@ -418,6 +430,12 @@ export default function ModsMenu({
       return updated
     })
     setActiveModpack({ ...activeModpack, name: safeEditName, icon: editModpackIcon })
+
+    if (safeEditName !== oldName) {
+      // Сообщаем старое и новое имя: по нему внешние слушатели обновляют выбранную сборку
+      window.dispatchEvent(new CustomEvent('modpack-renamed', { detail: { oldName, newName: safeEditName } }))
+    }
+    window.dispatchEvent(new CustomEvent('modpacks-updated'))
     setShowModpackSettingsModal(false)
   }
 
@@ -483,7 +501,7 @@ export default function ModsMenu({
     }
   }
 
-  const installMod = async (mod: any) => {
+  const installMod = async (mod: any, versionId?: string) => {
     if (!activeModpack) return
 
     // Normalize IDs for state
@@ -493,7 +511,7 @@ export default function ModsMenu({
     try {
       const loader = activeModpack.loader
       // @ts-ignore
-      const result = await window.electronAPI.downloadMod(mod.project_id, activeModpack.version, loader, activeModpack.name, projectType)
+      const result = await window.electronAPI.downloadMod(mod.project_id, activeModpack.version, loader, activeModpack.name, projectType, versionId)
       const newMods = (result.filenames || []).map((name: string, i: number) => ({
         id: name,
         projectId: i === 0 ? modId : undefined,
@@ -517,7 +535,8 @@ export default function ModsMenu({
       persistModpacks(updatedAll)
 
     } catch (e: any) {
-      alert(t("mods.failedToInstall") + " " + e.message)
+      // Tauri отклоняет invoke строкой, поэтому e.message тут часто undefined
+      showError(t('mods.modFailed', { error: errorText(e, t('app.unknownError')) }))
     }
     setDownloading(prev => ({ ...prev, [modId]: false }))
   }
@@ -548,11 +567,13 @@ export default function ModsMenu({
     try {
       // @ts-ignore
       const result = await window.electronAPI.installOptifine(activeModpack.version, activeModpack.name)
-      if (result.status === 'success' && result.filenames) {
+      // Бэкенд возвращает и filenames, и filename — поддерживаем оба варианта
+      const optifineFiles = result.filenames || (result.filename ? [result.filename] : [])
+      if (result.status === 'success' && optifineFiles.length > 0) {
         const filteredMods = activeModpack.installedMods.filter(
           m => !((m.title || '').toLowerCase().includes('optifine') || (m.id || '').toLowerCase().includes('optifine'))
         )
-        const newMods = result.filenames.map((name: string) => ({
+        const newMods = optifineFiles.map((name: string) => ({
           id: name,
           title: name,
           type: 'mod',
@@ -566,10 +587,11 @@ export default function ModsMenu({
         const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
         persistModpacks(updatedAll)
       } else if (result.status === 'error') {
-        alert(t('mods.failedOptifine') + ' ' + result.error)
+        showError(t('mods.optifineFailed', { error: result.error || t('app.unknownError') }))
       }
     } catch (e: any) {
-      alert(t('mods.failedOptifine') + ' ' + e.message)
+      // Tauri отклоняет invoke строкой, а не Error — берём текст из любого вида
+      showError(t('mods.optifineFailed', { error: errorText(e, t('app.unknownError')) }))
     }
     setDownloading(prev => ({ ...prev, ['optifine']: false }))
   }
@@ -586,10 +608,9 @@ export default function ModsMenu({
 
   // Helpers to normalize Modrinth data
   const getModId = (mod: any) => mod.project_id
-  const getModIcon = (mod: any) => mod.icon_url || 'https://via.placeholder.com/64'
+  const getModIcon = (mod: any) => mod.icon_url || PROJECT_FALLBACK_ICON
   const getModTitle = (mod: any) => mod.title
   const getModDesc = (mod: any) => mod.description
-  const getModDownloads = (mod: any) => (mod.downloads || 0).toLocaleString()
   const getModDate = (mod: any) => {
     const d = mod.date_modified
     if (!d) return '01.01.2023'
@@ -597,540 +618,595 @@ export default function ModsMenu({
     return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`
   }
 
+  // Метаданные установленных модов: настоящее название, версия и иконка
+  // читаются из манифеста внутри jar. Список пересобирается при смене сборки
+  // и после добавления/удаления файлов.
+  //
+  // Читаем пачками по несколько файлов: разбор сотни jar одним запросом
+  // подвешивал окно на несколько секунд (чтение zip + base64 в одном IPC).
+  // Между пачками отдаём кадр браузеру, поэтому иконки «дотекают» постепенно,
+  // а список с кнопками остаётся отзывчивым.
+  const installedList = activeModpack?.installedMods
+  useEffect(() => {
+    const packName = activeModpack?.name
+    const files = (installedList || []).map(m => m.title || m.id).filter(Boolean)
+
+    if (!packName || files.length === 0) {
+      setModMeta({})
+      return
+    }
+
+    let cancelled = false
+    setModMeta({})
+
+    const loadInBatches = async () => {
+      const BATCH = 6
+      for (let i = 0; i < files.length; i += BATCH) {
+        if (cancelled) return
+        const batch = files.slice(i, i + BATCH)
+        try {
+          // @ts-ignore
+          const res = await window.electronAPI.getModsMetadata(packName, batch)
+          if (cancelled) return
+          const items: any[] = res?.items || []
+          if (items.length > 0) {
+            setModMeta(prev => {
+              const next = { ...prev }
+              for (const item of items) {
+                next[normalizeModFilename(item.file)] = item
+              }
+              return next
+            })
+          }
+        } catch {
+          // Один битый jar не должен останавливать загрузку остальных.
+        }
+        // Отдаём кадр: без паузы пачки идут подряд и окно всё равно дёргается.
+        await new Promise(resolve => setTimeout(resolve, 16))
+      }
+    }
+
+    loadInBatches()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeModpack?.name, installedList])
+
+  // Перетаскивание файлов в окно.
+  //
+  // В WebView2 файловые drop-события до страницы не доходят: их забирает Tauri
+  // и отдаёт только пути через `onDragDropEvent`. Поэтому HTML5-обработчики
+  // onDrop/onDragOver ниже по коду сами по себе не срабатывают — слушаем
+  // нативное событие. Значения берём из ref'ов: подписка одна на всё время
+  // жизни экрана, а сборку и колбэк перезагрузки списка они отдают свежими.
+  const activeModpackRef = useRef<Modpack | null>(null)
+  activeModpackRef.current = activeModpack
+  const reloadModpackRef = useRef(selectModpack)
+  reloadModpackRef.current = selectModpack
+  const [dragActive, setDragActive] = useState(false)
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    const isModFile = (path: string) => {
+      const lower = path.toLowerCase()
+      return lower.endsWith('.jar') || lower.endsWith('.zip')
+    }
+
+    Promise.resolve(
+      getCurrentWebview().onDragDropEvent(async (event) => {
+        const payload: any = event.payload
+
+        if (payload.type === 'enter' || payload.type === 'over') {
+          setDragActive((payload.paths || []).some(isModFile))
+          return
+        }
+        if (payload.type === 'leave') {
+          setDragActive(false)
+          return
+        }
+        if (payload.type !== 'drop') return
+
+        setDragActive(false)
+        const paths: string[] = (payload.paths || []).filter(isModFile)
+        const mp = activeModpackRef.current
+        if (!mp || paths.length === 0) return
+
+        try {
+          // @ts-ignore
+          const result = await window.electronAPI.importModPaths(paths, mp.name)
+          const imported: string[] = result?.imported || []
+          const rejected: string[] = result?.rejected || []
+
+          if (imported.length > 0) {
+            await reloadModpackRef.current(mp)
+          }
+          if (rejected.length > 0) {
+            showError(t('mods.droppedRejected', { files: rejected.join(', ') }))
+          }
+        } catch (e: any) {
+          showError(t('mods.droppedFailed', { error: errorText(e, t('app.unknownError')) }))
+        }
+      })
+    )
+      .then((fn) => {
+        if (disposed) fn()
+        else unlisten = fn
+      })
+      .catch(() => {
+        // Не Tauri (например, браузер при разработке) — остаются HTML5-обработчики.
+      })
+
+    return () => {
+      disposed = true
+      if (typeof unlisten === 'function') unlisten()
+    }
+  }, [])
+
+  // Карточка OptiFine рисуется сама, без результатов поиска: пустой каталог
+  // с ней — это не «ничего не найдено», поэтому надпись показываем отдельно.
+  const showOptifineCard = projectType === 'mod' && activeModpack?.loader === 'forge'
+    && offset === 0 && (!query || query.toLowerCase().includes('opti'))
+  const catalogIsEmpty = !loading && !isFetchingMore && results.length === 0 && !showOptifineCard
+
   return (
-    <div className="mods-menu" style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: `rgba(23, 21, 19, ${opacity / 100})`, backgroundImage: bgImage ? `url("${bgImage}")` : 'url("./bg-minecraft.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', overflow: 'hidden', position: 'relative' }}>
-      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
+    <div className="mods-menu">
+      {dragActive && (
+        <div className="mods-drop-overlay">
+          <div className="mods-drop-overlay-inner">
+            <Package size={22} />
+            <span>{t('mods.dropHint')}</span>
+          </div>
+        </div>
+      )}
+      {/* Шапка сборки: контекст сверху, одно главное действие справа */}
+      <div className="mods-header">
+        <div className="mods-pack">
+          <div className="mods-pack-icon">
+            <img src={activeModpack?.icon || PRESET_ICONS[0]} alt="" />
+          </div>
+          <div className="mods-pack-info">
+            <McSelect
+              value={activeModpack?.name || ''}
+              onChange={(val) => {
+                const mp = modpacks.find(m => m.name === val)
+                if (mp) selectModpack(mp)
+              }}
+              options={[
+                { value: '', label: t("mods.selectModpack"), disabled: true },
+                ...modpacks.map(mp => ({ value: mp.name, label: mp.name }))
+              ]}
+              style={{ minWidth: '220px' }}
+            />
+            {/* Строка «FORGE · 1.20.1 · N файлов» из шапки убрана: загрузчик и
+                версия видны в лаунчере над кнопкой ИГРАТЬ, а счётчик файлов
+                менялся на глазах и только шумел. Подсказку оставляем, пока
+                сборка не выбрана. */}
+            {!activeModpack && (
+              <div className="mods-pack-meta">{t("mods.createOrSelect")}</div>
+            )}
+          </div>
+          {activeModpack && (
+            <button
+              className="mods-icon-btn"
+              title={t("mods.modpackSettings")}
+              onClick={() => {
+                setEditModpackName(activeModpack.name)
+                setEditModpackIcon(activeModpack.icon || PRESET_ICONS[0])
+                setConfirmDelete(false)
+                setShowModpackSettingsModal(true)
+              }}
+            >
+              <Settings size={18} />
+            </button>
+          )}
+        </div>
 
-      {/* Settings row for modpacks (Custom wrapper for previous top bar logic) */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 999, display: 'flex', padding: '15px 20px', background: 'var(--pg-dark)', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--pg-dark3)', flexWrap: 'wrap' }}>
-        <span style={{ fontWeight: 'bold', flexShrink: 0, color: 'var(--pg-text)' }}>{t("mods.modpack")}</span>
-        <McSelect
-          value={activeModpack?.name || ''}
-          onChange={(val) => {
-            const mp = modpacks.find(m => m.name === val)
-            if (mp) selectModpack(mp)
-          }}
-          options={[
-            { value: '', label: t("mods.selectModpack"), disabled: true },
-            ...modpacks.map(mp => ({ value: mp.name, label: mp.name }))
-          ]}
-          style={{ minWidth: '200px' }}
-        />
-
-        {activeModpack && (
-          <button
-            className="mc-btn-primary"
-            style={{ padding: '6px', background: 'var(--pg-dark)', borderColor: 'var(--pg-dark3)', color: 'var(--pg-text-muted)', display: 'flex', alignItems: 'center', cursor: 'pointer' }}
-            onClick={() => {
-              setEditModpackName(activeModpack.name)
-              setEditModpackIcon(activeModpack.icon || PRESET_ICONS[0])
-              setConfirmDelete(false)
-              setShowModpackSettingsModal(true)
-            }}
-          >
-            <Settings size={18} />
-          </button>
-        )}
-
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
-          <button
-            className="mc-btn-primary mc-btn-yellow"
-            onClick={() => setShowCreateModal(true)}
-          >
+        <div className="mods-header-actions">
+          <button className="mods-btn-primary" onClick={() => setShowCreatePage(true)}>
             <Plus size={14} /> {t("mods.create")}
           </button>
         </div>
       </div>
 
-      {/* Top bar (Minecraft styled) */}
-      <div className="mods-top-bar">
-        <div style={{ position: 'relative', flex: 1 }}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="#aaa" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}>
-            <path d="M22 22h-2v-2h2zm-2-2h-2v-2h2zm-6-2H6v-2h8zm4 0h-2v-2h2zM6 16H4v-2h2zm10 0h-2v-2h2zM4 14H2V6h2zm14 0h-2V6h2zM6 6H4V4h2zm10 0h-2V4h2zm-2-2H6V2h8z" />
-          </svg>
-          <input
-            type="text"
-            className="mc-input"
-            placeholder={t("mods.search")}
-            style={{ paddingLeft: '35px', width: '100%' }}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearchSubmit()}
-            disabled={!activeModpack}
-          />
+      {/* Установленное и каталог — вкладки, а не две колонки одновременно */}
+      <div className="mods-tabs">
+        <button
+          className={`mods-tab ${activeTab === 'installed' ? 'active' : ''}`}
+          onClick={() => setActiveTab('installed')}
+        >
+          <span className="mods-tab-text">{t("mods.tabInstalled")}</span>
+          <span className="mods-count">{activeModpack?.installedMods.length || 0}</span>
+        </button>
+        <button
+          className={`mods-tab ${activeTab === 'catalog' ? 'active' : ''}`}
+          onClick={() => setActiveTab('catalog')}
+        >
+          <span className="mods-tab-text">{t("mods.catalog")}</span>
+        </button>
+        <div className="mods-tabs-meta">
+          {activeModpack ? `${activeModpack.loader.toUpperCase()} · ${activeModpack.version}` : ''}
         </div>
-
-        <McSelect
-          value={projectType}
-          onChange={(v) => setProjectType(v)}
-          disabled={!activeModpack}
-          options={[
-            { value: 'mod', label: t("mods.mods") },
-            { value: 'resourcepack', label: t("mods.resourcepacks") },
-            { value: 'shader', label: t("mods.shaders") }
-          ]}
-        />
-
-        <McSelect
-          value={sort}
-          onChange={(v) => setSort(v)}
-          disabled={!activeModpack}
-          options={[
-            { value: 'relevance', label: t("mods.relevance") },
-            { value: 'downloads', label: t("mods.downloads") },
-            { value: 'newest', label: t("mods.newest") },
-            { value: 'updated', label: t("mods.updated") }
-          ]}
-        />
       </div>
 
-      {/* Main Grid Content */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+      {/* Одна панель поиска для активной вкладки */}
+      <div className="mods-toolbar">
+        {activeTab === 'installed' ? (
+          <div className="mods-search">
+            <Search size={14} color="#777" />
+            <input
+              type="text"
+              placeholder={t("mods.searchInstalled")}
+              value={installedSearchQuery}
+              onChange={e => setInstalledSearchQuery(e.target.value)}
+              disabled={!activeModpack}
+            />
+            {installedSearchQuery && (
+              <button className="mods-search-clear" onClick={() => setInstalledSearchQuery('')} title={t('ui.clear')}>×</button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="mods-search">
+              <Search size={14} color="#777" />
+              <input
+                type="text"
+                placeholder={t("mods.search")}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearchSubmit()}
+                disabled={!activeModpack}
+              />
+            </div>
+            <McSelect
+              value={projectType}
+              onChange={(v) => setProjectType(v)}
+              disabled={!activeModpack}
+              options={[
+                { value: 'mod', label: t("mods.mods") },
+                { value: 'resourcepack', label: t("mods.resourcepacks") },
+                { value: 'shader', label: t("mods.shaders") }
+              ]}
+            />
+            <McSelect
+              value={sort}
+              onChange={(v) => setSort(v)}
+              disabled={!activeModpack}
+              options={[
+                { value: 'relevance', label: t("mods.relevance") },
+                { value: 'downloads', label: t("mods.downloads") },
+                { value: 'newest', label: t("mods.newest") },
+                { value: 'updated', label: t("mods.updated") }
+              ]}
+            />
+          </>
+        )}
+      </div>
 
-        {/* Installed Mods Left Panel */}
-        {activeModpack && (
-          <div
-            style={{ width: '220px', background: 'rgba(26,26,26,0.95)', borderRight: '2px solid #333', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              e.dataTransfer.dropEffect = 'copy'
-            }}
-            onDrop={async (e) => {
-              e.preventDefault()
-              e.stopPropagation()
+      {/* Содержимое активной вкладки */}
+      {activeTab === 'installed' ? (
+        <div
+          className="mods-installed"
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            e.dataTransfer.dropEffect = 'copy'
+          }}
+          onDrop={async (e) => {
+            e.preventDefault()
+            e.stopPropagation()
 
-              if (!activeModpack) return
-              const files = Array.from(e.dataTransfer.files)
-              let added = false
+            if (!activeModpack) return
+            const files = Array.from(e.dataTransfer.files)
+            let added = 0
+            let rejected = 0
 
-              for (const file of files) {
-                if (file.name.endsWith('.jar') || file.name.endsWith('.zip')) {
-                  try {
-                    const buffer = await file.arrayBuffer()
-                    // @ts-ignore
-                    const result = await window.electronAPI.importModFile(file.name, buffer, activeModpack.name)
-                    if (result.status === 'success') {
-                      added = true
-                    }
-                  } catch (err) {
-                    console.error('Failed to import file:', err)
-                  }
+            for (const file of files) {
+              // Перетаскивать можно только моды (.jar), остальное игнорируем
+              if (!file.name.toLowerCase().endsWith('.jar')) {
+                rejected++
+                continue
+              }
+              try {
+                const buffer = await file.arrayBuffer()
+                // @ts-ignore
+                const result = await window.electronAPI.importModFile(file.name, buffer, activeModpack.name)
+                if (result && (result.status === 'ok' || result.status === 'success')) {
+                  added++
                 }
+              } catch (err) {
+                console.error('Failed to import file:', err)
+              }
+            }
+
+            if (rejected > 0) {
+              showError(t('mods.onlyJarAllowed'))
+            }
+
+            if (added > 0) {
+              // Обновляем список установленных через повторное чтение сборки
+              await selectModpack(activeModpack)
+              showOk(t('mods.droppedAdded', { count: added }))
+            }
+          }}
+        >
+          {!activeModpack ? (
+            <div className="mods-empty">
+              <Package size={40} />
+              <p>{t("mods.createOrSelect")}</p>
+              <button className="mods-btn-ghost" onClick={() => setShowCreatePage(true)}>
+                <Plus size={14} /> {t("mods.create")}
+              </button>
+            </div>
+          ) : (
+            (() => {
+              const search = installedSearchQuery.toLowerCase()
+              const visible = activeModpack.installedMods.filter(m => {
+                // Искать надо и по настоящему названию: имя файла игрок не помнит.
+                const meta = modMeta[normalizeModFilename(m.title || m.id)]
+                return (
+                  (m.title || '').toLowerCase().includes(search) ||
+                  (meta?.name || '').toLowerCase().includes(search)
+                )
+              })
+
+              if (visible.length === 0) {
+                return (
+                  <div className="mods-empty">
+                    <Package size={36} />
+                    <p>{activeModpack.installedMods.length === 0 ? t("mods.empty") : t("mods.nothingFound")}</p>
+                  </div>
+                )
               }
 
-              if (added) {
-                // Refresh installed mods via selectModpack reconciliation
-                await selectModpack(activeModpack)
-              }
-            }}
-          >
-            <div style={{ padding: '14px 15px', fontWeight: 'bold', borderBottom: '1px solid var(--pg-dark3)', display: 'flex', justifyContent: 'space-between', color: 'white', fontSize: '13px', fontFamily: '"Blocks", sans-serif', letterSpacing: '0.5px' }}>
-              <span>{t('mods.installed')} {projectType === 'resourcepack' ? t('mods.typeResourcepacks') : projectType === 'shader' ? t('mods.typeShaders') : t('mods.typeMods')} ({activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length})</span>
-            </div>
+              // Категории идут в одном порядке: моды, ресурспаки, шейдеры.
+              // Пустые разделы не рисуются, поэтому список не пухнет заголовками.
+              const categories = [
+                { type: 'mod', label: t('mods.mods') },
+                { type: 'resourcepack', label: t('mods.resourcepacks') },
+                { type: 'shader', label: t('mods.shaders') },
+              ]
 
-            {/* Search bar for installed mods */}
-            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--pg-dark3)', background: 'rgba(0,0,0,0.25)' }}>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Search size={13} color="#777" style={{ position: 'absolute', left: '10px' }} />
-                <input
-                  type="text"
-                  placeholder="Поиск установленных..."
-                  value={installedSearchQuery}
-                  onChange={e => setInstalledSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '6px 10px 6px 28px',
-                    background: '#141414',
-                    border: '1px solid #282828',
-                    color: '#fff',
-                    fontSize: '12px',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-                {installedSearchQuery && (
-                  <button
-                    onClick={() => setInstalledSearchQuery('')}
-                    style={{ position: 'absolute', right: '8px', background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', fontSize: '11px', lineHeight: 1 }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* List container */}
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '8px', gap: '6px' }}>
-              {activeModpack.installedMods
-                .filter(m => (m.type || 'mod') === projectType)
-                .filter(m => m.title.toLowerCase().includes(installedSearchQuery.toLowerCase())).length === 0 ? (
-                <div style={{ color: '#888', textAlign: 'center', padding: '25px 15px', fontSize: '12px' }}>
-                  {activeModpack.installedMods.filter(m => (m.type || 'mod') === projectType).length === 0 
-                    ? t("mods.empty") 
-                    : "Ничего не найдено"}
-                </div>
-              ) : (
-                activeModpack.installedMods
-                  .filter(m => (m.type || 'mod') === projectType)
-                  .filter(m => m.title.toLowerCase().includes(installedSearchQuery.toLowerCase()))
-                  .map(m => (
-                    <div 
-                      key={m.id} 
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setContextMenuModId(contextMenuModId === m.id ? null : m.id);
-                      }}
-                      style={{ 
-                        position: 'relative',
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '10px', 
-                        padding: '8px 10px', 
-                        background: m.isEnabled === false ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.03)', 
-                        border: '1px solid',
-                        borderColor: contextMenuModId === m.id ? 'var(--pg-yellow)' : (m.isEnabled === false ? '#222' : '#2a2a2a'), 
-                        opacity: m.isEnabled === false ? 0.6 : 1,
-                        transition: 'all 0.15s ease',
-                        cursor: 'context-menu',
-                        userSelect: 'none'
-                      }}
-                    >
-                      <span 
-                        style={{ 
-                          color: m.isEnabled === false ? '#777' : '#eee', 
-                          fontSize: '12px', 
-                          fontWeight: 500,
-                          overflow: 'hidden', 
-                          textOverflow: 'ellipsis', 
-                          whiteSpace: 'nowrap', 
-                          flex: 1, 
-                          textDecoration: m.isEnabled === false ? 'line-through' : 'none' 
-                        }}
-                        title={m.title}
-                      >
-                        {m.title}
-                      </span>
-
-                      {/* Power toggle button (gray initially, yellow on hover, right edge) */}
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            // @ts-ignore
-                            await window.electronAPI.toggleMod(m.title, activeModpack.name, !(m.isEnabled !== false));
-                            const updatedMp = {
-                              ...activeModpack,
-                              installedMods: activeModpack.installedMods.map(mod => 
-                                (mod.id === m.id || normalizeModFilename(mod.title) === normalizeModFilename(m.title)) 
-                                  ? { ...mod, isEnabled: (m.isEnabled === false) } 
-                                  : mod
-                              )
-                            };
-                            setActiveModpack(updatedMp);
-                            const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
-                            persistModpacks(updatedAll);
-                          } catch (err) { console.error(err) }
-                        }}
-                        title={m.isEnabled === false ? "Включить" : "Выключить"}
-                        style={{ 
-                          background: 'transparent', 
-                          border: 'none', 
-                          color: m.isEnabled === false ? '#444' : '#666', 
-                          cursor: 'pointer', 
-                          padding: '4px', 
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          marginLeft: 'auto',
-                          transition: 'color 0.15s ease, transform 0.1s ease'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.color = 'var(--pg-yellow)'}
-                        onMouseLeave={e => e.currentTarget.style.color = m.isEnabled === false ? '#444' : '#666'}
-                      >
-                        <Power size={14} />
-                      </button>
-
-                      {/* Right-click Context Popup (positioned right inside the item) */}
-                      {contextMenuModId === m.id && (
-                        <div 
-                          style={{ 
-                            position: 'absolute', 
-                            top: '100%', 
-                            right: '10px', 
-                            zIndex: 99999, 
-                            background: '#161616', 
-                            border: '2px solid #333', 
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.95), inset 0 1px 0 0 #444', 
-                            padding: '4px',
-                            minWidth: '120px'
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div 
-                            className="hover-scale-btn"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setContextMenuModId(null);
-                              if (!activeModpack) return;
-                              try {
-                                // @ts-ignore
-                                await window.electronAPI.uninstallMod(m.title, activeModpack.name);
-                                const updatedMp = { 
-                                  ...activeModpack, 
-                                  installedMods: activeModpack.installedMods.filter(
-                                    mod => mod.id !== m.id && normalizeModFilename(mod.title) !== normalizeModFilename(m.title)
-                                  ) 
-                                };
-                                setActiveModpack(updatedMp);
-                                const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
-                                persistModpacks(updatedAll);
-                              } catch (err) { console.error(err) }
-                            }}
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '8px', 
-                              padding: '8px 12px', 
-                              color: '#e74c3c', 
-                              fontSize: '12px', 
-                              fontFamily: '"Blocks", sans-serif', 
-                              cursor: 'pointer',
-                              background: 'rgba(231, 76, 60, 0.1)',
-                              border: '1px solid rgba(231, 76, 60, 0.3)',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <Trash2 size={14} color="#e74c3c" />
-                            <span>Удалить</span>
-                          </div>
-                        </div>
+              const renderRow = (m: any) => {
+                const enabled = m.isEnabled !== false
+                const local = Boolean(m.isLocal) || !m.projectId
+                // Иконка и имя из jar; если манифеста нет — прежняя буква.
+                const meta = modMeta[normalizeModFilename(m.title || m.id)]
+                const displayName = meta?.name || m.title
+                return (
+                  <div key={m.id} className={`mods-row ${enabled ? '' : 'disabled'}`}>
+                    <div className="mods-row-icon">
+                      {meta?.icon ? (
+                        <IconImg src={meta.icon} loading="lazy" />
+                      ) : (
+                        (displayName || '?').charAt(0).toUpperCase()
                       )}
                     </div>
-                  ))
-              )}
-            </div>
-          </div>
-        )}
+                    <div className="mods-row-info">
+                      <div className="mods-row-name" title={m.title}>{displayName}</div>
+                      <div className="mods-row-meta">
+                        {m.type === 'resourcepack'
+                          ? t('mods.resourcepacks')
+                          : m.type === 'shader'
+                            ? t('mods.shaders')
+                            : t('mods.mods')}
+                        {' · '}
+                        {local ? t('mods.localFile') : activeModpack.loader.toUpperCase()}
+                        {meta?.version ? ` · ${meta.version}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      className={`mods-switch ${enabled ? 'on' : ''}`}
+                      title={enabled ? t('mods.disable') : t('mods.enable')}
+                      aria-pressed={enabled}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          // @ts-ignore
+                          await window.electronAPI.toggleMod(m.title, activeModpack.name, !enabled);
+                          const updatedMp = {
+                            ...activeModpack,
+                            installedMods: activeModpack.installedMods.map(mod =>
+                              (mod.id === m.id || normalizeModFilename(mod.title) === normalizeModFilename(m.title))
+                                ? { ...mod, isEnabled: !enabled }
+                                : mod
+                            )
+                          };
+                          setActiveModpack(updatedMp);
+                          const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
+                          persistModpacks(updatedAll);
+                        } catch (err) { console.error(err) }
+                      }}
+                    >
+                      <span />
+                    </button>
+                    <button
+                      className="mods-row-delete"
+                      title={t('app.delete')}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          // @ts-ignore
+                          await window.electronAPI.uninstallMod(m.title, activeModpack.name);
+                          const updatedMp = {
+                            ...activeModpack,
+                            installedMods: activeModpack.installedMods.filter(
+                              mod => mod.id !== m.id && normalizeModFilename(mod.title) !== normalizeModFilename(m.title)
+                            )
+                          };
+                          setActiveModpack(updatedMp);
+                          const updatedAll = modpacks.map(mp => mp.name === updatedMp.name ? updatedMp : mp);
+                          persistModpacks(updatedAll);
+                        } catch (err) { console.error(err) }
+                      }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                )
+              }
 
-        <div className="mods-grid" onScroll={handleScroll} ref={listRef} style={{ flex: 1 }}>
+              return (
+                <div className="mods-list">
+                  {categories.map(category => {
+                    const items = visible.filter(m => (m.type || 'mod') === category.type)
+                    if (items.length === 0) return null
+                    return (
+                      <section key={category.type} className="mods-section">
+                        <div className="mods-section-head">
+                          <span className="mods-section-title">{category.label}</span>
+                          <span className="mods-section-count">{items.length}</span>
+                        </div>
+                        {items.map(m => renderRow(m))}
+                      </section>
+                    )
+                  })}
+                </div>
+              )
+            })()
+          )}
+
+          {activeModpack && (
+            <div className="mods-dropzone">
+              <span>{t("mods.dropHint")}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mods-grid" onScroll={handleScroll} ref={listRef}>
           {!activeModpack ? (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '50px', color: 'white' }}>
+            <div className="mods-empty" style={{ gridColumn: '1 / -1' }}>
               <Package size={48} />
-              <p style={{ marginTop: '15px', fontFamily: '"Blocks", sans-serif', fontSize: '16px' }}>{t("mods.createOrSelect")}</p>
+              <p>{t("mods.createOrSelect")}</p>
             </div>
           ) : loading ? (
-            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '50px', color: '#aaa' }}>{t("mods.loading")}</div>
+            <div className="mods-empty" style={{ gridColumn: '1 / -1' }}>
+              <p>{t("mods.loading")}</p>
+            </div>
           ) : (
             <>
-              {projectType === 'mod' && activeModpack?.loader === 'forge' && offset === 0 && (!query || query.toLowerCase().includes('opti')) && (
-                <div className="mc-card" style={{ background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)` }}>
-                  <div className="mc-card-header">
-                    <img src="https://optifine.net/favicon.ico" alt="icon" className="mc-card-icon" style={{ background: 'white' }} />
-                    <div className="mc-card-title-area">
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span className="mc-card-title">OptiFine</span>
-                        <span className="mc-card-loader">(FORGE)</span>
+              {showOptifineCard && (
+                <div className="mc-card mc-mod-card">
+                  <ProjectArt icon="https://optifine.net/favicon.ico" />
+                  <div className="mc-card-body">
+                    <div className="mc-card-header">
+                      <img src="https://optifine.net/favicon.ico" alt="icon" className="mc-card-icon" style={{ background: 'white' }} />
+                      <div className="mc-card-title-area">
+                        <div className="mc-card-heading">
+                          <span className="mc-card-title">OptiFine</span>
+                          <span className="mc-card-author">{t('mods.fromOptifine')}</span>
+                        </div>
                       </div>
                       <button className="mc-card-more" onClick={openOptifinePage}>•••</button>
                     </div>
-                  </div>
 
-                  <div className="mc-card-desc">
-                    {t("mods.optifineDesc")}
-                  </div>
-
-                  <div className="mc-card-categories">
-                    <img src={getCategoryIcon('optimization')} className="mc-card-cat-icon" title="optimization" />
-                  </div>
-
-                  <div className="mc-card-footer">
-                    <div className="mc-card-meta">
-                      <span>↓ ∞ dl</span>
-                      <span>≡ {t("mods.alwaysFresh")}</span>
+                    <div className="mc-card-desc">
+                      {t("mods.optifineDesc")}
                     </div>
-                    {isOptifineInstalled() ? (
-                      <button className="mc-btn-primary" style={{ background: '#27ae60', borderColor: '#2ecc71' }}>{t("mods.isInstalled")}</button>
-                    ) : downloading['optifine'] ? (
-                      <button className="mc-btn-primary" disabled>...</button>
-                    ) : (
-                      <button className="mc-btn-primary" onClick={() => installOptifineManually()}>{t("mods.install")}</button>
-                    )}
+
+                    <div className="mc-card-categories">
+                      <img src={getCategoryIcon('optimization')} className="mc-card-cat-icon" title="optimization" />
+                    </div>
+
+                    <div className="mc-card-footer">
+                      <div className="mc-card-meta">
+                        <span>↓ ∞ dl</span>
+                        <span>≡ {t("mods.alwaysFresh")}</span>
+                      </div>
+                      {isOptifineInstalled() ? (
+                        <button className="mc-card-btn installed" disabled>{t("mods.isInstalled")}</button>
+                      ) : downloading['optifine'] ? (
+                        <button className="mc-card-btn" disabled>...</button>
+                      ) : (
+                        <button className="mc-card-btn" onClick={() => installOptifineManually()}>{t("mods.install")}</button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
               {results.map((mod: any) => (
-                <div key={getModId(mod)} className="mc-card" style={{ background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)`, cursor: 'pointer' }} onClick={() => setSelectedModForViewer(mod)}>
-                  <div className="mc-card-header">
-                    <img src={getModIcon(mod)} alt="icon" className="mc-card-icon" />
-                    <div className="mc-card-title-area">
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span className="mc-card-title">{getModTitle(mod)}</span>
-                        <span className="mc-card-loader">({activeModpack.loader.toUpperCase()})</span>
+                <div key={getModId(mod)} className="mc-card mc-mod-card" style={{ cursor: 'pointer' }} onClick={() => setSelectedModForViewer(mod)}>
+                  <ProjectArt project={mod} />
+                  <div className="mc-card-body">
+                    <div className="mc-card-header">
+                      <img
+                        src={getModIcon(mod)}
+                        alt="icon"
+                        className="mc-card-icon"
+                        loading="lazy"
+                        onError={(e) => { e.currentTarget.src = PROJECT_FALLBACK_ICON }}
+                      />
+                      <div className="mc-card-title-area">
+                        <div className="mc-card-heading">
+                          <span className="mc-card-title">{getModTitle(mod)}</span>
+                          {/* Автор проекта: предлог берётся из языка лаунчера. */}
+                      <span className="mc-card-author">{t('mods.byAuthor', { author: mod.author || 'Modrinth' })}</span>
+                        </div>
                       </div>
                       <button className="mc-card-more" onClick={(e) => { e.stopPropagation(); openModrinthPage(mod); }}>•••</button>
                     </div>
-                  </div>
 
-                  <div className="mc-card-desc">
-                    {getModDesc(mod)}
-                  </div>
-
-                  <div className="mc-card-categories">
-                    {mod.display_categories?.slice(0, 3).map((cat: string) => (
-                      <img key={cat} src={getCategoryIcon(cat)} className="mc-card-cat-icon" title={cat} />
-                    ))}
-                  </div>
-
-                  <div className="mc-card-footer" onClick={e => e.stopPropagation()}>
-                    <div className="mc-card-meta">
-                      <span>↓ {getModDownloads(mod)} dl</span>
-                      <span>≡ {getModDate(mod)}</span>
+                    <div className="mc-card-desc">
+                      {getModDesc(mod)}
                     </div>
-                    {isInstalled(mod) ? (
-                      <button className="mc-btn-primary" style={{ background: '#27ae60', borderColor: '#2ecc71' }}>{t("mods.isInstalled")}</button>
-                    ) : downloading[getModId(mod)] ? (
-                      <button className="mc-btn-primary" disabled>...</button>
-                    ) : (
-                      <button className="mc-btn-primary" onClick={() => installMod(mod)}>{t("mods.install")}</button>
-                    )}
+
+                    <div className="mc-card-categories">
+                      {mod.display_categories?.slice(0, 3).map((cat: string) => (
+                        <img key={cat} src={getCategoryIcon(cat)} className="mc-card-cat-icon" title={cat} />
+                      ))}
+                    </div>
+
+                    <div className="mc-card-footer" onClick={e => e.stopPropagation()}>
+                      <div className="mc-card-meta">
+                        <span>↓ {formatCount(mod.downloads)} dl</span>
+                        <span>≡ {getModDate(mod)}</span>
+                      </div>
+                      {isInstalled(mod) ? (
+                        <button className="mc-card-btn installed" disabled>{t("mods.isInstalled")}</button>
+                      ) : downloading[getModId(mod)] ? (
+                        <button className="mc-card-btn" disabled>...</button>
+                      ) : (
+                        <button className="mc-card-btn" onClick={() => installMod(mod)}>{t("mods.install")}</button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
+              {catalogIsEmpty && (
+                <div className="mods-empty" style={{ gridColumn: '1 / -1' }}>
+                  <Package size={36} />
+                  <p>{t("mods.nothingFound")}</p>
+                </div>
+              )}
               {isFetchingMore && <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#aaa' }}>{t("mods.loadMore")}</div>}
             </>
           )}
         </div>
-      </div>
-
-      {/* Create Modpack Modal */}
-      {showCreateModal && (
-        <div className="mc-dialog-overlay" onClick={() => setShowCreateModal(false)}>
-          <div className="mc-dialog-window" onClick={e => e.stopPropagation()} style={{ width: '480px', maxWidth: '92vw' }}>
-            <div className="mc-dialog-header">
-              <div className="mc-dialog-title warning">
-                <span>{t("mods.createModpackTitle").toUpperCase()}</span>
-              </div>
-              <button 
-                type="button" 
-                className="mc-close-cube-btn" 
-                title="Закрыть" 
-                onClick={() => setShowCreateModal(false)}
-              >
-                <CubicCrossIcon />
-              </button>
-            </div>
-
-            <div className="mc-dialog-content">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                    {t("mods.name")}
-                  </label>
-                  <input type="text" className="mc-input" value={newName} onChange={e => setNewName(e.target.value)} style={{ fontFamily: '"Blocks", sans-serif' }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                      {t("mods.loader")}
-                    </label>
-                    <McSelect
-                      value={newLoader}
-                      onChange={v => setNewLoader(v)}
-                      options={[
-                        { value: 'fabric', label: 'Fabric' },
-                        { value: 'forge', label: 'Forge' },
-                        { value: 'quilt', label: 'Quilt' },
-                        { value: 'neoforge', label: 'NeoForge' }
-                      ]}
-                    />
-                  </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                      {t("mods.gameVersion")}
-                    </label>
-                    <McSelect
-                      value={newVersion}
-                      onChange={v => setNewVersion(v)}
-                      options={gameVersions.map((v: string) => ({ value: v, label: v }))}
-                    />
-                  </div>
-                </div>
-
-                {newLoader === 'forge' && (
-                  <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '2px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '12.5px', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={installOptifine} onChange={e => setInstallOptifine(e.target.checked)} />
-                      {t("mods.installOptifine")}
-                    </label>
-                  </div>
-                )}
-
-                <div className="settings-checkbox-group" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '12.5px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={installElybySkins} onChange={e => setInstallElybySkins(e.target.checked)} />
-                    {t("mods.installElyby")}
-                  </label>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                  <label style={{ color: 'var(--pg-yellow)', fontSize: '11px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                    {t("mods.icon")}
-                  </label>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    <label
-                      onClick={async (e) => {
-                        e.preventDefault()
-                        // @ts-ignore
-                        const dataUrl = await window.electronAPI.selectIconFile()
-                        if (dataUrl) setNewIcon(dataUrl)
-                      }}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
-                      title="Выбрать свой файл"
-                    >
-                      <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
-                    </label>
-                    {PRESET_ICONS.map(icon => (
-                      <img
-                        key={icon}
-                        src={icon}
-                        width={32}
-                        height={32}
-                        style={{
-                          cursor: 'pointer',
-                          border: newIcon === icon ? '2px solid var(--pg-yellow)' : '2px solid transparent',
-                          padding: '2px',
-                          background: newIcon === icon ? 'rgba(241,196,15,0.15)' : 'transparent',
-                          objectFit: 'cover'
-                        }}
-                        onClick={() => setNewIcon(icon)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mc-dialog-footer">
-              <button 
-                type="button" 
-                className="mc-cube-btn neutral" 
-                onClick={() => setShowCreateModal(false)}
-              >
-                Отмена
-              </button>
-              <button 
-                type="button" 
-                className="mc-cube-btn gold" 
-                onClick={createModpack}
-              >
-                {t("mods.btnCreate")}
-              </button>
-            </div>
-          </div>
-        </div>
+      )}
+      {/* Создание сборки — отдельная страница по образцу раскрытой
+          карточки мода: стрелка назад, вкладки, главное действие в шапке. */}
+      {showCreatePage && (
+        <ModpackCreatePage
+          name={newName}
+          onNameChange={setNewName}
+          loader={newLoader}
+          onLoaderChange={setNewLoader}
+          version={newVersion}
+          onVersionChange={setNewVersion}          loaderVersion={newLoaderVersion}
+          onLoaderVersionChange={setNewLoaderVersion}
+          loaderVersions={loaderVersions}
+          gameVersions={gameVersions}
+          icon={newIcon}
+          onIconChange={setNewIcon}
+          installOptifine={installOptifine}
+          onInstallOptifineChange={setInstallOptifine}
+          installElyby={installElybySkins}
+          onInstallElybyChange={setInstallElybySkins}
+          creating={creatingModpack}
+          onCreate={createModpack}
+          onClose={closeCreatePage}
+        />
       )}
 
       {/* Modpack Settings Modal */}
@@ -1144,7 +1220,7 @@ export default function ModsMenu({
               <button 
                 type="button" 
                 className="mc-close-cube-btn" 
-                title="Закрыть" 
+                title={t('ui.close')} 
                 onClick={() => setShowModpackSettingsModal(false)}
               >
                 <CubicCrossIcon />
@@ -1173,7 +1249,7 @@ export default function ModsMenu({
                         if (dataUrl) setEditModpackIcon(dataUrl)
                       }}
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
-                      title="Выбрать свой файл"
+                      title={t('app.chooseFile')}
                     >
                       <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
                     </label>

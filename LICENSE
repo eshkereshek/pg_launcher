@@ -1,0 +1,15 @@
+Copyright © 2026 Pagrysha Launcher authors.
+All rights reserved.
+
+This repository is published for transparency. No part of this software
+(including its source code, icons and artwork) may be copied, redistributed,
+sublicensed, or used to build derivative or commercial products without the
+prior written permission of the copyright holder.
+
+Third-party components keep their own licenses. The launcher downloads game
+files, libraries and mod content from the services of their respective owners
+(Mojang/Microsoft, Ely.by, Modrinth); your use of those files is governed by
+their terms, not by this notice.
+
+Если нужен открытый код — замените этот файл текстом MIT, GPL или BSD,
+и добавьте уведомление в заголовки исходников.

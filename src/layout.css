@@ -1,7 +1,10 @@
 /* JustLauncher Style Layout */
 .launcher-appear-wrap {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .app-container.just-style {
@@ -19,6 +22,7 @@
     opacity: 0;
     transform: translateX(-35px);
   }
+
   100% {
     opacity: 1;
     transform: translateX(0);
@@ -30,6 +34,7 @@
     opacity: 0;
     transform: translateY(28px) scale(0.99);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -41,8 +46,9 @@
     opacity: 0;
     transform: translateY(45px);
   }
+
   100% {
-    opacity: 1;
+    ++++opacity: 1;
     transform: translateY(0);
   }
 }
@@ -60,23 +66,27 @@
   flex-shrink: 0;
   user-select: none;
 }
+
 .titlebar-left {
   display: flex;
   align-items: center;
   gap: 8px;
   -webkit-app-region: drag;
 }
+
 .titlebar-left img,
 .titlebar-left span {
   -webkit-app-region: drag;
   pointer-events: none;
 }
+
 .titlebar-right {
   display: flex;
   align-items: center;
   height: 100%;
   -webkit-app-region: no-drag;
 }
+
 .titlebar-downloads {
   display: flex;
   align-items: center;
@@ -90,6 +100,7 @@
   font-size: 11.5px;
   -webkit-app-region: no-drag;
 }
+
 .titlebar-downloads:hover {
   background-color: #383838;
   color: #fff;
@@ -110,10 +121,12 @@
   box-shadow: inset 3px 0 0 0 #555;
   -webkit-app-region: no-drag;
 }
+
 .win-btn:hover {
   background: #444;
   color: white;
 }
+
 .win-btn.close:hover {
   background: #e81123;
   color: white;
@@ -125,148 +138,192 @@
   overflow: hidden;
 }
 
-/* Sidebar */
+/* Sidebar
+   Пункты меню — отдельные плитки с пиксельными углами, а не полосы во всю
+   ширину: так видно границу между ними, и активный раздел читается без
+   дополнительных подписей. */
 .jl-sidebar {
-  width: 250px;
+  width: 214px;
   flex-shrink: 0;
-  background-color: #1b1b1b;
   display: flex;
   flex-direction: column;
-  border-right: 3px solid #111;
-  box-shadow: 
-    inset -3px 0 0 0 #000;
+  padding: 10px 0 12px;
+  background-color: #161616;
+  border-right: 2px solid #0b0b0b;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.035);
   animation: sidebarSlideIn 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Профиль — карточка с рамкой аватара. Раньше это была строка во всю ширину,
+   и она сливалась с меню под ней. */
 .jl-profile {
-  padding: 14px 16px;
+  margin: 0 10px 10px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  background-color: #1b1b1b;
-  border-bottom: 1px solid var(--pg-dark3);
+  gap: 10px;
+  background-color: #1e1e1e;
+  border: 2px solid #0b0b0b;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -2px 0 #101010;
+  clip-path: var(--mc-step-clip-sm);
   cursor: pointer;
   user-select: none;
+  transition: background-color 0.12s ease;
 }
-.jl-profile img {
-  width: 36px;
-  height: 36px;
-  border-radius: 0;
+
+.jl-profile:hover {
+  background-color: #262626;
+}
+
+.jl-profile-avatar {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #0f0f0f;
+  border: 2px solid #0b0b0b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.jl-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
   image-rendering: pixelated;
 }
+
 .jl-profile-info {
   display: flex;
   flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
 }
+
 .jl-profile-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
   color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 .jl-profile-status {
-  font-size: 11px;
-  color: var(--pg-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #8f8f8f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Точка типа аккаунта: цветная метка вместо ещё одного слова. */
+.jl-profile-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  background: var(--pg-yellow);
+  box-shadow: 0 0 0 1px #0b0b0b;
+}
+
+/* Стрелка профиля: пиксельный шеврон вместо буквы «v» — та читалась как
+   случайный символ и не показывала, что карточку можно раскрыть. */
+.jl-profile-caret {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 2px solid #7a7a7a;
+  border-bottom: 2px solid #7a7a7a;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.18s ease, border-color 0.12s ease;
+}
+
+.jl-profile:hover .jl-profile-caret {
+  border-color: #c9c9c9;
+}
+
+.jl-profile-caret.open {
+  border-color: var(--pg-yellow);
+  transform: translateY(1px) rotate(225deg);
 }
 
 .jl-nav {
   flex: 1;
-  padding: 10px 0;
+  min-height: 0;
+  padding: 0 10px;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 4px;
   overflow-y: auto;
   overflow-x: hidden;
-  background-color: #1b1b1b;
 }
 
 .jl-nav-item {
   position: relative;
-  width: 100%;
-  margin: 0;
-  padding: 0 16px;
-  height: 45px;
-  min-height: 45px;
   display: flex;
   align-items: center;
-  gap: 13px;
-  color: #cfcfcf;
+  gap: 10px;
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background-color: #1c1c1c;
+  color: #b6b6b6;
   cursor: pointer;
   font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.2px;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.9);
-  background-color: #1e1e1e;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.85);
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid #131313;
   border-radius: 0;
-  box-sizing: border-box;
-  box-shadow: 
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.03),
-    inset 0 -1px 0 0 #101010;
-  transition: background-color 0.1s ease, color 0.1s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    inset 0 -2px 0 #101010;
+  /* Угол в одну ступеньку 8 px — как у карточек каталога, а не две по 2 px. */
+  clip-path: var(--mc-step-clip);
+  transition: background-color 0.12s ease, color 0.12s ease, transform 0.06s ease;
   user-select: none;
 }
 
-.jl-nav-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  background: transparent;
-  box-sizing: border-box;
-  transition: background 0.1s ease;
-}
-
 .jl-nav-item:hover {
-  background-color: #262626;
+  background-color: #242424;
   color: #ffffff;
-  box-shadow: 
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.07),
-    inset 0 -1px 0 0 #0d0d0d;
-}
-
-.jl-nav-item:hover::before {
-  background-color: rgba(241, 196, 15, 0.4);
-  border-right: 1px solid rgba(0, 0, 0, 0.6);
-  border-top: 1px solid rgba(0, 0, 0, 0.6);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
-  z-index: 2;
 }
 
 .jl-nav-item:active {
-  background-color: #161616;
-  box-shadow: inset 0 2px 0 0 #000000;
+  transform: translateY(1px);
 }
 
+/* Активный раздел: светлее плитка и жёлтая кромка слева — тот же приём,
+   что у выделенной строки в списках. */
 .jl-nav-item.active {
-  background-color: #2b2b2b;
+  background-color: #2a2a2a;
   color: #ffffff;
-  box-shadow: 
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 0 #0a0a0a;
-}
-
-.jl-nav-item.active::before {
-  background-color: var(--pg-yellow);
-  border-right: 1px solid #000000;
-  border-top: 1px solid #000000;
-  border-bottom: 1px solid #000000;
-  box-shadow: 
-    inset 1px 1px 0 0 rgba(255, 255, 255, 0.6),
-    inset -1px -1px 0 0 rgba(0, 0, 0, 0.3);
-  z-index: 2;
+  box-shadow:
+    inset 3px 0 0 var(--pg-yellow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -2px 0 #0b0b0b;
 }
 
 .jl-nav-item.active:hover {
   background-color: #303030;
-  color: #ffffff;
 }
 
 .jl-nav-icon {
@@ -279,6 +336,13 @@
   image-rendering: pixelated;
 }
 
+/* Иконка «Играть» — пиксельный треугольник из PlayIcon.tsx: его заливка
+   сейчас currentColor, поэтому цвет идёт из акцента темы, а не зашит жёлтым.
+   Обводка остаётся чёрной — на плитке любого цвета читается одинаково. */
+.jl-nav-icon-play {
+  color: var(--pg-accent, #f1c40f);
+}
+
 .jl-nav-text {
   flex: 1;
   white-space: nowrap;
@@ -287,14 +351,15 @@
   line-height: 1;
 }
 
+/* Нижняя группа отделена волосяной линией с отступом: она не часть меню
+   разделов, и сплошная линия во всю ширину это подчёркивала сильнее нужного. */
 .jl-bottom {
-  padding: 10px 0 15px 0;
-  margin: 0;
+  margin: 8px 10px 0;
+  padding: 10px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  border-top: 1px solid var(--pg-dark3);
-  background-color: #1b1b1b;
+  gap: 4px;
+  border-top: 1px solid #0e0e0e;
 }
 
 .jl-bottom-btn {
@@ -311,48 +376,92 @@
   font-size: 14px;
   transition: all 0.2s ease;
 }
+
 .jl-bottom-btn:hover {
   background-color: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
+
 .jl-bottom-btn.outlined {
-  margin: 15px 15px 0 15px;
-  padding: 10px 15px;
-  border: 2px solid #111;
+  margin: 6px 0 0;
+  padding: 9px 8px;
+  border: 2px solid #0b0b0b;
   border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  background: #333;
-  box-shadow: none;
+  gap: 8px;
+  background: #2c2c2c;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -2px 0 #101010;
   font-family: 'Blocks', sans-serif;
-  font-size: 13px;
-  color: white;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: #e8e8e8;
   text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
   cursor: pointer;
-  transition: transform 0.1s;
+  transition: background-color 0.12s ease, transform 0.06s ease;
   box-sizing: border-box;
 }
+
 .jl-bottom-btn.outlined:hover {
-  background: #444;
+  background: #363636;
+  color: #ffffff;
 }
+
 .jl-bottom-btn.outlined:active {
-  background: #2a2a2a;
-  transform: translateY(2px);
+  background: #242424;
+  transform: translateY(1px);
 }
 
 /* Main Content Area */
 .jl-main {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   position: relative;
-  background-image: url('./faq.png');
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--surface-0);
+  background-image: none;
+  animation: mainStageSlideIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Обои показываются только на лобби и мягко растворяются к нижней панели */
+.jl-main.has-wallpaper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: var(--jl-wallpaper);
   background-size: cover;
   background-position: center;
-  background-color: var(--pg-dark);
-  animation: mainStageSlideIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  background-repeat: no-repeat;
+  filter: blur(var(--jl-wallpaper-blur)) brightness(calc(1 - var(--jl-wallpaper-dim) * 0.55));
+  transform: scale(1.05);
+}
+
+.jl-main.has-wallpaper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 90% at 52% 24%, rgba(10, 10, 12, calc(var(--jl-wallpaper-dim) * 0.12)) 0%, rgba(10, 10, 12, calc(var(--jl-wallpaper-dim) * 0.42)) 62%, rgba(10, 10, 12, calc(var(--jl-wallpaper-dim) * 0.58)) 100%),
+    linear-gradient(180deg,
+      rgba(12, 12, 13, calc(0.08 + var(--jl-wallpaper-dim) * 0.3)) 0%,
+      rgba(12, 12, 13, calc(0.02 + var(--jl-wallpaper-dim) * 0.16)) 42%,
+      rgba(14, 14, 15, calc(0.18 + var(--jl-wallpaper-dim) * 0.3)) 68%,
+      rgba(20, 20, 20, 0.92) 88%,
+      var(--surface-0) 100%);
+}
+
+/* Контент лобби всегда выше обоев и затемняющего слоя */
+.jl-main.has-wallpaper > * {
+  z-index: 1;
 }
 
 /* Top Tabs */
@@ -363,6 +472,7 @@
   align-items: center;
   padding: 0 30px;
 }
+
 .jl-top-tab {
   height: 100%;
   display: flex;
@@ -401,8 +511,34 @@
   height: 42px !important;
 }
 
+/* Нижняя панель запуска: рамка и внутренние тени живут здесь, а не в инлайн-
+   стилях — иначе тема не может их перекрасить. */
 .jl-play-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  background: rgba(26, 26, 26, 0.95);
+  border: 3px solid #111;
+  box-shadow:
+    inset 0 3px 0 0 #444,
+    inset 3px 0 0 0 #333,
+    inset 0 -6px 0 0 #000,
+    inset -3px 0 0 0 #222;
   animation: playbarSlideUp 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Выпадающая панель загрузок в заголовке окна. */
+.downloads-dropdown {
+  background: var(--pg-black);
+  border: 2px solid #111;
+  box-shadow:
+    inset 0 2px 0 0 #444,
+    inset 2px 0 0 0 #333,
+    inset 0 -4px 0 0 #000,
+    inset -2px 0 0 0 #222,
+    0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
 .jl-flat-yellow-btn {
@@ -411,9 +547,11 @@
   box-shadow: inset 0 3px 0 0 #ffe082, inset 3px 0 0 0 #ffe082, inset 0 -3px 0 0 #ab7d00, inset -3px 0 0 0 #ab7d00;
   transition: transform 0.05s, filter 0.05s;
 }
+
 .jl-flat-yellow-btn:hover {
   filter: brightness(1.1);
 }
+
 .jl-flat-yellow-btn:active {
   background: #e67e22;
   box-shadow: inset 0 3px 0 0 #ab7d00, inset 3px 0 0 0 #ab7d00, inset 0 -3px 0 0 #ffe082, inset -3px 0 0 0 #ffe082;
@@ -425,10 +563,12 @@
   flex-direction: column;
   gap: 5px;
 }
+
 .jl-version-selector label {
   font-size: 12px;
   color: var(--pg-text-muted);
 }
+
 .jl-dropdown {
   background-color: var(--pg-dark3);
   color: white;
@@ -446,27 +586,50 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  transition: transform 0.06s ease;
 }
+
+/* Нажатие сдвигает всю кнопку — плитку и подпись вместе, как в макете. */
+.jl-play-btn-wrapper:active {
+  transform: translateY(2px);
+}
+
+/* Плашка кнопки «Играть»: инлайн-SVG вместо картинки play_empty.png.
+   Растягиваем по контейнеру, пропорции держит preserveAspectRatio. */
+.pg-play-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .jl-play-img {
   height: 80px;
   cursor: pointer;
   transition: transform 0.1s;
 }
+
 .jl-play-img:hover {
   transform: scale(1.02);
 }
+
 .jl-play-img:active {
   transform: scale(0.98);
 }
+
 .hover-scale-btn {
   transition: transform 0.1s;
 }
+
 .hover-scale-btn:hover {
   transform: scale(1.03);
 }
+
 .hover-scale-btn:active {
   transform: scale(0.97);
 }
+
 .jl-progress {
   font-size: 12px;
   color: var(--pg-yellow);
@@ -478,6 +641,7 @@
   gap: 10px;
   justify-self: end;
 }
+
 .jl-tool-btn {
   width: 44px;
   height: 44px;
@@ -490,12 +654,14 @@
   color: #fff;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
+
 .jl-tool-btn:hover {
   background: #333;
   transform: translateY(-1px);
 }
+
 .jl-tool-btn:active {
   transform: translateY(1px);
 }
@@ -508,16 +674,19 @@
   flex-direction: column;
   overflow: hidden;
 }
+
 .modpacks-content {
   flex: 1;
-  padding: 20px;
+  padding: 18px;
   overflow-y: auto;
   scroll-behavior: smooth;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-auto-rows: max-content;
+  gap: 14px;
   align-content: start;
 }
+
 .modpack-card {
   background: rgba(0, 0, 0, 0.7);
   border: 1px solid var(--pg-dark3);
@@ -526,12 +695,14 @@
   display: flex;
   flex-direction: column;
 }
+
 .modpack-cover {
   width: 100%;
   height: 140px;
   object-fit: cover;
   background: #333;
 }
+
 .modpack-info {
   padding: 15px;
   display: flex;
@@ -539,10 +710,12 @@
   gap: 8px;
   flex: 1;
 }
+
 .modpack-title {
   font-weight: bold;
   font-size: 16px;
 }
+
 .modpack-desc {
   font-size: 13px;
   color: var(--pg-text-muted);
@@ -551,6 +724,7 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
 .modpack-meta {
   display: flex;
   justify-content: space-between;
@@ -558,6 +732,7 @@
   color: var(--pg-text-muted);
   margin-top: auto;
 }
+
 .modpack-action {
   padding: 10px 15px;
   border-top: 1px solid var(--pg-dark3);
@@ -569,11 +744,13 @@
   flex-direction: column;
   gap: 15px;
 }
+
 .account-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+
 .account-item {
   display: flex;
   align-items: center;
@@ -583,14 +760,17 @@
   border: 1px solid var(--pg-dark3);
   border-radius: 0;
 }
+
 .account-item.active {
   border-color: var(--pg-yellow);
 }
+
 .account-item-info {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 .account-add-form {
   display: flex;
   gap: 10px;
@@ -598,16 +778,33 @@
 }
 
 @keyframes dropdown-slide-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
+
 @keyframes dropdown-slide-down {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(10px); }
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
+
 .dropdown-menu {
   animation: dropdown-slide-up 0.2s ease-out forwards;
 }
+
 .dropdown-menu.closing {
   animation: dropdown-slide-down 0.2s ease-in forwards;
 }
@@ -618,6 +815,7 @@
     opacity: 0.85;
     transform: translateY(3px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -627,4 +825,311 @@
 .subtle-tab-transition {
   animation: subtleTabFade 0.16s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
+/* ===== Лобби: лента рекомендаций и нижняя панель запуска ===== */
+.lobby-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0;
+}
 
+/* Лента рекомендаций */
+.lobby-recs {
+  padding: 24px 40px 0;
+  min-height: 0;
+}
+
+.lobby-recs-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 12px;
+}
+
+.lobby-recs-head h2 {
+  margin: 0;
+  /* Пиксельный Blocks вместо системного Inter: заголовок ленты должен
+     читаться как часть интерфейса игры, а не как обычный веб-заголовок. */
+  font-family: 'Blocks', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #f4f4f4;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.75);
+}
+
+.lobby-recs-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #8f8f8f;
+}
+
+.lobby-recs-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Стрелок ручного перелистывания в ленте больше нет — .lobby-recs-arrow
+   удалён вместе с ними. */
+
+.lobby-recs-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #cfcfcf;
+  background: rgba(25, 25, 25, 0.8);
+  border: 1px solid #333;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.lobby-recs-all:hover {
+  color: var(--pg-yellow);
+  border-color: rgba(241, 196, 15, 0.5);
+}
+
+.lobby-recs-row {
+  /* App.tsx sets grid-template-columns: as many columns as cards fit into
+     the row at the current window width — same idea as the mod card grid. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(194px, 1fr));
+  gap: 12px;
+  /* Вместо полосы — воздушный отступ снизу, чтобы тень поднятой карточки
+     не упиралась ровно в границу обрезки. */
+  padding: 4px 2px 12px;
+}
+
+.lobby-rec {
+  position: relative;
+  /* width comes from the grid column now */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  /* Углы-ступеньки и объёмная рамка-фаска как у карточек каталога: рамка —
+     фон, заливка — на ::after (см. --mc-step-clip в mc-cards.css). */
+  background: linear-gradient(180deg, #737373 0%, #4a4a4a 42%, #262626 100%);
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lobby-rec::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  background: #1a1a1a;
+  clip-path: var(--mc-step-clip);
+  pointer-events: none;
+}
+
+.lobby-rec > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Появление карточек рекомендаций.
+   Лента листается сама, и без движения подмена выглядит рывком. Анимируем
+   отдельное свойство `translate`, а не `transform`: у карточки уже есть
+   transform на наведении, и fill-mode перебил бы его. */
+@keyframes lobby-rec-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.lobby-rec {
+  animation: lobby-rec-in 260ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby-rec {
+    animation: none;
+  }
+}
+
+.lobby-rec:hover {
+  transform: translateY(-2px);
+  /* Рамка подсвечивается жёлтой фаской, как и в обычном состоянии — объём. */
+  background: linear-gradient(180deg, #ffe066 0%, #f1c40f 45%, #8a6d00 100%);
+  /* box-shadow обрезался бы clip-path — тень по ступенчатому контуру. */
+  box-shadow: none;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.45));
+}
+
+.lobby-rec-cover {
+  position: relative;
+  display: block;
+  aspect-ratio: 2 / 1;
+  width: calc(100% - 4px);
+  margin: 2px 2px 0;
+  background: #232323;
+  overflow: hidden;
+  /* Срез как у карточки: иначе обложка закрывает диагональ рамки в углах. */
+  clip-path: var(--mc-step-clip);
+}
+
+/* Обложка карточки ленты — общий компонент ProjectArt, растягиваем по рамке. */
+.lobby-rec-cover .project-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.lobby-rec:hover .lobby-rec-cover .project-art-img {
+  transform: scale(1.05);
+}
+
+.lobby-rec-badge {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  z-index: 2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Blocks', sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--pg-yellow);
+  background: rgba(10, 10, 10, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.lobby-rec-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px 10px;
+  min-width: 0;
+}
+
+.lobby-rec-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.lobby-rec-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 4px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  background: #0d0d0d;
+  border: 1px solid #2f2f2f;
+}
+
+.lobby-rec-info strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #ededed;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lobby-rec-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #8b8b8b;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.lobby-rec-dot {
+  color: #575757;
+  margin: 0 1px;
+}
+
+.lobby-rec.skeleton {
+  height: 156px;
+  background: linear-gradient(100deg, #1a1a1a 20%, #222 40%, #1a1a1a 60%);
+  background-size: 220% 100%;
+  animation: recSkeleton 1.2s linear infinite;
+}
+
+/* У заглушки нет внутренней заливки — иначе анимация спрячется под ней. */
+.lobby-rec.skeleton::after {
+  display: none;
+}
+
+@keyframes recSkeleton {
+  from { background-position: 140% 0; }
+  to { background-position: -40% 0; }
+}
+
+.lobby-recs-empty {
+  flex: 1;
+  /* The row is a grid now: span every column, as width:100% did. */
+  grid-column: 1 / -1;
+  padding: 18px;
+  font-size: 12px;
+  color: #9a9a9a;
+  background: #1a1a1a;
+  border: 1px dashed #333;
+  cursor: pointer;
+  text-align: center;
+}
+
+.lobby-recs-empty:hover {
+  color: var(--pg-yellow);
+  border-color: rgba(241, 196, 15, 0.4);
+}
+
+/* Нижняя панель запуска */
+.lobby-play-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 20px;
+  padding: 0 40px;
+  box-sizing: border-box;
+}
+
+@media (max-height: 700px) {
+  .lobby-recs {
+    padding: 18px 26px 0;
+  }
+
+  .lobby-recs-head {
+    margin-bottom: 10px;
+  }
+
+  .lobby-recs-head h2 {
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+}

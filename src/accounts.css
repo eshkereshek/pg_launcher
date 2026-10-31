@@ -1,0 +1,431 @@
+/* ── Раздел «Аккаунты»: вход и регистрация ─────────────────────────────────
+   Тот же язык, что у «Серверов» и «Установок»: ступенчатые углы, рамка через
+   фон + слой-заливку, пиксельные кнопки и подписи MinecraftTen в верхнем
+   регистре. Рамки рисуются фоном, а не border: clip-path срезает border на
+   углах, и лесенка превращается в «выкушенные» уголки. */
+
+.accounts-page {
+  position: relative;
+  overflow: hidden;
+}
+
+.accounts-inner {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 4px 8px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Шапка ── */
+.accounts-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #242424;
+}
+
+.accounts-kicker {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--pg-yellow);
+}
+
+.accounts-title {
+  margin: 6px 0 0;
+  font-family: 'Blocks', sans-serif;
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.accounts-sub {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: #8a8a8a;
+  max-width: 460px;
+}
+
+/* ── Секции ── */
+.accounts-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.accounts-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accounts-section-title {
+  margin: 0;
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #a8a8a8;
+}
+
+.accounts-count {
+  font-family: 'Blocks', sans-serif;
+  font-size: 10px;
+  padding: 1px 7px;
+  color: #d8d8d8;
+  background: #222222;
+  border: 1px solid #333333;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+/* ── Список аккаунтов ── */
+/* 300 px, чтобы в активной карточке хватало места и на ник, и на бейдж,
+   и на кнопку удаления: при 240 px ник обрезался до «Eshke…». */
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+
+.accounts-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #333333;
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip-sm);
+  cursor: pointer;
+  transition: background 0.14s ease, transform 0.06s ease;
+}
+
+.accounts-card-fill {
+  position: absolute;
+  inset: 1px;
+  background: #151515;
+  clip-path: var(--mc-step-clip-sm);
+  pointer-events: none;
+  transition: background 0.14s ease;
+}
+
+.accounts-card > *:not(.accounts-card-fill) {
+  position: relative;
+  z-index: 1;
+}
+
+.accounts-card:hover {
+  background: #4d4d4d;
+}
+
+.accounts-card:hover .accounts-card-fill {
+  background: #1d1d1d;
+}
+
+.accounts-card:active {
+  transform: translateY(1px);
+}
+
+.accounts-card.active {
+  background: var(--pg-yellow);
+}
+
+.accounts-card.active .accounts-card-fill {
+  background: #1d1a10;
+}
+
+.accounts-card-name {
+  display: block;
+  font-family: 'Blocks', sans-serif;
+  font-size: 14px;
+  color: #f2f2f2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounts-card.active .accounts-card-name {
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.accounts-card-type {
+  display: block;
+  margin-top: 2px;
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #7d7d7d;
+}
+
+.accounts-card-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #171200;
+  background: var(--pg-yellow);
+  padding: 2px 6px;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.accounts-card-del {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #202020;
+  border: 2px solid #0f0f0f;
+  color: #8e8e8e;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.accounts-card-del:hover {
+  background: #5c1b16;
+  color: #ffd9d4;
+}
+
+/* ── Способы добавления ── */
+.accounts-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Форма входа ── */
+.accounts-form {
+  position: relative;
+  background: #3a3a3a;
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+  animation: mcFormPanelFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.accounts-form-fill {
+  position: absolute;
+  inset: 2px;
+  background: #131313;
+  clip-path: var(--mc-step-clip);
+  pointer-events: none;
+}
+
+.accounts-form > *:not(.accounts-form-fill) {
+  position: relative;
+  z-index: 1;
+}
+
+.accounts-form-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #262626;
+}
+
+.accounts-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: 'Blocks', sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #d6d6d6;
+  background: #262626;
+  border: 2px solid #0f0f0f;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.07), 0 3px 0 0 #0b0b0b;
+  cursor: pointer;
+}
+
+.accounts-back:hover {
+  background: #333333;
+}
+
+.accounts-back:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.07), 0 0 0 0 #0b0b0b;
+}
+
+.accounts-form-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.accounts-form-who img {
+  flex: 0 0 auto;
+}
+
+.accounts-form-who span {
+  font-family: 'Blocks', sans-serif;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accounts-form-step {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #6f6f6f;
+  white-space: nowrap;
+}
+
+.accounts-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+}
+
+.accounts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.accounts-field-label {
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #9c9c9c;
+}
+
+.accounts-field-hint {
+  font-size: 11px;
+  color: #6f6f6f;
+}
+
+/* Поле: рамка — это фон строки, а не border. clip-path срезает border на
+   углах, поэтому рамка через фон даёт честную лесенку без «выкусов». */
+.accounts-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  padding: 2px;
+  background: #2e2e2e;
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip-sm);
+  transition: background 0.14s ease;
+}
+
+.accounts-field-row:focus-within {
+  background: var(--pg-yellow);
+}
+
+.accounts-field-row .mc-input {
+  flex: 1;
+  min-width: 0;
+  background: #0c0c0c;
+  border: none;
+  outline: none;
+  padding: 10px 12px;
+  font-family: 'Blocks', sans-serif;
+  font-size: 13.5px;
+  color: #f2f2f2;
+}
+
+.accounts-field-row .mc-input::placeholder {
+  color: #5f5f5f;
+}
+
+.accounts-field-row .mc-input:disabled {
+  color: #7d7d7d;
+  background: #101010;
+}
+
+/* Кнопка «показать пароль»: квадратная, в тон пиксельным кнопкам. */
+.accounts-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1d1d1d;
+  border: 2px solid #0f0f0f;
+  color: #9a9a9a;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.accounts-eye:hover {
+  background: #2c2c2c;
+  color: var(--pg-yellow);
+}
+
+.accounts-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #ffb3ab;
+  background: #7a241c;
+  border: 2px solid #0f0f0f;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.accounts-error b {
+  display: block;
+  font-family: 'MinecraftTen', 'Blocks', sans-serif;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #ffd9d4;
+  margin-bottom: 2px;
+}
+
+.accounts-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.accounts-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  font-size: 12px;
+  color: #7d7d7d;
+  background: #141414;
+  border: 2px dashed #2b2b2b;
+  clip-path: var(--mc-step-clip-sm);
+}

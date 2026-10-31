@@ -1,0 +1,472 @@
+/* ==========================================================================
+   Страница создания сборки.
+   Сознательно не повторяет язык карточки мода: там обложка с крупным
+   значком, полоса вкладок с жёлтым подчёркиванием и главное действие
+   в шапке. Здесь рабочий экран в языке списка модов: узкий рельс
+   с «хлебными крошками» сверху, две колонки (шаги слева, предпросмотр
+   сборки справа) и панель действий снизу. Композиция, отступы и элементы
+   здесь свои; из общих — только поля McSelect и кубический переключатель.
+   ========================================================================== */
+
+.mcp-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  color: var(--text-1);
+}
+
+/* --- Рельс сверху: назад и крошки --- */
+.mcp-rail {
+  flex: 0 0 46px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 0 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+
+
+
+
+
+
+.mcp-crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Blocks', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #5c5c5c;
+}
+
+.mcp-crumb b {
+  font-weight: 400;
+  color: #e8e8e8;
+}
+
+
+
+
+
+
+
+
+
+/* --- Корпус: форма + предпросмотр, обе колонки скроллятся сами --- */
+.mcp-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mcp-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 304px;
+}
+
+.mcp-form {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 28px 36px 28px;
+}
+
+.mcp-aside {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 20px 32px 20px;
+  background: var(--surface-1);
+  border-left: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* --- Шаг формы: номер, заголовок, поля --- */
+.mcp-step + .mcp-step {
+  margin-top: 24px;
+}
+
+.mcp-step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.mcp-step-num {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: grid;
+  place-items: center;
+  background: #101010;
+  border: 1px solid #343434;
+  color: var(--pg-yellow);
+  font-family: 'Blocks', sans-serif;
+  font-size: 11px;
+}
+
+.mcp-step-title {
+  margin: 0;
+  font-family: 'Blocks', sans-serif;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #efefef;
+}
+
+/* Поля сдвинуты к тексту заголовка, чтобы номер работал висячим маркером. */
+.mcp-step-body {
+  padding: 15px 0 0 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 470px;
+  align-items: flex-start;
+}
+
+.mcp-field-label {
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+
+
+.mcp-name {
+  width: 100%;
+  font-family: 'Blocks', sans-serif;
+  font-size: 13px;
+}
+
+/* Два списка рядом: на узкой ширине они честно переносятся столбиком. */
+.mcp-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  width: 100%;
+}
+
+.mcp-field-row .mcp-field {
+  flex: 1 1 200px;
+}
+
+/* --- Загрузчик: сегменты вместо выпадающего списка --- */
+.mcp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mcp-chip {
+  height: 30px;
+  padding: 0 13px;
+  background: #171717;
+  border: 1px solid #2f2f2f;
+  color: #b1b1b1;
+  font-family: 'Blocks', sans-serif;
+  font-size: 11.5px;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  clip-path: var(--mc-step-clip-sm);
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.mcp-chip:hover:not(:disabled) {
+  background: #1f1f1f;
+  color: #ffffff;
+  border-color: #4c4c4c;
+}
+
+.mcp-chip.on {
+  background: var(--pg-yellow);
+  border-color: #0b0b0b;
+  color: #171200;
+}
+
+.mcp-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* --- Строки-дополнения: вся строка кнопка, справа кубический переключатель --- */
+.mcp-option {
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  text-align: left;
+  background: #171717;
+  border: 1px solid #262626;
+  cursor: pointer;
+  clip-path: var(--mc-step-clip-sm);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.mcp-option:hover:not(:disabled) {
+  background: #1d1d1d;
+  border-color: #474747;
+}
+
+.mcp-option.on {
+  background: #1d1a10;
+  border-color: #6a5710;
+}
+
+.mcp-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mcp-option-title {
+  color: #f0f0f0;
+  font-size: 13px;
+}
+
+
+
+.mcp-option .mods-switch {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* --- Значки --- */
+.mcp-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 42px);
+  gap: 7px;
+}
+
+.mcp-tile {
+  width: 42px;
+  height: 42px;
+  padding: 3px;
+  box-sizing: border-box;
+  background: #101010;
+  border: 1px solid #2b2b2b;
+  object-fit: cover;
+  image-rendering: auto;
+  cursor: pointer;
+  transition: border-color 0.1s ease;
+}
+
+.mcp-tile:hover {
+  border-color: #6d6d6d;
+}
+
+.mcp-tile.on {
+  border-color: var(--pg-yellow);
+  background: #241f08;
+  box-shadow: inset 0 0 0 1px rgba(241, 196, 15, 0.4);
+}
+
+.mcp-tile-add {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: #101010;
+  border: 1px dashed #4c4c4c;
+  color: #9a9a9a;
+  cursor: pointer;
+  transition: color 0.1s ease, border-color 0.1s ease;
+}
+
+.mcp-tile-add:hover {
+  color: var(--pg-yellow);
+  border-color: var(--pg-yellow);
+}
+
+/* --- Правая колонка: предпросмотр и готовность --- */
+.mcp-aside-group {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.mcp-aside-title {
+  font-family: 'Blocks', sans-serif;
+  font-size: 10.5px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.mcp-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: #101010;
+  border: 1px solid #2b2b2b;
+  clip-path: var(--mc-step-clip);
+}
+
+.mcp-card-icon {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 52px;
+  display: grid;
+  place-items: center;
+  background: #161616;
+  border: 1px solid #333333;
+}
+
+.mcp-card-icon img {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  image-rendering: auto;
+}
+
+.mcp-card-info {
+  min-width: 0;
+}
+
+.mcp-card-name {
+  font-family: 'Blocks', sans-serif;
+  font-size: 13px;
+  color: #ffffff;
+  overflow-wrap: break-word;
+}
+
+.mcp-card-meta {
+  margin-top: 5px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+}
+
+.mcp-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.mcp-badge {
+  padding: 2px 6px;
+  font-size: 10px;
+  color: #8f8f8f;
+  background: #151515;
+  border: 1px solid #343434;
+}
+
+.mcp-badge.on {
+  color: var(--pg-yellow);
+  background: #1e1a0d;
+  border-color: #6a5710;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- Панель действий снизу --- */
+.mcp-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border-soft);
+}
+
+
+
+.mcp-footer-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+/* Финальное действие крупнее обычных кнопок списка модов. */
+.mcp-footer .mods-btn-primary,
+.mcp-footer .mods-btn-ghost {
+  height: 38px;
+  padding: 0 18px;
+  font-size: 12.5px;
+}
+
+.mcp-spin {
+  animation: mcp-spin-turn 0.9s linear infinite;
+}
+
+@keyframes mcp-spin-turn {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+
+/* Во время создания кнопка занята, но текст с спиннером должен читаться. */
+.mcp-footer .mods-btn-primary.busy:disabled {
+  opacity: 1;
+  background: var(--pg-yellow-dark);
+  color: #171200;
+}
+
+@media (max-width: 900px) {
+  /* Одна колонка: и форма, и предпросмотр едут в общем потоке, иначе
+     короткая колонка формы резала бы шаги ниже сгиба. */
+  .mcp-body {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .mcp-form,
+  .mcp-aside {
+    overflow: visible;
+    flex: 0 0 auto;
+  }
+
+  .mcp-aside {
+    border-left: none;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .mcp-step-body {
+    padding-left: 0;
+  }
+}

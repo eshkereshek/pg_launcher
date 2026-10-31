@@ -1,0 +1,37 @@
+/* Хеллоуинский декор: тыква сидит на кнопке «Играть» и маленькая тыква в
+   заголовке рекомендаций. Ни паутины, ни слоя поверх окна. */
+
+/* Базовый рисунок. Идёт первым, чтобы варианты ниже могли задать свой размер:
+   у них такое же специфичность, решает порядок в файле. */
+.hw-pumpkin-img {
+  display: block;
+  /* Рисунок побайтовый — сглаживание превращает его в кашу. */
+  image-rendering: pixelated;
+}
+
+/* Посажена на верхний край плитки: слегка наезжает на неё справа. Клики не
+   ловит — обработчик висит на контейнере кнопки. */
+.hw-pumpkin-on-play {
+  position: absolute;
+  top: -21px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  z-index: 3;
+  pointer-events: none;
+  transform: rotate(-7deg);
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45));
+  transition: transform 0.14s ease;
+}
+
+.jl-play-btn-wrapper:hover .hw-pumpkin-on-play {
+  transform: rotate(5deg) translateY(-1px);
+}
+
+/* Тыква в строке заголовка — рядом с текстом, размер фиксирован. */
+.hw-pumpkin-inline {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}

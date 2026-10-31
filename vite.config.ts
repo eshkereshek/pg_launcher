@@ -1,47 +1,45 @@
 import { defineConfig } from 'vite'
-import path from 'node:path'
-import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
+
+declare const process: any;
+
+const host = process.env.TAURI_DEV_HOST
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  plugins: [react()],
+  clearScreen: false,
   server: {
-    host: '127.0.0.1',
+    host: host || false,
+    port: 1420,
+    strictPort: true,
+    hmr: host
+      ? {
+          protocol: 'ws',
+          host,
+          port: 1421,
+        }
+      : undefined,
     watch: {
-      ignored: ['**/dist-build/**', '**/dist/**', '**/dist-electron/**', '**/release/**']
+      ignored: ['**/src-tauri/**'],
     },
     proxy: {
       '/api-elyby-textures': {
         target: 'https://skinsystem.ely.by',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api-elyby-textures/, '')
+        rewrite: (path) => path.replace(/^\/api-elyby-textures/, ''),
       },
       '/api-elyby-storage': {
         target: 'https://ely.by',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api-elyby-storage/, '')
-      }
-    }
+        rewrite: (path) => path.replace(/^\/api-elyby-storage/, ''),
+      },
+    },
   },
-  plugins: [
-    react(),
-    electron({
-      main: {
-        // Shortcut of `build.lib.entry`.
-        entry: 'electron/main.ts',
-      },
-      preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: path.join(__dirname, 'electron/preload.ts'),
-      },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer: process.env.NODE_ENV === 'test'
-        ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-          undefined
-        : {},
-    }),
-  ],
+  envPrefix: ['VITE_', 'TAURI_ENV_*'],
+  build: {
+    target: process.env.TAURI_ENV_PLATFORM == 'windows' ? 'chrome105' : 'safari13',
+    minify: !process.env.TAURI_ENV_DEBUG,
+    sourcemap: !!process.env.TAURI_ENV_DEBUG,
+  },
 })

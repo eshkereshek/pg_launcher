@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Интерфейс
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      # Проверяем только то, что попадает в сборку. Уязвимость в dev-
+      # зависимости (vite, транспилятор) не должна останавливать релиз, а вот
+      # в рантайме — должна.
+      - name: Аудит рантайм-зависимостей
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Сборка интерфейса
+        run: npm run build
+
+  rust:
+    name: Rust
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Установка зависимостей
+        run: npm ci
+
+      # Тесты живут в pagrysha-core: у него нет Tauri, поэтому его тестовый
+      # бинарник запускается. Тестовые цели приложения выключены в Cargo.toml.
+      - name: Проверка форматирования
+        working-directory: src-tauri
+        run: cargo fmt --all --check
+
+      - name: Тесты
+        working-directory: src-tauri
+        run: cargo test --workspace
+
+      - name: Проверка всех целей
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: Сборка приложения
+        run: npx tauri build --debug --no-bundle

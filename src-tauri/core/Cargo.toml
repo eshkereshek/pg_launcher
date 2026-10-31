@@ -1,0 +1,17 @@
+[package]
+name = "pagrysha-core"
+version = "7.2.1"
+edition = "2021"
+description = "Pagrysha Launcher: загрузки, пути и проверки без Tauri"
+publish = false
+
+[dependencies]
+dirs = "5"
+futures-util = "0.3"
+regex = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde_json = "1"
+sha1 = "0.10"
+sha2 = "0.10"
+url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }

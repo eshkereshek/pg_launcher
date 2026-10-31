@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 32 32" shape-rendering="crispEdges" role="img" aria-labelledby="title desc">
+<title id="title">Пиксельная тыква</title>
+<desc id="desc">Блочная оранжевая тыква в стиле Minecraft, с вырезанным лицом и зелёным стеблем. Прозрачный фон.</desc>
+<!-- Stem -->
+<path fill="#30391b" d="M15 2h5v2h-1v4h-5V4h1z"/>
+<path fill="#637132" d="M15 3h3v2h-1v3h-2z"/>
+<path fill="#899044" d="M15 3h2v2h-2z"/>
+<!-- Block silhouette and top plane -->
+<path fill="#60320f" d="M11 6h11v1h3v2h3v3h1v14h-2v2h-5v1H9v-1H5v-2H3V12h1V9h3V7h4z"/>
+<path fill="#ec8d1c" d="M11 7h11v1h3v2h2v2H5v-2h3V8h3z"/>
+<path fill="#ffaf32" d="M11 8h3v2H9v1H6v-1h3V9h2zM19 8h3v1h2v2h-3v-1h-2z"/>
+<path fill="#b45c0d" d="M14 8h5v2h-5zM11 10h3v2h-3zM19 10h3v2h-3z"/>
+<!-- Front and side faces -->
+<path fill="#e98315" d="M4 12h19v15H9v-1H5v-1H4z"/>
+<path fill="#b6590d" d="M23 12h5v13h-2v2h-3z"/>
+<path fill="#ce6a0e" d="M24 13h2v11h-1v2h-1z"/>
+<!-- Vertical pixel ribs -->
+<path fill="#f69a23" d="M5 13h2v11H5zM10 12h2v14h-2zM17 12h2v15h-2z"/>
+<path fill="#d16b0d" d="M8 12h1v14H8zM14 12h2v15h-2zM21 12h2v15h-2z"/>
+<path fill="#ffb53b" d="M5 13h2v2H5zM10 12h2v2h-2zM17 12h2v2h-2z"/>
+<!-- Carved eyes -->
+<path fill="#67300d" d="M6 15h5v4H6zM16 15h5v4h-5z"/>
+<path fill="#281b13" d="M6 15h5v3H6zM16 15h5v3h-5z"/>
+<path fill="#faaf29" d="M7 18h4v1H7zM17 18h4v1h-4z"/>
+<!-- Nose -->
+<path fill="#71330d" d="M12 18h3v3h-3z"/>
+<path fill="#302014" d="M13 18h2v2h-2z"/>
+<!-- Stepped carved mouth -->
+<path fill="#75350d" d="M6 21h3v2h3v-1h3v1h3v-2h3v4h-2v1H8v-1H6z"/>
+<path fill="#2b1c13" d="M6 21h2v3h4v-2h3v2h4v-3h2v3h-2v1H8v-1H6z"/>
+<path fill="#ffad28" d="M9 25h9v1H9z"/>
+<!-- Lower edge -->
+<path fill="#a94d0b" d="M5 25h2v1h3v1h13v1H9v-1H5z"/>
+</svg>

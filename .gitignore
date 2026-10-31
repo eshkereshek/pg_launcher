@@ -1,32 +1,25 @@
-# Logs
-logs
-*.log
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-*.class
-*.java
-public/2026-*.png
 
-node_modules
-dist
-dist-ssr
-*.local
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/schemas/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Артефакты сборки установщика. Всё это пересоздаёт `npm run build:setup`.
+Pagrysha_Launcher_Setup.exe
+Pagrysha_Setup.exe
+WebView2Loader.dll
+installer_res.o
 
-dist-build
+# Кадры старой анимации: сам GIF из проекта убран, папка больше не нужна
+# в сборке, но лежит на диске (79 МБ) — в репозиторий её не кладём.
+raw_swim_frames/
 
-release
-dist-electron
+# Окружение
+.env
+.env.*
+!.env.example

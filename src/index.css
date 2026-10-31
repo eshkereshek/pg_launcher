@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
-
 @font-face {
   font-family: 'Blocks';
   src: url('/fonts/Blocks-Regular.woff2') format('woff2');
@@ -18,30 +16,129 @@
   --pg-text: #ffffff;
   --pg-text-muted: #888;
   --pg-accent: #e67e22;
+
+  /* Уровни поверхностей: рабочие экраны и панели всегда непрозрачные */
+  --surface-0: #141414;
+  --surface-1: #1a1a1a;
+  --surface-2: #202020;
+  --surface-3: #262626;
+  --border-soft: #2a2a2a;
+  --text-1: #f2f2f2;
+  --text-2: #a3a3a3;
+  --text-3: #6f6f6f;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  outline: none !important;
 }
 
-*:focus, *:focus-visible, *:focus-within {
-  outline: none !important;
+/* Чекбоксы лаунчера.
+   Раньше «вдавленный» вид был только у группы настроек, а строки вида
+   .settings-check рисовались системным квадратом через accent-color —
+   отсюда и разъехавшийся вид. Правило общее, как в mc-launcher:
+   тёмный вдавленный квадрат с пиксельной жёлтой галочкой. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  /* Квадрат темнее панели и со светлой внутренней фаской снизу-справа:
+     на тёмных карточках настроек пустой чекбокс иначе почти не виден. */
+  background: #0f0f0f;
+  border: 2px solid #000000;
+  box-shadow:
+    inset -2px -2px 0 rgba(255, 255, 255, 0.12),
+    inset 2px 2px 0 rgba(0, 0, 0, 0.6);
+  image-rendering: pixelated;
+}
+
+input[type="checkbox"]:hover {
+  background: #171717;
+}
+
+input[type="checkbox"]:active {
+  background: #090909;
+}
+
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  width: 2px;
+  height: 2px;
+  background: var(--pg-yellow);
+  top: 7px;
+  left: 2px;
+  box-shadow:
+    2px 2px 0 var(--pg-yellow),
+    4px 2px 0 var(--pg-yellow),
+    6px 0 0 var(--pg-yellow),
+    8px -2px 0 var(--pg-yellow),
+    10px -4px 0 var(--pg-yellow),
+    /* тень галочки */
+    0 2px 0 #d4ac0d,
+    2px 4px 0 #d4ac0d,
+    4px 4px 0 #d4ac0d,
+    6px 2px 0 #d4ac0d,
+    8px 0 0 #d4ac0d,
+    10px -2px 0 #d4ac0d;
+}
+
+/* Галочка появляется с коротким «подскоком» — как в mc-launcher. */
+@keyframes mcCheckPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+input[type="checkbox"]:checked::after {
+  animation: mcCheckPop 0.16s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+  transform-origin: 2px 5px;
+}
+
+/* Фокус-ринг возвращаем: без него интерфейсом нельзя пользоваться с клавиатуры */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--pg-yellow);
+  outline-offset: 2px;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #151515;
+  font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+  color: var(--pg-text);
+  user-select: none;
 }
 
 #root {
-  width: 100vw;
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
-  background-color: var(--pg-black);
-  color: var(--pg-text);
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
-  user-select: none;
 }
 
 .app-container.tl-style {
@@ -394,6 +491,8 @@ body {
   border: none;
   color: var(--pg-text-muted);
   cursor: pointer;
+  font-family: 'Blocks', sans-serif;
+  font-size: 14px;
 }
 .modal-close:hover { color: var(--pg-yellow); }
 
@@ -534,14 +633,6 @@ body {
   gap: 15px;
   color: #555;
   font-size: 16px;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
 }
 
 /* Custom Minecraft Scrollbar */
@@ -754,9 +845,13 @@ body {
 }
 
 /* Secondary / Dark Buttons */
+/* Серые кнопки: текст белый. Без !important — кнопки, которые красят надпись
+   инлайном (жёлтый перевод, выделенные состояния), должны перекрывать это
+   правило. */
 .hover-scale-btn,
 .mc-btn-secondary,
 .jl-bottom-btn.outlined {
+  color: #ffffff;
   font-family: 'Blocks', sans-serif !important;
   text-transform: uppercase !important;
   border: 2px solid #000000 !important;
@@ -824,40 +919,68 @@ body {
   display: flex;
   align-items: center;
   gap: 15px;
-  background: #151515;
-  border: 1px solid #333;
+  /* Рамку рисует фон, заливку — слой ::before с тем же ступенчатым контуром.
+     Обычный border здесь не годится: clip-path срезает его на углах и рамка
+     рвётся, оставляя «выкушенные» углы вместо лесенки. */
+  background: #3a3a3a;
+  border: none;
+  border-radius: 0;
   padding: 10px 15px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s ease;
   position: relative;
 }
-.mc-acc-type-btn:hover {
-  background: #222;
-  border-color: #555;
-}
-.mc-acc-type-btn.selected {
-  background: #252525;
-  border-color: #666;
-  box-shadow: inset 0 0 0 1px #444;
-}
-.mc-acc-type-btn::before, .mc-acc-type-btn::after {
+.mc-acc-type-btn::before {
   content: '';
   position: absolute;
-  width: 4px;
-  height: 4px;
-  background: #111;
+  inset: 1px;
+  background: #151515;
+  clip-path: var(--mc-step-clip-sm);
+  pointer-events: none;
+  transition: background 0.15s ease;
 }
-.mc-acc-type-btn::before { top: 0; left: 0; }
-.mc-acc-type-btn::after { bottom: 0; right: 0; }
+.mc-acc-type-btn > * {
+  position: relative;
+  z-index: 1;
+}
+.mc-acc-type-btn:hover {
+  background: #565656;
+}
+.mc-acc-type-btn:hover::before {
+  background: #222222;
+}
+.mc-acc-type-btn.selected {
+  background: #6d6d6d;
+}
+.mc-acc-type-btn.selected::before {
+  background: #252525;
+}
+/* Углы-ступеньки задаются общим правилом в pixel-corners.css: раньше здесь
+   стояли два тёмных квадрата по 4 px, которые лишь имитировали срез. */
+
 
 .mc-acc-icon-box {
   width: 48px;
   height: 48px;
-  background: #111;
-  border: 1px solid #333;
+  background: #3a3a3a;
+  border: none;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+.mc-acc-icon-box::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  background: #111111;
+  clip-path: var(--mc-step-clip-sm);
+  pointer-events: none;
+}
+.mc-acc-icon-box > * {
+  position: relative;
+  z-index: 1;
 }
 .mc-acc-text {
   display: flex;
@@ -878,23 +1001,64 @@ body {
 }
 .mc-acc-arrow {
   font-size: 20px;
-  color: #3498db;
+  /* Жёлтая стрелка в тон акцентам лаунчера. */
+  color: var(--pg-yellow);
   font-family: 'Blocks', sans-serif;
   font-weight: bold;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  transition: transform 0.15s ease;
+}
+.mc-acc-type-btn:hover .mc-acc-arrow {
+  transform: translateX(3px);
 }
 
 /* Account Dropdown Sidebar Styling */
 .account-dropdown-item {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 12px 20px;
+  gap: 10px;
+  padding: 10px 12px;
   cursor: pointer;
   transition: background 0.15s;
 }
 .account-dropdown-item:hover {
   background-color: #2a2a2a !important;
 }
+.account-dropdown-manage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--pg-dark3);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.account-dropdown-manage-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ccc;
+  font-size: 13px;
+  font-family: "Blocks", sans-serif;
+}
+
+.account-dropdown-manage-arrow {
+  color: #888;
+  font-size: 14px;
+  font-family: "Blocks", sans-serif;
+}
+
+/* Просто жёлтая цифра: сколько аккаунтов осталось за пределами списка. */
+.account-dropdown-count {
+  color: var(--pg-yellow);
+  font-family: "Blocks", sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.account-dropdown-manage:hover .account-dropdown-count {
+  color: #ffd84d;
+}
+
 .account-dropdown-item.active {
   background-color: #4b3d12;
 }
@@ -920,3 +1084,4 @@ body {
 .mc-acc-form-panel {
   animation: mcFormPanelFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+

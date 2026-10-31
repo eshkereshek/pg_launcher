@@ -2,10 +2,15 @@ import React, { useState, useEffect } from 'react'
 import { useTranslation } from './i18n'
 import { Star } from 'lucide-react'
 import { McSelect } from './McSelect'
+import { ProjectArt } from './ProjectArt'
+import { formatCount, projectLoaderLabel } from './projectMeta'
+import { showOk, showError, errorText } from './Toasts'
+import ModViewer from './ModViewer'
+import IconImg from './IconImg'
 
-export default function ModpacksMenu({ currentVersion, opacity = 95 }: { currentVersion: string, opacity?: number }) {
+export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuery = '' }: { currentVersion: string, opacity?: number, initialQuery?: string }) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery)
   const [versionFilter, setVersionFilter] = useState('all')
   const [loaderFilter, setLoaderFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -14,22 +19,73 @@ export default function ModpacksMenu({ currentVersion, opacity = 95 }: { current
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [downloading, setDownloading] = useState<Record<string, boolean>>({})
-  const [bgImage, setBgImage] = useState<string | null>(() => localStorage.getItem('mc_sec_bg_data'))
+  const [downloadStatus, setDownloadStatus] = useState<Record<string, string>>({})
+
+  // Карточка сборки, открытая на просмотр, и имена уже установленных сборок:
+  // по ним понятно, что ставить не нужно.
+  const [viewer, setViewer] = useState<any>(null)
+  const [installed, setInstalled] = useState<Record<string, boolean>>({})
 
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [isFetchingMore, setIsFetchingMore] = useState(false)
 
-  // Listen to secondary background changes
+  // Listen to download progress
   useEffect(() => {
-    const updateBg = () => {
-      const customBg = localStorage.getItem('mc_sec_bg_data')
-      setBgImage(customBg || null)
+    let unlisten: (() => void) | undefined
+    let cancelled = false
+
+    // @ts-ignore
+    if (window.electronAPI && window.electronAPI.onDownloadUpdate) {
+      // @ts-ignore
+      Promise.resolve(window.electronAPI.onDownloadUpdate((data: any) => {
+        if (data && data.name) {
+          setDownloadStatus(prev => ({ ...prev, [data.name]: data.text || `${data.progress}%` }))
+        }
+      })).then((fn: any) => {
+        // Слушатель мог прийти уже после размонтирования
+        if (cancelled) { if (typeof fn === 'function') fn(); return }
+        unlisten = fn
+      }).catch(() => {})
     }
-    updateBg()
-    window.addEventListener('storage', updateBg)
-    return () => window.removeEventListener('storage', updateBg)
+
+    return () => {
+      cancelled = true
+      if (typeof unlisten === 'function') unlisten()
+    }
   }, [])
+
+  /** Имена собранных сборок: их держит бэкенд в modpacks.json. */
+  const loadInstalled = async () => {
+    try {
+      const list = await (window as any).electronAPI.getModpacks() || []
+      const map: Record<string, boolean> = {}
+      for (const m of list) {
+        // Та же нормализация, что и у карточек каталога.
+        const key = packKey(m)
+        if (key) map[key] = true
+      }
+      setInstalled(map)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    loadInstalled()
+    // Установка сборки из другого места лаунчера тоже должна обновить бейдж.
+    const handler = () => { loadInstalled() }
+    window.addEventListener('modpacks-updated', handler)
+    return () => window.removeEventListener('modpacks-updated', handler)
+  }, [])
+
+  // Имя сборки на диске — это заголовок с запрещёнными символами, заменёнными
+  // на «-». Сравниваем в той же нормализации, иначе «Установлено» не покажется
+  // на сборках вида «Better MC [NEOFORGE] BMC5».
+  const packKey = (pack: any) => String(pack?.name || pack?.title || '')
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .toLowerCase()
+    .trim()
 
   const fetchModpacks = async (
     currentOffset = 0, 
@@ -86,41 +142,62 @@ export default function ModpacksMenu({ currentVersion, opacity = 95 }: { current
     }
   }
 
-  const installModpack = async (modpack: any) => {
+  const installModpack = async (modpack: any, version?: any) => {
     setDownloading(prev => ({ ...prev, [modpack.project_id]: true }))
     try {
-      const loader = modpack.categories?.find((c: string) => ['fabric', 'forge', 'quilt', 'neoforge'].includes(c)) || (loaderFilter !== 'all' ? loaderFilter : 'fabric')
+      // Если версия выбрана в карточке сборки, берём игру и загрузчик из неё:
+      // фильтры списка могут стоять на «любой» версии.
+      const loader = version?.loaders?.[0] || (loaderFilter !== 'all'
+        ? loaderFilter
+        : (modpack.categories?.find((c: string) => ['fabric', 'forge', 'neoforge', 'quilt'].includes(c)) || 'all'))
       const rawName = modpack.title || modpack.name
-      const modpackName = rawName.replace(/[<>:"/\\|?*]/g, '-')
-      const installGameVersion = versionFilter !== 'all' ? versionFilter : currentVersion
-      const result = await (window as any).electronAPI.installModpack(modpack.project_id, installGameVersion, loader, modpackName)
+      const modpackName = rawName.replace(/[<>:"/\\|?*]/g, '-').trim()
+      // 'all' бэкенд понимает как «фильтр по версии не задан» — так и отправляем
+      const installGameVersion = version?.game_versions?.[0] || versionFilter
+
+      const result = await (window as any).electronAPI.installModpack(
+        modpack.project_id,
+        installGameVersion,
+        loader,
+        modpackName,
+        // Пусто — если версия не выбрана в карточке, бэкенд подберёт сам.
+        version?.id || ''
+      )
       
-      const actualVersion = result?.gameVersion || installGameVersion
-      const finalLoader = result?.actualLoader || loader
+      // Реальную версию и загрузчик сообщает бэкенд; хардкод-fallback не используем
+      const actualVersion = result?.gameVersion || (versionFilter !== 'all' ? versionFilter : (modpack.versions?.[0] || ''))
+      const finalLoader = result?.actualLoader || (loader !== 'all' ? loader : '')
       
       const mps = await (window as any).electronAPI.getModpacks() || []
+      const installedMods = await (window as any).electronAPI.getInstalledMods?.(modpackName) || []
       const newMp = {
         name: modpackName,
+        modrinthId: modpack.project_id,
         loader: finalLoader,
         version: actualVersion,
-        installedMods: [],
+        installedMods: installedMods,
         icon: modpack.icon_url || modpack.gallery?.[0] || './iconsblocks/Chest_(inventory)_MCE.png'
       }
-      if (!mps.some((m: any) => m.name === newMp.name)) {
-        mps.push(newMp)
-        await (window as any).electronAPI.saveModpacks(mps)
-      }
 
-      alert(`${t('modpacks.installSuccess').replace('Сборка', 'Сборка ' + modpack.title)}`)
+      const existingIndex = mps.findIndex((m: any) => m.name === newMp.name)
+      if (existingIndex !== -1) {
+        mps[existingIndex] = { ...mps[existingIndex], ...newMp }
+      } else {
+        mps.push(newMp)
+      }
+      await (window as any).electronAPI.saveModpacks(mps)
+      window.dispatchEvent(new CustomEvent('modpacks-updated'))
+
+      showOk(t('modpacks.installedOk', { name: rawName }))
     } catch (e: any) {
-      alert(t('modpacks.error') + ' ' + e.message)
+      showError(t('modpacks.installFailed', { error: errorText(e, t('app.unknownError')) }))
     } finally {
       setDownloading(prev => ({ ...prev, [modpack.project_id]: false }))
     }
   }
 
   return (
-    <div className="modpacks-menu" style={{ backgroundColor: 'transparent', backgroundImage: bgImage ? `url("${bgImage}")` : 'url("./bg-minecraft.png")', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', position: 'relative' }}>
+    <div className="modpacks-menu">
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Top Bar Row 1: Game Version & Loader Filters */}
@@ -211,26 +288,53 @@ export default function ModpacksMenu({ currentVersion, opacity = 95 }: { current
         ) : (
           <>
             {results.map((pack: any) => (
-              <div key={pack.project_id} className="mc-card" style={{ background: `color-mix(in srgb, var(--pg-dark) ${opacity}%, transparent)` }}>
-                <div className="mc-card-header">
-                  <img src={pack.icon_url || pack.gallery?.[0] || 'https://via.placeholder.com/64'} alt="cover" className="mc-card-icon" />
-                  <div className="mc-card-title-area">
-                    <span className="mc-card-title" style={{ fontSize: '18px' }}>{pack.title}</span>
+              <div
+                key={pack.project_id}
+                className="mc-card mc-pack-card"
+                onClick={() => setViewer(pack)}
+                title={t('modpacks.detailsBtn')}
+                style={{ cursor: 'pointer' }}
+              >
+                <ProjectArt project={pack} />
+                <div className="mc-card-body">
+                  <div className="mc-card-header">
+                    <IconImg
+                      src={pack.icon_url}
+                      className="mc-card-icon"
+                      loading="lazy"
+                    />
+                    <div className="mc-card-title-area">
+                      <div className="mc-card-heading">
+                        <span className="mc-card-title">{pack.title}</span>
+                        <span className="mc-card-author">от {pack.author || 'Modrinth'}</span>
+                      </div>
+                      <span className="mc-card-loader">{projectLoaderLabel(pack)}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="mc-card-desc">
-                  {pack.description}
-                </div>
-                <div className="mc-card-footer">
-                  <div className="mc-card-meta">
-                    <span><Star size={10} style={{ display: 'inline' }}/> {pack.follows}</span>
-                    <span>↓ {(pack.downloads || 0).toLocaleString()}</span>
+                  <div className="mc-card-desc">
+                    {pack.description}
                   </div>
-                  {downloading[pack.project_id] ? (
-                    <button className="mc-btn-primary" disabled>{t("modpacks.downloading")}</button>
-                  ) : (
-                    <button className="mc-btn-primary" disabled={Object.values(downloading).some(Boolean)} onClick={() => installModpack(pack)}>{t("modpacks.install")}</button>
-                  )}
+                  <div className="mc-card-footer">
+                    <div className="mc-card-meta">
+                      <span><Star size={10} style={{ display: 'inline' }}/> {formatCount(pack.follows)}</span>
+                      <span>↓ {formatCount(pack.downloads)}</span>
+                    </div>
+                    {downloading[pack.project_id] ? (
+                      <button className="mc-card-btn" disabled onClick={e => e.stopPropagation()}>{t("modpacks.downloading")}</button>
+                    ) : installed[packKey(pack)] ? (
+                      <button className="mc-card-btn installed" disabled title={t('modpacks.alreadyInstalled')}>
+                        {t("mods.isInstalled") || t('modpacks.installedBadge')}
+                      </button>
+                    ) : (
+                      <button
+                        className="mc-card-btn"
+                        disabled={Object.values(downloading).some(Boolean)}
+                        onClick={(e) => { e.stopPropagation(); installModpack(pack) }}
+                      >
+                        {t("modpacks.install")}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -238,6 +342,26 @@ export default function ModpacksMenu({ currentVersion, opacity = 95 }: { current
           </>
         )}
       </div>
+
+      {/* Подробная карточка сборки — тот же просмотрщик, что у модов. */}
+      {viewer && (
+        <ModViewer
+          key={viewer.project_id}
+          mod={viewer}
+          kind="modpack"
+          activeModpack={{
+            version: versionFilter !== 'all' ? versionFilter : (String(currentVersion).match(/\d+\.\d+(\.\d+)?/)?.[0] || ''),
+            loader: loaderFilter !== 'all' ? loaderFilter : '',
+          }}
+          isInstalled={!!installed[packKey(viewer)]}
+          isDownloading={!!downloading[viewer.project_id]}
+          onClose={() => setViewer(null)}
+          onInstall={async (pack: any, _versionId?: string, version?: any) => {
+            await installModpack(pack, version)
+            setViewer(null)
+          }}
+        />
+      )}
     </div>
   )
 }

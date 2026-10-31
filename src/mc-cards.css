@@ -67,201 +67,1226 @@
   outline: none;
 }
 
-
-
 /* Mods Grid */
 .mods-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
-  padding: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(262px, 1fr));
+  /* auto-СЃС‚СЂРѕРєРё РёРЅР°С‡Рµ СЃР¶РёРјР°СЋС‚СЃСЏ РїРѕРґ РІС‹СЃРѕС‚Сѓ РєРѕРЅС‚РµР№РЅРµСЂР° */
+  grid-auto-rows: max-content;
+  gap: 14px;
+  padding: 18px;
   overflow-y: auto;
   align-content: start;
 }
 
-.mc-card {
-  background: var(--pg-dark);
-  border: 3px solid var(--pg-black);
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  box-shadow: 
-    inset 0 3px 0 0 var(--pg-dark3),
-    inset 3px 0 0 0 var(--pg-dark2),
-    inset 0 -6px 0 0 var(--pg-black),
-    inset -3px 0 0 0 var(--pg-black);
+/* Пиксельные углы: одна ступенька 8 px — ровный срез угла, как у панелей
+   в самой игре. Скруглений нет. */
+:root {
+  /* Нейтральная обводка карточек: серая, без цветного акцента. */
+  --mc-card-outline: #4a4a4a;
+  --mc-step-clip: polygon(
+    0 8px,
+    8px 8px,
+    8px 0,
+    calc(100% - 8px) 0,
+    calc(100% - 8px) 8px,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    8px calc(100% - 8px),
+    0 calc(100% - 8px)
+  );
 }
 
-/* Card inner borders mimicking Minecraft frames */
+/* Карточка мода/сборки: широкий баннер сверху, ниже шапка с иконкой, описание
+   и строка фактов. */
+.mc-card {
+  position: relative;
+  /* Рамку рисует фон карточки, а заливка лежит на ::before с тем же срезом.
+     Обычный border при clip-path обрезался бы на ступеньках, и угол выглядел
+     бы «откушенным». */
+  /* Рамка-фаска: 2 px, сверху светлее, снизу темнее — «объёмная» окантовка. */
+  background: linear-gradient(180deg, #737373 0%, #4a4a4a 42%, #262626 100%);
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Жёлтую полосу сверху карточки убрали: при наведении вся рамка становится
+   жёлтой, а без наведения полоса только мешала читаться обложке. */
+
+/* Обводка при наведении — полностью жёлтая, как у карточек «Рекомендуем» на
+   главной. Рамка карточки рисуется фоном (border clip-path срезал бы углы),
+   поэтому достаточно перекрасить градиент рамки. box-shadow обрезается
+   clip-path, поэтому тень даём drop-shadow — она повторяет ступенчатый контур.
+   Заглушки загрузки не подсвечиваем: на них нельзя нажать. */
+.mc-card:not(.server-skeleton):hover {
+  background: linear-gradient(180deg, #ffe066 0%, #f1c40f 45%, #8a6d00 100%);
+  transform: translateY(-2px);
+  box-shadow: none;
+  filter:
+    drop-shadow(0 8px 14px rgba(0, 0, 0, 0.45))
+    drop-shadow(0 0 8px rgba(241, 196, 15, 0.22));
+}
+
+/* Заливка карточки внутри рамки: на 2 px меньше и с тем же срезом. */
 .mc-card::before {
-  display: none;
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  background: linear-gradient(180deg, #1b1b1b 0%, #161616 100%);
+  clip-path: var(--mc-step-clip);
+  pointer-events: none;
+}
+
+/* Содержимое — над заливкой; жёлтая полоса сверху — над содержимым. */
+.mc-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Обложка проекта: широкий кадр 2:1, как в каталоге Millida. Если широкого
+   кадра нет — размытая копия иконки фоном и резкая иконка по центру. */
+.project-art {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+  background: #101010;
+  flex: 0 0 auto;
+}
+
+/* Баннер не заходит на рамку карточки — иначе сверху фаска пропадала бы.
+   Тот же срез по углам обязателен: прямоугольный баннер закрывал собой
+   диагональ рамки в верхних углах, и обводка там обрывалась. */
+.mc-card > .project-art {
+  width: calc(100% - 4px);
+  margin: 2px 2px 0;
+  clip-path: var(--mc-step-clip);
+}
+
+.project-art-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.mc-card:hover .project-art-img {
+  transform: scale(1.03);
+}
+
+.project-art.is-icon {
+  background: radial-gradient(120% 120% at 50% 40%, #222222 0%, #0f0f0f 100%);
+}
+
+.project-art-bg {
+  position: absolute;
+  inset: -20%;
+  width: 140%;
+  height: 140%;
+  object-fit: cover;
+  filter: blur(24px) saturate(1.2);
+  opacity: 0.55;
+}
+
+.project-art-ic {
+  position: relative;
+  display: block;
+  width: 38%;
+  height: 100%;
+  margin: 0 auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+}
+
+/* Тело карточки — отдельная подложка под баннером. */
+.mc-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px 12px;
 }
 
 .mc-card-header {
   display: flex;
-  gap: 15px;
+  gap: 10px;
   align-items: flex-start;
+  min-width: 0;
   z-index: 1;
 }
 
+/* Иконка «сидит» на стыке баннера и тела карточки: половина над баннером.
+   Отрицательный margin = половина высоты + верхний padding тела, поэтому
+   центр иконки ровно на границе, а карточка остаётся компактной. */
 .mc-card-icon {
-  width: 50px;
-  height: 50px;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  margin-top: -33px;
   object-fit: cover;
   image-rendering: pixelated;
-  background: var(--pg-black);
-  border: 2px solid var(--pg-dark);
+  background: #0d0d0d;
+  border: 2px solid #0b0b0b;
+  /* Рамка: серая окантовка по контуру, светлая фаска внутри и тень под ней. */
+  box-shadow:
+    0 0 0 2px var(--mc-card-outline),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 6px 14px rgba(0, 0, 0, 0.55);
 }
 
 .mc-card-title-area {
   flex: 1;
+  min-width: 0;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: flex-start;
+  gap: 4px;
+}
+
+.mc-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
 }
 
 .mc-card-title {
-  font-size: 16px;
-  color: var(--pg-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 13px;
+  color: var(--text-1);
   text-transform: uppercase;
-  line-height: 1.2;
+  line-height: 1.25;
   font-family: 'Blocks', sans-serif;
+  letter-spacing: 0.2px;
 }
+
+.mc-card-author {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  line-height: 1.2;
+  color: #868686;
+}
+
 .mc-card-loader {
-  font-size: 12px;
-  color: var(--pg-text-muted);
+  align-self: flex-start;
+  padding: 1px 6px;
+  background: rgba(241, 196, 15, 0.08);
+  border: 1px solid rgba(241, 196, 15, 0.3);
+  border-radius: 4px;
+  color: #d9b53c;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  line-height: 1.5;
 }
 
 .mc-card-more {
-  background: var(--pg-dark);
-  border: 2px solid var(--pg-dark2);
-  color: var(--pg-text);
+  position: static;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  margin-left: auto;
+  background: #171717;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  color: #9a9a9a;
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 2px 5px;
   font-size: 10px;
+  line-height: 1.4;
+  z-index: 3;
+}
+
+.mc-card-more:hover {
+  background: #222;
+  color: #fff;
 }
 
 .mc-card-desc {
-  font-size: 13px;
-  color: var(--pg-text-muted);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.45;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 34px;
   z-index: 1;
 }
 
 .mc-card-categories {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  min-height: 20px;
   z-index: 1;
 }
+
 .mc-card-cat-icon {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
   object-fit: contain;
+  background: #141414;
+  border: 1px solid #292929;
+  border-radius: 4px;
+  opacity: 0.9;
 }
 
 .mc-card-footer {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
+  gap: 10px;
   margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #242424;
   z-index: 1;
 }
 
 .mc-card-meta {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--pg-text-muted);
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-3);
 }
 
-/* Servers Menu Styles */
-.servers-menu {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background-size: cover;
-  background-position: center;
-  overflow: hidden;
+.mc-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  background: #141414;
+  border: 1px solid #262626;
+  border-radius: 4px;
+  color: #8f8f8f;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
-.servers-content {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-  padding: 20px;
-  overflow-y: auto;
+/* РљРѕРјРїР°РєС‚РЅР°СЏ РєРЅРѕРїРєР° СѓСЃС‚Р°РЅРѕРІРєРё вЂ” РЅРµ СЃРїРѕСЂРёС‚ СЃ РєСЂСѓРїРЅС‹РјРё Р¶С‘Р»С‚С‹РјРё РєРЅРѕРїРєР°РјРё СЌРєСЂР°РЅРѕРІ */
+/* Кнопка карточки — пиксельная, с «подошвой»: светлая фаска сверху, тёмная
+   снизу и 4 px тёмного выступа под ней. При нажатии кнопка утапливается
+   ровно на высоту выступа, тень исчезает — как в самой игре. */
+.mc-card-btn {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--pg-yellow);
+  border: 2px solid #0b0b0b;
+  border-radius: 0;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22),
+    0 4px 0 0 #0b0b0b;
+  color: #171200;
+  font-family: 'Blocks', sans-serif;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s ease;
+}
+
+.mc-card-btn:hover:not(:disabled) {
+  background: #f6cd25;
+}
+
+.mc-card-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3),
+    0 0 0 0 #0b0b0b;
+}
+
+.mc-card-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* «Установлено» — серый, а не зелёный: это спокойный статус, а не успех
+   операции. Зелёный перетягивал на себя внимание с карточки. */
+.mc-card-btn.installed {
+  background: #262626;
+  border: 2px solid #0f0f0f;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+  /* Серая кнопка — белый текст: серый на сером фоне читался плохо. */
+  color: #ffffff;
+  cursor: default;
+}
+
+/* Подсвечивать нельзя, но и тонуть от общей полупрозрачности он не должен. */
+.mc-card-btn.installed:disabled {
+  opacity: 1;
+}
+
+/* Сборка: шапка чуть крупнее модовой, описание тоже в две строки. */
+.mc-pack-card .mc-card-icon {
+  width: 50px;
+  height: 50px;
+  flex-basis: 50px;
+  /* 50 / 2 + 10 px верхнего padding = 35 */
+  margin-top: -35px;
+}
+
+.mc-pack-card .mc-card-title {
+  font-size: 14px;
+}
+
+.mc-pack-card .mc-card-desc {
+  -webkit-line-clamp: 2;
+}
+
+/* РЎРµС‚РєР° РєР°СЂС‚РѕС‡РµРє СЃРµСЂРІРµСЂРѕРІ: РЅРµ РґР°С‘Рј СЃС‚СЂРѕРєР°Рј СЃР¶РёРјР°С‚СЊСЃСЏ РїРѕ РІС‹СЃРѕС‚Рµ РєРѕРЅС‚РµР№РЅРµСЂР° */
+.mc-cards-grid {
+  grid-auto-rows: max-content;
   align-content: start;
 }
 
-.server-card {
-  background: var(--pg-dark);
-  border: 2px solid var(--pg-dark2);
-  padding: 15px;
+/* в”Ђв”Ђ РЈСЃС‚Р°РЅРѕРІРєРё: РІРєР»Р°РґРєРё, РµРґРёРЅР°СЏ РїР°РЅРµР»СЊ, СЃС‚СЂРѕРєРё в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
+.mods-menu {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  min-height: 0;
+  background: var(--surface-0);
+  overflow: hidden;
   position: relative;
-  transition: transform 0.2s, background 0.2s;
 }
 
-.server-card:hover {
-  transform: translateY(-2px);
-  background: var(--pg-dark2);
-}
-
-.server-card::before {
-  display: none;
-}
-
-.server-card-header {
+/* Подсветка при перетаскивании модов в окно */
+.mods-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  z-index: 1;
+  justify-content: center;
+  background: rgba(15, 15, 16, 0.82);
+  border: 2px dashed var(--pg-yellow);
+  pointer-events: none;
 }
 
-.server-card-title {
-  font-size: 18px;
-  font-family: 'MinecraftTen', sans-serif;
-  color: var(--pg-text);
-  text-transform: uppercase;
-  text-shadow: 2px 2px 0px rgba(0,0,0,0.3);
-}
-
-.server-card-desc {
-  font-size: 13px;
-  color: var(--pg-text-muted);
+.mods-drop-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  font-family: "Blocks", sans-serif;
+  font-size: 12px;
   line-height: 1.4;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--pg-yellow);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.85);
+}
+
+.mods-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.mods-pack {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mods-pack-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border: 1px solid #333;
+  background: #161616;
+  display: grid;
+  place-items: center;
+}
+
+.mods-pack-icon img {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.mods-pack-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mods-pack-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mods-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: #171717;
+  border: 1px solid #2c2c2c;
+  color: #b9b9b9;
+  cursor: pointer;
+}
+
+.mods-icon-btn:hover {
+  background: #212121;
+  color: #fff;
+}
+
+.mods-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mods-btn-primary {
+  height: 34px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--pg-yellow);
+  border: 1px solid #000;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), inset 0 -3px 0 var(--pg-yellow-dark);
+  color: #171200;
+  font-family: 'Blocks', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+}
+
+.mods-btn-primary:hover:not(:disabled) {
+  background: #f6cd25;
+}
+
+.mods-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mods-btn-ghost {
+  height: 34px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #9c9c9c;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mods-btn-ghost:hover {
+  color: #fff;
+  background: #1b1b1b;
+  border-color: #292929;
+}
+
+.mods-tabs {
+  height: 48px;
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Вкладка — маленькая карточка: тот же ступенчатый срез (--mc-step-clip),
+   что у карточек модов и сборок, и такая же двухцветная рамка. Рамку рисует
+   фон кнопки, заливку — ::before с тем же срезом: обычный border на ступеньках
+   обрезался бы и угол выглядел «откушенным». */
+.mods-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  background: linear-gradient(180deg, #555555 0%, #3a3a3a 45%, #1f1f1f 100%);
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+  color: #9a9a9a;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.mods-tab::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  z-index: 0;
+  background: #1a1a1a;
+  clip-path: var(--mc-step-clip);
+  transition: background-color 0.12s ease;
+  pointer-events: none;
+}
+
+.mods-tab > * {
+  position: relative;
   z-index: 1;
+}
+
+.mods-tab:hover {
+  color: #e4e4e4;
+}
+
+.mods-tab:hover::before {
+  background: #232323;
+}
+
+/* Активная вкладка — жёлтая рамка, как подсветка карточки при наведении. */
+.mods-tab.active {
+  color: #ffffff;
+  background: linear-gradient(180deg, #f1c40f 0%, #c9a30b 58%, #8a6d00 100%);
+}
+
+.mods-tab.active::before {
+  background: #2b2b2b;
+}
+
+.mods-tab.active .mods-count {
+  background: #3a3a3a;
+  border-color: #4d4d4d;
+  color: #ffffff;
+}
+
+.mods-count {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  background: #262626;
+  border: 1px solid #333;
+  color: #b9b9b9;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.mods-tabs-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.mods-toolbar {
+  height: 56px;
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 22px;
+}
+
+.mods-search {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: #0e0e0e;
+  border: 1px solid #292929;
+  color: #777;
+}
+
+.mods-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: #e8e8e8;
+  font: inherit;
+  font-size: 12px;
+}
+
+.mods-search input::placeholder {
+  color: #666;
+}
+
+.mods-search-clear {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.mods-search-clear:hover {
+  color: #fff;
+}
+
+.mods-installed {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 22px 18px;
+  overflow: hidden;
+}
+
+.mods-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Строка установленного мода: те же ступенчатые углы и серая обводка, что у
+   карточек каталога. Рамка — фон строки, заливка — на ::before. */
+/* Разделы списка установленного: моды, ресурспаки, шейдеры.
+   Заголовок отделяет категорию внутри одного прокручиваемого списка. */
+.mods-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mods-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 7px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.mods-section-title {
+  font-family: 'Blocks', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.mods-section-count {
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #171717;
+  border: 1px solid #2f2f2f;
+  color: #9a9a9a;
+  font-size: 10.5px;
+}
+
+.mods-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+  /* Обводка строки заметно тише, чем у карточек: это список, а не витрина. */
+  background: #2f2f2f;
+  border: none;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip);
+}
+
+.mods-row::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  background: var(--surface-1);
+  clip-path: var(--mc-step-clip);
+  pointer-events: none;
+}
+
+.mods-row > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mods-row:hover {
+  background: #3d3d3d;
+}
+
+.mods-row:hover::before {
+  background: #1e1e1e;
+}
+
+.mods-row.disabled {
+  opacity: 0.55;
+}
+
+.mods-row-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  background: #141414;
+  border: 2px solid #0b0b0b;
+  /* Та же рамка, что у иконок карточек, но в меньшем масштабе. */
+  box-shadow:
+    0 0 0 2px #2b2b2b,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: #c9c9c9;
+  font-family: 'Blocks', sans-serif;
+  font-size: 15px;
+  overflow: hidden;
+}
+
+/* Иконка из манифеста мода: пропорции сохраняем, апскейл — без сглаживания. */
+.mods-row-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  display: block;
+}
+
+.mods-row-info {
+  min-width: 0;
   flex: 1;
 }
 
-.server-card-footer {
+.mods-row-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ececec;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mods-row.disabled .mods-row-name {
+  text-decoration: line-through;
+  color: #8f8f8f;
+}
+
+.mods-row-meta {
+  font-size: 10.5px;
+  color: #7f7f7f;
+  margin-top: 3px;
+}
+
+/* Переключатель включения мода — кубический, в духе пиксельных кнопок лаунчера.
+   Никаких скруглений: прямоугольный жёлоб с вдавленной фаской и квадратный
+   ползунок с бликом сверху-слева и тенью снизу-справа. Включён — жёлтый. */
+.mods-switch {
+  width: 42px;
+  height: 22px;
+  flex: 0 0 42px;
+  position: relative;
+  padding: 0;
+  cursor: pointer;
+  border: 2px solid #0b0b0b;
+  border-radius: 0;
+  background: #3a3a3a;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.55),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.1),
+    0 2px 0 rgba(0, 0, 0, 0.55);
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* Ползунок — квадрат в чёрной рамке, как у жёлоба: без неё на жёлтом фоне
+   он сливался с треком. Внутри — светлая фаска сверху-слева и тёмная снизу. */
+.mods-switch span {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #0b0b0b;
+  box-sizing: border-box;
+  background: #c9c9c9;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.55),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.32);
+  transition: left 0.12s ease, background 0.12s ease;
+}
+
+.mods-switch:hover span {
+  background: #dedede;
+}
+
+.mods-switch.on {
+  background: #f1c40f;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.28),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.55),
+    0 2px 0 rgba(0, 0, 0, 0.55);
+}
+
+.mods-switch.on span {
+  left: calc(100% - 16px);
+  background: #fffbe8;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.9),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.22);
+}
+
+.mods-switch.on:hover span {
+  background: #ffffff;
+}
+
+.mods-row-delete {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 1px solid transparent;
+  color: #7d7d7d;
+  cursor: pointer;
+}
+
+.mods-row-delete:hover {
+  color: #e05a4e;
+  border-color: rgba(224, 90, 78, 0.35);
+  background: #252525;
+}
+
+.mods-dropzone {
+  flex: 0 0 46px;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #303030;
+  background: rgba(255, 255, 255, 0.012);
+  color: #6f6f6f;
+  font-size: 11.5px;
+}
+
+.mods-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #8a8a8a;
+  font-size: 12.5px;
+  padding: 30px;
+  text-align: center;
+}
+
+.mods-empty svg {
+  opacity: 0.45;
+}
+
+.mods-empty .mods-btn-ghost {
+  border-color: #2b2b2b;
+  background: #151515;
+  color: #c9c9c9;
+}
+
+.mods-grid {
+  flex: 1;
+  min-height: 0;
+}
+
+.modpacks-menu {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-0);
+  overflow: hidden;
+  /* Карточка сборки открывает просмотрщик слоем position:absolute/inset:0 —
+     он должен накрывать именно этот раздел, как в «Установках». */
+  position: relative;
+}
+
+/* ── Серверы: каталог Modrinth ─────────────────────────────────────────────
+   Данные приходят из /v2/search по типу проекта minecraft_java_server.
+   Карточка повторяет модовую (баннер, иконка на стыке, описание, футер),
+   сверху добавлен ярлык режима, снизу — теги и кнопка с адресом. */
+
+.servers-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-0, #101010);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Шапка каталога */
+.servers-hero {
+  display: flex;
   align-items: flex-end;
-  z-index: 1;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 22px 14px;
+  background: linear-gradient(180deg, #191919 0%, #121212 100%);
+  border-bottom: 1px solid #242424;
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
-.server-card-icon {
-  width: 48px;
-  height: 48px;
-  image-rendering: pixelated;
-  border: 2px solid var(--pg-dark);
-  background: var(--pg-black);
+.servers-hero-title {
+  margin: 6px 0 2px;
+  font-family: 'Blocks', sans-serif;
+  font-size: 22px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-1, #ffffff);
 }
 
-.server-copy-btn {
-  background: var(--pg-dark3);
-  border-color: var(--pg-dark2);
-  color: var(--pg-text);
+.servers-hero-sub {
+  margin: 0;
+  font-size: 11.5px;
+  color: #8a8a8a;
 }
-.server-copy-btn:hover {
-  background: var(--pg-dark2);
+
+.servers-hero-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Поле поиска: пиксельные углы, без рамки браузера */
+.servers-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  width: 320px;
+  padding: 0 10px;
+  background: #0c0c0c;
+  border: 2px solid #2b2b2b;
+  color: #6f6f6f;
+  clip-path: var(--mc-step-clip-sm);
+  transition: border-color 0.12s ease;
+}
+
+.servers-search:focus-within {
+  border-color: #4a4a4a;
+}
+
+.servers-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--pg-text, #e8e8e8);
+  font-family: 'Blocks', sans-serif;
+  font-size: 12.5px;
+}
+
+.servers-search input::placeholder {
+  color: #6a6a6a;
+}
+
+.servers-search-clear {
+  background: none;
+  border: none;
+  color: #8a8a8a;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.servers-search-clear:hover {
+  color: #ffffff;
+}
+
+/* Теги-фильтры */
+
+/* Сетка карточек */
+.servers-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 26px;
+  position: relative;
+}
+
+.servers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  grid-auto-rows: max-content;
+  gap: 14px;
+  align-content: start;
+}
+
+.mc-server-card {
+  cursor: pointer;
+}
+
+/* Ярлык режима на баннере.
+   Селектор с `>` обязателен: правило `.mc-card > *` выше делает всех детей
+   карточки `position: relative` и по специфичности перебило бы `.server-badge`. */
+.mc-card > .server-badge {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 3;
+  padding: 2px 7px;
+  background: rgba(0, 0, 0, 0.74);
+  border: 1px solid rgba(241, 196, 15, 0.45);
+  color: #f1c40f;
+  font-family: 'Blocks', sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.server-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 18px;
+}
+
+.server-tag {
+  padding: 1px 6px;
+  background: #141414;
+  border: 1px solid #262626;
+  color: #9a9a9a;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+}
+
+/* Вторичная кнопка (без адреса — ведёт на Modrinth) */
+.mc-card-btn.ghost {
+  background: #1c1c1c;
+  border-color: #2f2f2f;
+  color: #ffffff;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 4px 0 0 #0b0b0b;
+}
+
+.mc-card-btn.ghost:hover:not(:disabled) {
+  background: #262626;
+}
+
+/* Заглушки на время загрузки */
+.server-skeleton {
+  pointer-events: none;
+}
+
+.server-skeleton-art {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  background: linear-gradient(100deg, #151515 20%, #1e1e1e 40%, #151515 60%);
+  background-size: 220% 100%;
+  animation: serverShimmer 1.3s ease-in-out infinite;
+}
+
+.server-skeleton-line {
+  height: 10px;
+  margin: 8px 0;
+  background: #1a1a1a;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.server-skeleton-line.short {
+  width: 55%;
+}
+
+@keyframes serverShimmer {
+  0% { background-position: 140% 0; }
+  100% { background-position: -40% 0; }
+}
+
+.servers-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 70px 20px;
+  color: #8a8a8a;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.servers-more {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.servers-more-end {
+  opacity: 0.6;
+}
+
+.servers-hero-text {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Кнопка на карточке сервера: подпись «Копировать IP» длиннее, чем «Установить»,
+   поэтому кегль и боковые отступы меньше — футер должен остаться в одну строку. */
+.mc-server-card .mc-card-btn {
+  padding: 0 10px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }

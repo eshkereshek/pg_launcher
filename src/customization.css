@@ -1,0 +1,330 @@
+/* Вкладка «Кастомизация».
+   Всё построено на тех же переменных, что и остальной лаунчер, поэтому цвета
+   меняются сразу, а не после перезапуска. */
+
+.cz-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(122px, 1fr));
+  gap: 8px;
+}
+
+.cz-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+  background: var(--surface-1);
+  border: 2px solid #000;
+  border-radius: 0;
+  clip-path: var(--mc-step-clip-sm);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-2);
+  font: inherit;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.cz-preset:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.cz-preset.active {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.cz-preset.active .cz-preset-name {
+  color: var(--pg-yellow);
+}
+
+.cz-preset-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* Миниатюра: фон, панель сверху и карточка с акцентной полоской. */
+.cz-preset-sample {
+  position: relative;
+  display: block;
+  height: 52px;
+  padding: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+}
+
+.cz-preset-panel {
+  display: block;
+  width: 28%;
+  height: 100%;
+  float: left;
+}
+
+.cz-preset-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  height: 100%;
+  margin-left: 32%;
+  padding: 0 6px;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+}
+
+.cz-preset-card i {
+  display: block;
+  width: 60%;
+  height: 5px;
+}
+
+.cz-preset-card b {
+  display: block;
+  width: 80%;
+  height: 3px;
+  opacity: 0.75;
+}
+
+.cz-swatches {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cz-swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid #000;
+  border-radius: 0;
+  cursor: pointer;
+  position: relative;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cz-swatch.active {
+  box-shadow: 0 0 0 2px var(--pg-yellow), inset 0 2px 0 rgba(255, 255, 255, 0.18);
+}
+
+.cz-swatch.custom {
+  overflow: hidden;
+}
+
+.cz-swatch.custom::after {
+  content: "+";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
+.cz-swatch input[type="color"] {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.cz-hex {
+  width: 92px;
+  height: 26px;
+  padding: 0 7px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-soft);
+  color: var(--text-1);
+  font-size: 11px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  letter-spacing: 0.3px;
+}
+
+.cz-hex:focus {
+  outline: none;
+  border-color: var(--pg-yellow);
+}
+
+.cz-color-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cz-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+}
+
+.cz-color-row:last-child {
+  border-bottom: none;
+}
+
+.cz-color-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
+.cz-color-label small {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.cz-color-input {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid #000;
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.cz-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.cz-color-input::-webkit-color-swatch {
+  border: none;
+}
+
+/* Сегментированный переключатель: те же плитки, что и в меню. */
+.cz-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-0);
+  border: 2px solid #000;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.cz-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 11px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.cz-seg button:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.cz-seg button.active {
+  background: var(--pg-yellow);
+  color: var(--pg-on-accent, #141414);
+}
+
+/* Предпросмотр: цвета подставляются инлайном, поэтому он живой. */
+.cz-preview {
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.cz-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid;
+  clip-path: var(--mc-step-clip-sm);
+}
+
+.cz-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cz-preview-avatar {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+
+.cz-preview-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cz-preview-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cz-preview-sub {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.cz-preview-badge {
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 1px solid;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.cz-preview-text {
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.cz-preview-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.cz-preview-btn {
+  padding: 6px 14px;
+  border: 1px solid;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.cz-preview-btn.ghost {
+  font-weight: 600;
+}
