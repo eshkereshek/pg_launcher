@@ -345,6 +345,7 @@ export const translations = {
 
     // --- Уведомления вместо alert() ---
     'app.imageTooBig': 'Картинка слишком большая!',
+    'app.sessionExpired': 'Сессия аккаунта истекла — войдите заново',
     'app.pickAccountToPlay': 'Пожалуйста, выберите или добавьте аккаунт для игры!',
     'app.renameFolderFailed': 'Не удалось переименовать папку сборки: {error}',
     'app.unknownError': 'неизвестная ошибка',
@@ -1023,6 +1024,7 @@ export const translations = {
 
     // --- Уведомления вместо alert() ---
     'app.imageTooBig': 'The image is too large!',
+    'app.sessionExpired': 'Account session expired — please sign in again',
     'app.pickAccountToPlay': 'Please select or add an account to play!',
     'app.renameFolderFailed': 'Failed to rename the modpack folder: {error}',
     'app.unknownError': 'unknown error',

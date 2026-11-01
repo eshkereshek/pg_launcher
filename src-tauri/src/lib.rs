@@ -83,6 +83,8 @@ pub fn run() {
             get_modrinth_server,
             // Authentication
             auth_elyby,
+            auth_elyby_validate,
+            auth_elyby_refresh,
             auth_microsoft,
             // Mods & Modpacks
             get_installed_mods,

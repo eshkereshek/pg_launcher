@@ -74,3 +74,74 @@ pub async fn auth_microsoft() -> Result<Value, String> {
             .to_string(),
     )
 }
+/// Проверка, что токен Ely.by ещё действителен.
+///
+/// Yggdrasil-сервер отвечает 204 на живой токен и 403 на протухший. Без этой
+/// проверки игра получала старый токен, и сервер друзей отбивал вход с
+/// «Недействительная сессия».
+#[tauri::command]
+pub async fn auth_elyby_validate(access_token: String) -> Result<bool, String> {
+    if access_token.trim().is_empty() {
+        return Ok(false);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .post("https://authserver.ely.by/auth/validate")
+        .json(&serde_json::json!({ "accessToken": access_token }))
+        .send()
+        .await
+        .map_err(|e| format!("Сервер Ely.by недоступен: {}", e))?;
+
+    match resp.status().as_u16() {
+        204 | 200 => Ok(true),
+        403 | 401 => Ok(false),
+        code => Err(format!("Ely.by ответил {}", code)),
+    }
+}
+
+/// Обновление токена Ely.by по старому.
+///
+/// Протухший accessToken ещё можно обменять на новый: игроку не нужно заново
+/// вводить пароль. Если сервер отказал — аккаунт придётся добавить заново.
+#[tauri::command]
+pub async fn auth_elyby_refresh(
+    access_token: String,
+    client_token: String,
+) -> Result<Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let payload = serde_json::json!({
+        "accessToken": access_token,
+        "clientToken": client_token,
+        "requestUser": true
+    });
+
+    let resp = client
+        .post("https://authserver.ely.by/auth/refresh")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Сервер Ely.by недоступен: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err("Сессия Ely.by истекла, войдите в аккаунт заново".to_string());
+    }
+
+    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "token": data["accessToken"].as_str().unwrap_or(""),
+        "clientToken": data["clientToken"]
+            .as_str()
+            .map(|v| v.to_string())
+            .unwrap_or(client_token),
+    }))
+}

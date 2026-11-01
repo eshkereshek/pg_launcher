@@ -39,7 +39,10 @@ export const tauriBridge = {
   aiPlan: (request: string, gameVersion: string, loader: string, count = 20) =>
     invoke('ai_plan', { request, gameVersion, loader, count }),  // История чатов ИИ-сборщика: файл в папке лаунчера.
   aiHistory: () => invoke('ai_history_load'),
-  aiSaveHistory: (chats: any[]) => invoke('ai_history_save', { chats }),  cfSearch: (kind: string, query: string, gameVersion: string, loader: string, offset = 0, sort = 'relevance', category = 'all') =>
+  aiSaveHistory: (chats: any[]) => invoke('ai_history_save', { chats }),  // Сессия Ely.by: проверка и обновление токена перед запуском игры.
+  authElybyValidate: (accessToken: string) => invoke('auth_elyby_validate', { accessToken }),
+  authElybyRefresh: (accessToken: string, clientToken: string) =>
+    invoke('auth_elyby_refresh', { accessToken, clientToken }),  cfSearch: (kind: string, query: string, gameVersion: string, loader: string, offset = 0, sort = 'relevance', category = 'all') =>
     invoke('cf_search', { kind, query, gameVersion: gameVersion || '', loader: loader || 'all', offset, sort, category }),
   cfCategories: (kind: string) => invoke('cf_categories', { kind }),
   cfProject: (projectId: string) => invoke('cf_project', { projectId }),

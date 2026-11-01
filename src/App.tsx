@@ -1563,6 +1563,43 @@ export default function App() {
     }
   }
 
+  /**
+   * Проверяет токен Ely.by и обновляет его, если срок вышел.
+   *
+   * Возвращает false, когда обновить не удалось: тогда игроку нужно войти
+   * заново, иначе сервер отклонит вход как недействительную сессию.
+   */
+  const ensureElybySession = async () => {
+    if (!activeAccount || activeAccount.type !== 'elyby' || !activeAccount.token) return true
+
+    try {
+      // @ts-ignore
+      const valid = await window.electronAPI.authElybyValidate(activeAccount.token)
+      if (valid) return true
+
+      // @ts-ignore
+      const fresh = await window.electronAPI.authElybyRefresh(
+        activeAccount.token,
+        activeAccount.clientToken || ''
+      )
+      if (!fresh || !fresh.token) return false
+
+      const updated = {
+        ...activeAccount,
+        token: fresh.token,
+        clientToken: fresh.clientToken || activeAccount.clientToken,
+      }
+      const next = accounts.map(acc => (acc.id === updated.id ? updated : acc))
+      setAccounts(next)
+      setActiveAccount(updated)
+      // @ts-ignore
+      await window.electronAPI.saveAccounts(next)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const handleLaunch = async () => {
     if (gameRunning) return;
     if (!activeAccount) {
@@ -1575,6 +1612,19 @@ export default function App() {
     launchReadyRef.current = false
     
     setProgress(t('app.progressInit'))
+
+    // Токен Ely.by живёт ограниченное время. Если отдать игре просроченный,
+    // сервер (в том числе сервер друга) отбивает вход с «Недействительная
+    // сессия». Поэтому проверяем его до запуска и обновляем при необходимости.
+    const sessionOk = await ensureElybySession()
+    if (!sessionOk) {
+      setLaunching(false)
+      setGameRunning(false)
+      setProgress('')
+      showError(t('app.sessionExpired'))
+      setView('accounts')
+      return
+    }
 
     // Check if a modpack is selected
     const isModpack = selectedVersion.startsWith('mp:')
@@ -3134,6 +3184,7 @@ export default function App() {
                 ) : (
                   /* Форма входа. Рамка — фон панели, заливка — отдельный слой,
                      иначе clip-path съедал уголки. */
+
                   <section className="accounts-form">
                     <div className="accounts-form-fill" />
 

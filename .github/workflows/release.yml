@@ -75,14 +75,29 @@ jobs:
           fi
 
 
+      - name: Install MinGW
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $candidates = @("C:\msys64\mingw64\bin", "C:\mingw64\bin", "C:\ProgramData\mingw64\bin", "C:\ProgramData\chocolatey\bin")
+          $found = $candidates | Where-Object { Test-Path (Join-Path $_ "gcc.exe") } | Select-Object -First 1
+          if (-not $found) {
+            choco install mingw --no-progress -y
+            $found = "C:\ProgramData\mingw64\bin"
+            if (-not (Test-Path (Join-Path $found "gcc.exe"))) { $found = "C:\ProgramData\chocolatey\bin" }
+          }
+          if (-not (Test-Path (Join-Path $found "gcc.exe"))) { throw "gcc не найден ни в одном из путей" }
+          "MINGW_BIN=$found" >> $env:GITHUB_ENV
+          $found >> $env:GITHUB_PATH
+          Write-Host "MinGW: $found"
+
       # Свой установщик вместо NSIS: один exe, внутри приложение и
       # WebView2Loader.dll, при запуске разворачивается во временную папку.
       - name: Build custom installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $mingw = "C:\msys64\mingw64\bin"
-          if (-not (Test-Path "$mingw\gcc.exe")) { throw "Не найден mingw в $mingw" }
+          $mingw = $env:MINGW_BIN
           Copy-Item "src-tauri\target\release\pagrysha-launcher.exe" "Pagrysha_Launcher_Setup.exe" -Force
           Copy-Item "src-tauri\target\release\WebView2Loader.dll" "WebView2Loader.dll" -Force
           & "$mingw\windres.exe" -i installer.rc -o installer_res.o
