@@ -68,15 +68,36 @@ jobs:
             npx tauri build --target ${{ matrix.target }}
           elif [ "$RUNNER_OS" = "Linux" ]; then
             npx tauri build --bundles deb
+          elif [ "$RUNNER_OS" = "Windows" ]; then
+            npx tauri build --no-bundle
           else
             npx tauri build
           fi
+
+
+      # Свой установщик вместо NSIS: один exe, внутри приложение и
+      # WebView2Loader.dll, при запуске разворачивается во временную папку.
+      - name: Build custom installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $mingw = "C:\msys64\mingw64\bin"
+          if (-not (Test-Path "$mingw\gcc.exe")) { throw "Не найден mingw в $mingw" }
+          Copy-Item "src-tauri\target\release\pagrysha-launcher.exe" "Pagrysha_Launcher_Setup.exe" -Force
+          Copy-Item "src-tauri\target\release\WebView2Loader.dll" "WebView2Loader.dll" -Force
+          & "$mingw\windres.exe" -i installer.rc -o installer_res.o
+          & "$mingw\gcc.exe" -O2 -mwindows installer_main.c installer_res.o -o "Pagrysha_Setup.exe"
+          if (-not (Test-Path "Pagrysha_Setup.exe")) { throw "Установщик не собрался" }
+          Remove-Item installer_res.o -Force
+          New-Item -ItemType Directory -Force -Path staged | Out-Null
+          Copy-Item "Pagrysha_Setup.exe" "staged\Pagrysha_Setup.exe" -Force
 
       - name: Collect bundles
         shell: bash
         run: |
           mkdir -p staged
-          find src-tauri/target -path '*/release/bundle/*' \( -name '*.exe' -o -name '*.deb' -o -name '*.dmg' \) -exec cp {} staged/ \;
+          find src-tauri/target -path "*/release/bundle/*" -name "*.deb" -exec cp {} staged/ \;
+          find src-tauri/target -path "*/release/bundle/*" -name "*.dmg" -exec cp {} staged/ \;
 
       - uses: actions/upload-artifact@v4
         with:
