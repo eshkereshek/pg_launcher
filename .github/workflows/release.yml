@@ -49,6 +49,18 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
+      # Ключи ИИ приходят из секретов репозитория и живут только на раннере:
+      # в репозиторий файл не коммитится (он в .gitignore).
+      - name: Write AI keys
+        shell: bash
+        run: |
+          : > src-tauri/.keys.local
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "CLOUDFLARE_API_TOKEN=${{ secrets.CLOUDFLARE_API_TOKEN }}" >> src-tauri/.keys.local
+          fi
+          if [ -n "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" >> src-tauri/.keys.local
+          fi
       - name: Build Tauri bundles
         shell: bash
         run: |

@@ -1085,3 +1085,43 @@ html, body {
   animation: mcFormPanelFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+
+/* Переключатель источника каталога: Modrinth / CurseForge. */
+.mc-source-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 2px solid #0d0d0d;
+  background: #1b1b1b;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.mc-source-switch button {
+  font-family: 'Blocks', sans-serif;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9d9d9d;
+  background: transparent;
+  border: none;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.mc-source-switch button + button {
+  border-left: 2px solid #0d0d0d;
+}
+
+.mc-source-switch button:hover:not(:disabled):not(.on) {
+  color: #fff;
+  background: #262626;
+}
+
+.mc-source-switch button.on {
+  background: var(--pg-yellow, #f1c40f);
+  color: #000;
+}
+
+.mc-source-switch button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

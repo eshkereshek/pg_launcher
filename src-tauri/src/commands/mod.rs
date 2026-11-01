@@ -1,5 +1,7 @@
+pub mod ai;
 pub mod auth;
 pub mod config;
+pub mod curseforge;
 pub mod java;
 pub mod loaders;
 pub mod mods;

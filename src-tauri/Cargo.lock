@@ -2715,7 +2715,7 @@ dependencies = [
 
 [[package]]
 name = "pagrysha-core"
-version = "7.2.1"
+version = "7.2.2"
 dependencies = [
  "dirs 5.0.1",
  "futures-util",
@@ -2724,13 +2724,14 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "tokio",
  "url",
  "zip",
 ]
 
 [[package]]
 name = "pagrysha-launcher"
-version = "7.2.1"
+version = "7.2.2"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",

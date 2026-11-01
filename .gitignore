@@ -23,3 +23,6 @@ raw_swim_frames/
 .env
 .env.*
 !.env.example
+
+# Ключи провайдеров ИИ: только локально и в секретах CI, не в git
+.keys.local

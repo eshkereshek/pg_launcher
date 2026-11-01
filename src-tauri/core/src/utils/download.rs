@@ -1,9 +1,12 @@
 use futures_util::StreamExt;
 use sha1::{Digest, Sha1};
 use sha2::Sha512;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+
+/// Представляемся обычным браузером: часть CDN иначе отвечает медленно.
+const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PagryshaLauncher/7.2";
 
 /// Чем сверять скачанный файл: манифесты Mojang дают sha1, Modrinth — sha1 и
 /// sha512, GitHub и Adoptium — sha256. Длину ожидаемого значения не угадываем:
@@ -168,12 +171,52 @@ pub fn part_path(dest: &Path) -> PathBuf {
     }
 }
 
+/// Клиент с таймаутами: без них подвисшее соединение держит загрузку вечно —
+/// так создание сборки с OptiFine висело на «Создаём сборку...».
+/// Резолвер с приоритетом IPv4.
+///
+/// Через VPN и Cloudflare WARP маршрут по IPv6 часто чёрная дыра: соединение
+/// висит до таймаута, хотя curl по IPv4 отвечает мгновенно. Поэтому IPv4
+/// адреса ставим первыми, а IPv6 оставляем запасными.
+struct Ipv4First;
+
+impl reqwest::dns::Resolve for Ipv4First {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let host = name.as_str().to_string();
+            let addrs = tokio::net::lookup_host(format!("{host}:443")).await?;
+            let all: Vec<std::net::SocketAddr> = addrs.collect();
+            let v4: Vec<std::net::SocketAddr> =
+                all.iter().copied().filter(|a| a.is_ipv4()).collect();
+            let chosen = if v4.is_empty() { all } else { v4 };
+            Ok(Box::new(chosen.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        // Общий таймаут ограничивает всю загрузку, поэтому он щедрый:
+        // крупные архивы на медленном канале не должны рваться.
+        .timeout(std::time::Duration::from_secs(600))
+        // Через VPN и Cloudflare WARP HTTP/2 нередко рассыпается: соединение
+        // висит, поток обрывается на середине. Для файлов мультиплексирование
+        // не нужно — HTTP/1.1 заметно стабильнее в туннеле.
+        .http1_only()
+        .dns_resolver(std::sync::Arc::new(Ipv4First))
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .pool_idle_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 /// Скачать файл, если его нет или он не сходится с хешем.
 ///
 /// Возвращает `true`, если файл действительно скачивался (для прогресса и для
 /// логов), `false` — если на диске уже лежал правильный файл.
 pub async fn ensure_file(url: &str, dest: &Path, sum: Option<Sum<'_>>) -> Result<bool, String> {
-    ensure_file_with(&reqwest::Client::new(), url, dest, sum).await
+    ensure_file_with(&http_client(), url, dest, sum).await
 }
 
 /// То же, но с общим клиентом: у ассетов тысячи мелких файлов, и создавать
@@ -253,7 +296,7 @@ pub async fn download_file_with_progress<F>(
 where
     F: Fn(u64, u64),
 {
-    download_with_client(&reqwest::Client::new(), url, target_path, on_progress).await
+    download_with_client(&http_client(), url, target_path, on_progress).await
 }
 
 pub async fn download_with_client<F>(
@@ -269,30 +312,203 @@ where
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
+    // Через VPN соединение рвётся на середине файла: без повторов и докачки
+    // установка мода падала на первом же обрыве.
+    const ATTEMPTS: u32 = 3;
+    let mut last_error = String::new();
+
+    for attempt in 1..=ATTEMPTS {
+        match download_attempt(client, url, target_path, &on_progress).await {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                last_error = err;
+                if attempt < ATTEMPTS {
+                    tokio::time::sleep(std::time::Duration::from_secs(u64::from(attempt))).await;
+                }
+            }
+        }
+    }
+
+    // Обычная загрузка не прошла. У части CDN (например, у зеркал OptiFine)
+    // соединение обрывается на первых десятках килобайт, зато куски по Range
+    // отдаются мгновенно — пробуем собрать файл из кусков.
+    if let Ok(()) = download_in_chunks(client, url, target_path, &on_progress).await {
+        return Ok(());
+    }
+
+    Err(last_error)
+}
+
+/// Размер куска для загрузки по частям: 16 КБ проходит даже там, где большое
+/// соединение обрывается.
+const CHUNK_BYTES: u64 = 16 * 1024;
+/// Сколько кусков тянем одновременно.
+const CHUNK_PARALLEL: usize = 8;
+
+/// Узнать полный размер файла у источника, поддерживающего Range.
+async fn probe_total_size(client: &reqwest::Client, url: &str) -> Option<u64> {
     let response = client
         .get(url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PagryshaLauncher/7.2",
-        )
+        .header("User-Agent", USER_AGENT)
+        .header("Range", "bytes=0-0")
+        .send()
+        .await
+        .ok()?;
+
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return None;
+    }
+
+    let value = response.headers().get("content-range")?.to_str().ok()?;
+    // Формат: `bytes 0-0/7145205`.
+    value.rsplit('/').next()?.trim().parse::<u64>().ok()
+}
+
+/// Забрать один кусок файла.
+async fn fetch_chunk(
+    client: &reqwest::Client,
+    url: &str,
+    start: u64,
+    end: u64,
+) -> Result<Vec<u8>, String> {
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        client
+            .get(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Range", format!("bytes={}-{}", start, end))
+            .send(),
+    )
+    .await
+    .map_err(|_| "Кусок не пришёл вовремя".to_string())?
+    .map_err(|e| e.to_string())?;
+
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!("Источник ответил {}", response.status()));
+    }
+
+    let bytes = tokio::time::timeout(std::time::Duration::from_secs(30), response.bytes())
+        .await
+        .map_err(|_| "Кусок оборвался".to_string())?
+        .map_err(|e| e.to_string())?;
+
+    Ok(bytes.to_vec())
+}
+
+/// Собрать файл из кусков по Range. Нужен там, где цельное соединение рвётся.
+pub async fn download_in_chunks<F>(
+    client: &reqwest::Client,
+    url: &str,
+    target_path: &Path,
+    on_progress: &F,
+) -> Result<(), String>
+where
+    F: Fn(u64, u64),
+{
+    use futures_util::stream::{self, StreamExt};
+
+    let total = probe_total_size(client, url)
+        .await
+        .ok_or("Источник не умеет отдавать файл кусками")?;
+    if total == 0 {
+        return Err("Источник вернул пустой файл".into());
+    }
+
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let ranges: Vec<(usize, u64, u64)> = (0..total)
+        .step_by(CHUNK_BYTES as usize)
+        .enumerate()
+        .map(|(index, start)| {
+            let end = (start + CHUNK_BYTES - 1).min(total - 1);
+            (index, start, end)
+        })
+        .collect();
+
+    let mut parts: Vec<(usize, Vec<u8>)> = stream::iter(ranges)
+        .map(|(index, start, end)| async move {
+            let bytes = fetch_chunk(client, url, start, end).await;
+            (index, bytes)
+        })
+        .buffer_unordered(CHUNK_PARALLEL)
+        .filter_map(|(index, result)| async move { result.ok().map(|bytes| (index, bytes)) })
+        .collect()
+        .await;
+
+    parts.sort_by_key(|(index, _)| *index);
+
+    let mut file = File::create(target_path).map_err(|e| e.to_string())?;
+    let mut written: u64 = 0;
+    for (_, bytes) in parts {
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        written += bytes.len() as u64;
+        on_progress(written, total);
+    }
+    file.flush().map_err(|e| e.to_string())?;
+
+    if written != total {
+        return Err(format!("Собрано {} из {} байт", written, total));
+    }
+
+    Ok(())
+}
+
+/// Одна попытка: докачивает с места обрыва, если файл уже частично скачан.
+async fn download_attempt<F>(
+    client: &reqwest::Client,
+    url: &str,
+    target_path: &Path,
+    on_progress: &F,
+) -> Result<(), String>
+where
+    F: Fn(u64, u64),
+{
+    let already = fs::metadata(target_path).map(|m| m.len()).unwrap_or(0);
+
+    let mut request = client.get(url).header("User-Agent", USER_AGENT);
+    if already > 0 {
+        request = request.header("Range", format!("bytes={already}-"));
+    }
+
+    let response = request
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
+    let status = response.status();
 
-    if !response.status().is_success() {
-        return Err(format!(
-            "Download failed with status: {}",
-            response.status()
-        ));
+    // 200 в ответ на Range значит, что сервер докачку не умеет: начинаем заново.
+    let resuming = status == reqwest::StatusCode::PARTIAL_CONTENT && already > 0;
+    if !status.is_success() && status != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!("Download failed with status: {}", status));
     }
 
-    let total_size = response.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
+    let mut downloaded: u64 = if resuming { already } else { 0 };
+    let total_size = if resuming {
+        already + response.content_length().unwrap_or(0)
+    } else {
+        response.content_length().unwrap_or(0)
+    };
 
     let mut stream = response.bytes_stream();
-    let mut file = File::create(target_path).map_err(|e| e.to_string())?;
+    let mut file = if resuming {
+        OpenOptions::new()
+            .append(true)
+            .open(target_path)
+            .map_err(|e| e.to_string())?
+    } else {
+        File::create(target_path).map_err(|e| e.to_string())?
+    };
 
-    while let Some(chunk_res) = stream.next().await {
+    // Обрыв в туннеле выглядит как «поток молчит»: ждём байты не дольше 20
+    // секунд, иначе попытка тянется до общего таймаута.
+    while let Some(chunk_res) =
+        match tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await {
+            Ok(item) => item,
+            Err(_) => return Err("Загрузка остановилась: нет данных 15 секунд".to_string()),
+        }
+    {
         let chunk = chunk_res.map_err(|e| format!("Stream error: {}", e))?;
         file.write_all(&chunk).map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
@@ -300,6 +516,16 @@ where
     }
 
     file.flush().map_err(|e| e.to_string())?;
+    drop(file);
+
+    // Обрыв часто выглядит как «поток закончился» — сверяем размер.
+    if total_size > 0 && downloaded != total_size {
+        return Err(format!(
+            "Файл скачан не полностью: {} из {} байт",
+            downloaded, total_size
+        ));
+    }
+
     Ok(())
 }
 

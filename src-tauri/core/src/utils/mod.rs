@@ -1,11 +1,16 @@
 pub mod archive;
 pub mod args;
 pub mod content;
+pub mod curseforge;
 pub mod download;
 pub mod guard;
 pub mod logmarkers;
+pub mod matchmod;
+pub mod modgroups;
 pub mod modmeta;
+pub mod modpick;
 pub mod options;
+pub mod packscan;
 pub mod paths;
 pub mod release;
 pub mod search;

@@ -1,7 +1,9 @@
-import { Loader2, Plus } from 'lucide-react'
+import { useState } from 'react'
+import { FolderOpen, HardDrive, Loader2, Plus, Search, Sparkles } from 'lucide-react'
 import { useTranslation } from './i18n'
 import { McSelect } from './McSelect'
 import BackButton from './BackButton'
+import { errorText, showError, showOk } from './Toasts'
 import './ModpackCreate.css'
 
 /**
@@ -43,6 +45,274 @@ const LOADER_OPTIONS = [
   { value: 'neoforge', label: 'NeoForge' },
 ]
 
+/**
+ * Поиск сборок сторонних лаунчеров и их перенос в лаунчер.
+ *
+ * Сканирование только читает каталоги: файлы копируются лишь после нажатия
+ * «Импортировать». Импортированная сборка сразу попадает в modpacks.json, чтобы
+ * появиться в списке и на главной.
+ */
+function DiskImport({ disabled }: { disabled?: boolean }) {
+  const { t } = useTranslation()
+  const [packs, setPacks] = useState<any[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const scan = async () => {
+    setBusy('scan')
+    try {
+      // @ts-ignore
+      const res = await window.electronAPI.cfDetectPacks()
+      setPacks(res?.packs || [])
+    } catch (e) {
+      showError(errorText(e, t('app.unknownError')))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  /** Ручной выбор папки: нужен, если лаунчер пишет данные в нестандартное место. */
+  const pickFolder = async () => {
+    setBusy('pick')
+    try {
+      // @ts-ignore
+      const dir = await window.electronAPI.selectFolder()
+      if (!dir) return
+      // @ts-ignore
+      const res = await window.electronAPI.cfDetectPacks([dir])
+      const found = res?.packs || []
+      setPacks(prev => {
+        const base = prev || []
+        const known = new Set(base.map((p: any) => p.path))
+        return [...base, ...found.filter((p: any) => !known.has(p.path))]
+      })
+    } catch (e) {
+      showError(errorText(e, t('app.unknownError')))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const importPack = async (pack: any) => {
+    setBusy(pack.path)
+    try {
+      // @ts-ignore
+      const res = await window.electronAPI.cfImportPack(
+        pack.path,
+        pack.name,
+        pack.gameVersion || '',
+        pack.loader || ''
+      )
+      // @ts-ignore
+      const list = (await window.electronAPI.getModpacks()) || []
+      const name = res?.name || pack.name
+      const entry = {
+        name,
+        loader: res?.loader || pack.loader || '',
+        version: res?.gameVersion || pack.gameVersion || '',
+        installedMods: [],
+        icon: './iconsblocks/Chest_(inventory)_MCE.png',
+        importedFrom: pack.source,
+      }
+      const idx = list.findIndex((m: any) => m.name === name)
+      if (idx >= 0) list[idx] = { ...list[idx], ...entry }
+      else list.push(entry)
+      // @ts-ignore
+      await window.electronAPI.saveModpacks(list)
+      window.dispatchEvent(new CustomEvent('modpacks-updated'))
+      showOk(t('mods.importedOk', { name }))
+      setPacks(prev => (prev || []).filter(p => p.path !== pack.path))
+    } catch (e) {
+      showError(t('mods.importFailed', { error: errorText(e, t('app.unknownError')) }))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="mcp-step mcp-step-import">
+      <div className="mcp-step-head">
+        <span className="mcp-step-num mcp-step-num-icon">
+          <HardDrive size={13} />
+        </span>
+        <h2 className="mcp-step-title">{t('mods.diskImportTitle')}</h2>
+      </div>
+      <div className="mcp-step-body">
+        <p className="mcp-import-desc">{t('mods.diskImportDesc')}</p>
+
+        <div className="mcp-import-actions">
+          <button
+            type="button"
+            className="mods-btn-primary mcp-import-scan"
+            onClick={() => { void scan() }}
+            disabled={disabled || busy === 'scan'}
+          >
+            {busy === 'scan' ? <Loader2 size={14} className="mcp-spin" /> : <Search size={14} />}
+            {busy === 'scan' ? t('mods.diskImportScanning') : t('mods.diskImportScan')}
+          </button>
+          <button
+            type="button"
+            className="mods-btn-ghost mcp-import-pick"
+            onClick={() => { void pickFolder() }}
+            disabled={disabled || busy === 'pick'}
+          >
+            <FolderOpen size={14} />
+            {t('mods.diskImportPick')}
+          </button>
+          {packs !== null && (
+            <span className="mcp-import-count">
+              {t('mods.diskImportFound', { count: packs.length })}
+            </span>
+          )}
+        </div>
+
+        {packs !== null && packs.length === 0 && (
+          <p className="mcp-import-empty">{t('mods.diskImportEmpty')}</p>
+        )}
+
+        {packs !== null && packs.length > 0 && (
+          <ul className="mcp-import-list">
+            {packs.map((pack: any) => (
+              <li key={pack.path} className="mcp-import-item">
+                <span className="mcp-import-source">{pack.source}</span>
+                <div className="mcp-import-info">
+                  <span className="mcp-import-name" title={pack.path}>{pack.name}</span>
+                  <span className="mcp-import-meta">
+                    {pack.gameVersion || '—'}
+                    {pack.loader ? ` · ${pack.loader.toUpperCase()}` : ''}
+                    {pack.mods ? ` · ${t('mods.diskImportMods', { count: pack.mods })}` : ''}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="mods-btn-primary mcp-import-btn"
+                  disabled={disabled || busy !== null}
+                  onClick={() => { void importPack(pack) }}
+                >
+                  {busy === pack.path ? <Loader2 size={13} className="mcp-spin" /> : null}
+                  {busy === pack.path ? t('mods.importing') : t('mods.importBtn')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  )
+}
+/**
+ * ИИ-сборщик: игрок описывает сборку словами, модель отдаёт план, а моды в плане
+ * уже подобраны по Modrinth — с реальными id и иконками. План подставляет
+ * название, загрузчик и версию в форму, а сами моды ставятся после создания.
+ */
+function AiBuild({
+  version,
+  loader,
+  onName,
+  onLoader,
+  onVersion,
+  onMods,
+}: {
+  version: string
+  loader: string
+  onName: (v: string) => void
+  onLoader: (v: string) => void
+  onVersion: (v: string) => void
+  onMods: (mods: any[]) => void
+}) {
+  const { t } = useTranslation()
+  const [prompt, setPrompt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [plan, setPlan] = useState<any | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const generate = async () => {
+    if (!prompt.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      // @ts-ignore
+      const res = await window.electronAPI.aiPlan(
+        prompt.trim(),
+        version || '1.20.1',
+        loader || 'fabric',
+        20,
+      )
+      setPlan(res)
+      if (res?.name) onName(res.name)
+      if (res?.loader) onLoader(res.loader)
+      if (res?.gameVersion) onVersion(res.gameVersion)
+      onMods(res?.mods || [])
+    } catch (e: any) {
+      setError(errorText(e, t('app.unknownError')))
+      onMods([])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="mcp-step mcp-step-ai">
+      <div className="mcp-step-head">
+        <span className="mcp-step-num mcp-step-num-icon">
+          <Sparkles size={13} />
+        </span>
+        <h2 className="mcp-step-title">{t('ai.title')}</h2>
+      </div>
+      <div className="mcp-step-body">
+        <p className="mcp-import-desc">{t('ai.desc')}</p>
+        <textarea
+          className="mc-input mcp-ai-prompt"
+          placeholder={t('ai.placeholder')}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={3}
+          disabled={busy}
+        />
+        <div className="mcp-import-actions">
+          <button
+            type="button"
+            className="mods-btn-primary mcp-import-scan"
+            onClick={() => { void generate() }}
+            disabled={busy || !prompt.trim()}
+          >
+            {busy ? (
+              <>
+                <Loader2 size={14} className="spin" /> {t('ai.generating')}
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} /> {t('ai.generate')}
+              </>
+            )}
+          </button>
+          {plan?.mods?.length ? (
+            <span className="mcp-import-count">
+              {t('ai.found', { count: plan.mods.length })}
+            </span>
+          ) : null}
+        </div>
+
+        {error ? <p className="mcp-ai-error">{error}</p> : null}
+
+        {plan?.mods?.length ? (
+          <>
+            <p className="mcp-ai-summary">{plan.summary}</p>
+            <ul className="mcp-ai-mods">
+              {plan.mods.map((mod: any) => (
+                <li key={mod.project_id} className="mcp-ai-mod">
+                  {mod.icon_url ? <img src={mod.icon_url} alt="" /> : null}
+                  <span title={mod.title}>{mod.title}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mcp-import-desc">{t('ai.note')}</p>
+          </>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 interface ModpackCreatePageProps {
   name: string
   onNameChange: (value: string) => void
@@ -65,6 +335,9 @@ interface ModpackCreatePageProps {
   creating: boolean
   onCreate: () => void
   onClose: () => void
+  /** Моды, подобранные ИИ: ставятся сразу после создания сборки. */
+  aiMods: any[]
+  onAiModsChange: (mods: any[]) => void
 }
 
 /**
@@ -129,7 +402,9 @@ export default function ModpackCreatePage({
   creating,
   onCreate,
   onClose,
-}: ModpackCreatePageProps) {
+  aiMods,
+  onAiModsChange,
+  }: ModpackCreatePageProps) {
   const { t } = useTranslation()
 
   const isForge = loader === 'forge'
@@ -169,6 +444,15 @@ export default function ModpackCreatePage({
       <form className="mcp-main" onSubmit={handleSubmit}>
         <div className="mcp-body">
           <div className="mcp-form">
+            <AiBuild
+              version={version}
+              loader={loader}
+              onName={onNameChange}
+              onLoader={onLoaderChange}
+              onVersion={onVersionChange}
+              onMods={onAiModsChange}
+            />
+
             <section className="mcp-step">
               <div className="mcp-step-head">
                 <span className="mcp-step-num">1</span>
@@ -312,6 +596,10 @@ export default function ModpackCreatePage({
                 </div>
               </div>
             </section>
+
+            {/* Перенос готовых сборок — под выбором значка: сначала игрок
+                оформляет свою сборку, ниже видит вариант не создавать с нуля. */}
+            <DiskImport disabled={creating} />
           </div>
 
           <aside className="mcp-aside">

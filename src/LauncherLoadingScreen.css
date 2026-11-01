@@ -55,7 +55,19 @@
   letter-spacing: 1px;
 }
 
+/* Обои лаунчера вместо серого поля: экран загрузки встречает тем же фоном,
+   что и главный экран, поэтому переход не выглядит провалом в пустоту. */
+.launcher-loading-screen:not(.is-overlay)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/bg-minecraft.png') center / cover no-repeat;
+  opacity: 0.5;
+}
+
 .loading-content {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;

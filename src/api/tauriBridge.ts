@@ -33,7 +33,25 @@ export const tauriBridge = {
     invoke('get_popular_modpacks', { version: version || null, offset, category, loader, sort }),
   searchModpacks: (query: string, version?: string, offset = 0, category = 'all', loader = 'all', sort = 'relevance') =>
     invoke('search_modpacks', { query, version: version || null, offset, category, loader, sort }),
-  downloadMod: (projectId: string, version: string, loader: string, instanceId: string, projectType = 'mod', versionId?: string) =>
+  // CurseForge: каталог, версии, установка контента и сборок, импорт с диска.
+  // ИИ-сборщик: модель отдаёт план, моды в нём уже подобраны по Modrinth.
+  aiStatus: () => invoke('ai_status'),
+  aiPlan: (request: string, gameVersion: string, loader: string, count = 20) =>
+    invoke('ai_plan', { request, gameVersion, loader, count }),  // История чатов ИИ-сборщика: файл в папке лаунчера.
+  aiHistory: () => invoke('ai_history_load'),
+  aiSaveHistory: (chats: any[]) => invoke('ai_history_save', { chats }),  cfSearch: (kind: string, query: string, gameVersion: string, loader: string, offset = 0, sort = 'relevance', category = 'all') =>
+    invoke('cf_search', { kind, query, gameVersion: gameVersion || '', loader: loader || 'all', offset, sort, category }),
+  cfCategories: (kind: string) => invoke('cf_categories', { kind }),
+  cfProject: (projectId: string) => invoke('cf_project', { projectId }),
+  cfVersions: (projectId: string, gameVersion: string, loader: string) =>
+    invoke('cf_versions', { projectId, gameVersion: gameVersion || '', loader: loader || 'all' }),
+  cfInstallContent: (projectId: string, kind: string, gameVersion: string, loader: string, instanceId: string, versionId?: string) =>
+    invoke('cf_install_content', { projectId, kind, gameVersion, loader, instanceId, versionId: versionId || null }),
+  cfInstallModpack: (projectId: string, versionId: string | null, modpackName: string, gameVersion: string, loader: string) =>
+    invoke('cf_install_modpack', { projectId, versionId, packName: modpackName, gameVersion, loader }),
+  cfDetectPacks: (extraPaths?: string[]) => invoke('cf_detect_packs', { extraPaths: extraPaths || null }),
+  cfImportPack: (sourcePath: string, name: string, gameVersion: string, loader: string) =>
+    invoke('cf_import_pack', { sourcePath, name, gameVersion, loader }),  downloadMod: (projectId: string, version: string, loader: string, instanceId: string, projectType = 'mod', versionId?: string) =>
     invoke('download_mod', { projectId, version, loader, instanceId, projectType, versionId }),
   uninstallMod: (filename: string, instanceId: string) =>
     invoke('uninstall_mod', { filename, instanceId }),

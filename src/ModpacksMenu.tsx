@@ -7,6 +7,7 @@ import { formatCount, projectLoaderLabel } from './projectMeta'
 import { showOk, showError, errorText } from './Toasts'
 import ModViewer from './ModViewer'
 import IconImg from './IconImg'
+import AiChat from './AiChat'
 
 export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuery = '' }: { currentVersion: string, opacity?: number, initialQuery?: string }) {
   const { t } = useTranslation();
@@ -15,6 +16,9 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
   const [loaderFilter, setLoaderFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortFilter, setSortFilter] = useState('relevance')
+  // Каталог берётся либо с Modrinth, либо с CurseForge: у них разные API,
+  // но карточки приводятся к одной форме.
+  const [source, setSource] = useState<'modrinth' | 'curseforge'>('modrinth')
 
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -100,6 +104,18 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
     else setIsFetchingMore(true)
 
     try {
+      // CurseForge отдаёт готовый каталог с фильтрами — отдельная ветка запроса.
+      if (source === 'curseforge') {
+        // @ts-ignore
+        const cf = await window.electronAPI.cfSearch('modpack', q, v, l, currentOffset, s, c)
+        const cfHits = cf?.hits || []
+        setResults(prev => append ? [...prev, ...cfHits] : cfHits)
+        setHasMore(cfHits.length === 20)
+        setLoading(false)
+        setIsFetchingMore(false)
+        return
+      }
+
       let data: any
       if (!q.trim() && s === 'relevance') {
         // Default view uses downloads sorting
@@ -126,7 +142,7 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
   useEffect(() => {
     setOffset(0)
     fetchModpacks(0, false, query, versionFilter, loaderFilter, categoryFilter, sortFilter)
-  }, [versionFilter, loaderFilter, categoryFilter, sortFilter])
+  }, [versionFilter, loaderFilter, categoryFilter, sortFilter, source])
 
   const handleSearchSubmit = () => {
     setOffset(0)
@@ -155,14 +171,21 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
       // 'all' бэкенд понимает как «фильтр по версии не задан» — так и отправляем
       const installGameVersion = version?.game_versions?.[0] || versionFilter
 
-      const result = await (window as any).electronAPI.installModpack(
-        modpack.project_id,
-        installGameVersion,
-        loader,
-        modpackName,
-        // Пусто — если версия не выбрана в карточке, бэкенд подберёт сам.
-        version?.id || ''
-      )
+      const result = modpack.source === 'curseforge'
+        ? await (window as any).electronAPI.cfInstallModpack(
+            modpack.project_id,
+            version?.id || null,
+            modpackName,
+            installGameVersion,
+            loader
+          )
+        : await (window as any).electronAPI.installModpack(
+            modpack.project_id,
+            installGameVersion,
+            loader,
+            modpackName,
+            version?.id || ''
+          )
       
       // Реальную версию и загрузчик сообщает бэкенд; хардкод-fallback не используем
       const actualVersion = result?.gameVersion || (versionFilter !== 'all' ? versionFilter : (modpack.versions?.[0] || ''))
@@ -197,11 +220,27 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
   }
 
   return (
-    <div className="modpacks-menu">
+    <div className="modpacks-menu" style={{ position: 'relative' }}>
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.2)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Top Bar Row 1: Game Version & Loader Filters */}
       <div style={{ display: 'flex', padding: '15px 20px', background: 'var(--pg-dark)', alignItems: 'center', gap: '15px', borderBottom: '1px solid var(--pg-dark3)', flexWrap: 'wrap', position: 'relative', zIndex: 12, flexShrink: 0 }}>
+        <div className="mc-source-switch" role="group" aria-label={t('mods.source')}>
+          <button
+            type="button"
+            className={source === 'modrinth' ? 'on' : ''}
+            onClick={() => setSource('modrinth')}
+          >
+            {t('mods.sourceModrinth')}
+          </button>
+          <button
+            type="button"
+            className={source === 'curseforge' ? 'on' : ''}
+            onClick={() => setSource('curseforge')}
+          >
+            {t('mods.sourceCurseforge')}
+          </button>
+        </div>
         <span style={{ fontWeight: 'bold', flexShrink: 0, color: 'var(--pg-text)', fontSize: '13px' }}>{t("mods.gameVersion")}</span>
         <McSelect
           value={versionFilter}
@@ -278,6 +317,9 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
             { value: 'updated', label: t("mods.updated") }
           ]}
         />
+
+        {/* Иконка открывает всплывающий чат: он собирает сборку и ставит моды. */}
+        <AiChat version={versionFilter} loader={loaderFilter} />
       </div>
 
       <div className="modpacks-content" style={{ position: 'relative', zIndex: 1 }} onScroll={handleScroll}>

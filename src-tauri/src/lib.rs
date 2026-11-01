@@ -2,8 +2,10 @@ pub mod commands;
 pub mod minecraft;
 pub mod utils;
 
+use commands::ai::*;
 use commands::auth::*;
 use commands::config::*;
+use commands::curseforge::*;
 use commands::java::*;
 use commands::loaders::*;
 use commands::mods::*;
@@ -99,6 +101,20 @@ pub fn run() {
             download_mod,
             install_optifine,
             install_modpack,
+            // CurseForge
+            cf_search,
+            cf_categories,
+            cf_versions,
+            cf_project,
+            cf_install_content,
+            cf_install_modpack,
+            cf_detect_packs,
+            cf_import_pack,
+            // ИИ-сборщик
+            ai_status,
+            ai_plan,
+            ai_history_load,
+            ai_history_save,
             // Перевод описаний
             translate_text,
             // Java Runtime

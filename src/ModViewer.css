@@ -1,9 +1,11 @@
 .markdown-body {
   color: #ddd;
-  line-height: 1.6;
+  line-height: 1.7;
   font-size: 15px;
   max-width: 100%;
-  text-align: center;
+  /* Длинные описания по центру читаются плохо: текст прижат влево,
+     по центру остаются только картинки и таблицы. */
+  text-align: left;
 }
 
 .markdown-body img {

@@ -269,7 +269,8 @@ export default function App() {
     const stored = localStorage.getItem('mc_bg_mode')
     if (stored === 'dark' || stored === 'wallpaper' || stored === 'custom') return stored
     // Миграция со старой пары «главный / вторичный фон»
-    return localStorage.getItem('mc_main_bg_data') ? 'custom' : 'dark'
+    // По умолчанию — обои лаунчера: серый экран при первом запуске выглядел пусто.
+    return localStorage.getItem('mc_main_bg_data') ? 'custom' : 'wallpaper'
   })
   const [bgImage, setBgImage] = useState<string | null>(() => localStorage.getItem('mc_main_bg_data'))
   const [bgDim, setBgDim] = useState(() => {

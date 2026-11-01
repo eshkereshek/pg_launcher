@@ -353,22 +353,40 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
   useEffect(() => {
     if (!projectId) return;
 
+    /* CurseForge отдаёт данные через бэкенд: у него другой API и другой формат
+       описания. Ответ приводится к форме Modrinth, чтобы разметка ниже не
+       раздваивалась. */
+    const curseforge = String(projectId).startsWith('cf-');
+
     // 1. Project details
     if (projectDetailsCache.has(projectId)) {
       setProjectDetails(projectDetailsCache.get(projectId));
       setLoadingProject(false);
     } else {
       setLoadingProject(true);
-      fetch(`https://api.modrinth.com/v2/project/${projectId}`)
-        .then(async res => {
-          if (res.ok) {
-            const data = await res.json();
-            projectDetailsCache.set(projectId, data);
-            setProjectDetails(data);
-          }
-        })
-        .catch(err => console.error("Failed to fetch project details:", err))
-        .finally(() => setLoadingProject(false));
+      if (curseforge) {
+        // @ts-ignore
+        Promise.resolve(window.electronAPI?.cfProject?.(projectId))
+          .then((data: any) => {
+            if (data) {
+              projectDetailsCache.set(projectId, data);
+              setProjectDetails(data);
+            }
+          })
+          .catch((err: unknown) => console.error('Failed to fetch CurseForge project:', err))
+          .finally(() => setLoadingProject(false));
+      } else {
+        fetch(`https://api.modrinth.com/v2/project/${projectId}`)
+          .then(async res => {
+            if (res.ok) {
+              const data = await res.json();
+              projectDetailsCache.set(projectId, data);
+              setProjectDetails(data);
+            }
+          })
+          .catch(err => console.error("Failed to fetch project details:", err))
+          .finally(() => setLoadingProject(false));
+      }
     }
 
     // 2. Versions (fetched in parallel!)
@@ -377,21 +395,40 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
       setLoadingVersions(false);
     } else {
       setLoadingVersions(true);
-      fetch(`https://api.modrinth.com/v2/project/${projectId}/version`)
-        .then(async res => {
-          if (res.ok) {
-            const data = await res.json();
-            versionsCache.set(projectId, data);
-            setVersions(data);
-          }
-        })
-        .catch(err => console.error("Failed to fetch versions:", err))
-        .finally(() => setLoadingVersions(false));
+      if (curseforge) {
+        // Версии CurseForge приходят уже в форме Modrinth.
+        // @ts-ignore
+        Promise.resolve(
+          window.electronAPI?.cfVersions?.(
+            projectId,
+            activeModpack?.version || '',
+            activeModpack?.loader || ''
+          )
+        )
+          .then((data: any) => {
+            const list = Array.isArray(data) ? data : [];
+            versionsCache.set(projectId, list);
+            setVersions(list);
+          })
+          .catch((err: unknown) => console.error('Failed to fetch CurseForge versions:', err))
+          .finally(() => setLoadingVersions(false));
+      } else {
+        fetch(`https://api.modrinth.com/v2/project/${projectId}/version`)
+          .then(async res => {
+            if (res.ok) {
+              const data = await res.json();
+              versionsCache.set(projectId, data);
+              setVersions(data);
+            }
+          })
+          .catch(err => console.error("Failed to fetch versions:", err))
+          .finally(() => setLoadingVersions(false));
+      }
     }
 
     // 3. Dependencies (fetched in parallel!)
     // Сборке зависимости не нужны: вкладка скрыта, лишний запрос не делаем.
-    if (isPack) {
+    if (isPack || curseforge) {
       setLoadingDependencies(false);
     } else if (dependenciesCache.has(projectId)) {
       setDependencies(dependenciesCache.get(projectId)!);

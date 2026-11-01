@@ -470,3 +470,301 @@
     padding-left: 0;
   }
 }
+
+/* Блок «Сборки на диске» на странице создания сборки. */
+.mcp-step-num-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mcp-import-desc {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #9a9a9a;
+}
+
+.mcp-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mcp-import-scan {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-import-count {
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
+.mcp-import-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: #8a8a8a;
+}
+
+.mcp-import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.mcp-import-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #1b1b1b;
+  border: 2px solid #0d0d0d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.mcp-import-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mcp-import-name {
+  font-size: 13px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-import-meta {
+  font-size: 11.5px;
+  color: #8f8f8f;
+}
+
+.mcp-import-btn {
+  flex-shrink: 0;
+}
+
+.spin {
+  animation: mcp-spin 1s linear infinite;
+}
+
+@keyframes mcp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Блок «Сборки на диске»: кнопки и строки в стиле лаунчера. */
+.mcp-step-num-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mcp-import-desc {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.mcp-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mcp-import-count {
+  margin-left: auto;
+  padding: 5px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mcp-import-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.mcp-import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mcp-import-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.mcp-import-item:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+/* Метка лаунчера-источника: узкая плашка слева, как бейдж версии. */
+.mcp-import-source {
+  flex: 0 0 auto;
+  max-width: 120px;
+  padding: 3px 7px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-import-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mcp-import-name {
+  font-size: 13px;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-import-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mcp-import-btn {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+/* Опасная зона настроек сборки. */
+.mcp-step-num-danger {
+  background: #3a1512;
+  border: 1px solid #6b2a22;
+  color: #ff8a7a;
+}
+
+.mcp-danger-btn {
+  height: 30px;
+  padding: 0 14px;
+  background: var(--surface-2);
+  border: 1px solid #6b2a22;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: #ff8a7a;
+  font-family: 'Blocks', sans-serif;
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.mcp-danger-btn:hover:not(:disabled) {
+  background: #3a1512;
+  color: #ffb3a6;
+}
+
+.mcp-danger-btn.on {
+  background: #7a2119;
+  border-color: #a83426;
+  color: #fff;
+}
+
+.mcp-danger-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ИИ-сборщик: запрос словами и найденные моды. */
+.mcp-ai-prompt {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.mcp-ai-summary {
+  margin: 0;
+  font-size: 12.5px;
+  color: #c9c9c9;
+}
+
+.mcp-ai-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: #ff7b72;
+}
+
+.mcp-ai-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mcp-ai-mod {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  padding: 5px 9px 5px 5px;
+  background: #1b1b1b;
+  border: 2px solid #0d0d0d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.mcp-ai-mod img {
+  width: 22px;
+  height: 22px;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.mcp-ai-mod span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: #e6e6e6;
+}

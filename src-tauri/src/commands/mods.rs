@@ -1,3 +1,6 @@
+/// Представляемся обычным лаунчером: часть CDN иначе отвечает медленно.
+const USER_AGENT: &str = "PagryshaLauncher/7.2";
+
 use crate::utils::content::{self, ContentEntry};
 use crate::utils::download::*;
 use crate::utils::guard;
@@ -295,7 +298,7 @@ pub fn import_mod_paths(paths: Vec<String>, instance_id: String) -> Result<Value
 
 /// Общий поиск Modrinth. Категория — отдельный необязательный фасет: её
 /// передают только списки сборок, поэтому у команды `search_mods` она пустая.
-async fn search_modrinth(
+pub(crate) async fn search_modrinth(
     query: &str,
     loader: &str,
     version: &str,
@@ -553,7 +556,8 @@ pub async fn download_mod(
     };
 
     let instance = instance_dir(&instance_id)?;
-    let client = reqwest::Client::new();
+    // Таймауты обязательны: иначе установка мода может висеть вечно.
+    let client = http_client();
 
     // Основной файл: его ошибка отменяет установку целиком.
     let (main_file, deps) = install_mod_version(
@@ -641,54 +645,145 @@ pub async fn install_optifine(
     instance_id: String,
 ) -> Result<Value, String> {
     let _ = app.emit("launch-progress", "Поиск OptiFine...");
-    let client = reqwest::Client::new();
-    let res = client
-        .get("https://bmclapi2.bangbang93.com/optifine/versionList")
-        .header("User-Agent", "PagryshaLauncher/7.2")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let client = http_client();
 
-    if res.status().is_success() {
-        let list: Value = res.json().await.map_err(|e| e.to_string())?;
-        if let Some(arr) = list.as_array() {
-            let compatible: Vec<&Value> = arr
-                .iter()
-                .filter(|v| v["mcversion"].as_str() == Some(&game_version))
-                .collect();
-            if let Some(target) = compatible.last() {
-                let filename = target["filename"]
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("OptiFine_{}.jar", game_version));
-                let dl_url = format!(
-                    "https://bmclapi2.bangbang93.com/optifine/{}/{}/{}",
-                    target["mcversion"].as_str().unwrap_or(&game_version),
-                    target["type"].as_str().unwrap_or("HD_U"),
-                    target["patch"].as_str().unwrap_or("G5")
-                );
-
-                let instance = instance_dir(&instance_id)?;
-                let name = guard::file_name(&filename)
-                    .unwrap_or_else(|_| format!("OptiFine_{}.jar", game_version));
-                let dest = instance.join("mods").join(&name);
-                // У BMCLAPI в списке версий хешей нет, поэтому только сама
-                // загрузка: ошибку больше не глотаем.
-                ensure_file(&dl_url, &dest, None).await?;
-
-                let _ = app.emit("launch-progress", "OptiFine установлен!");
-                // Путь инстанса проверен в instance_dir, имя файла — в
-                // guard::file_name выше; отдаём оба поля: filename и filenames.
-                return Ok(serde_json::json!({
-                    "status": "success",
-                    "filename": name,
-                    "filenames": [name]
-                }));
-            }
-        }
+    // Источники перебираем по очереди: BMCLAPI — зеркало официальных файлов,
+    // но оно то отвечает, то нет; архив на GitHub отдаётся через
+    // raw.githubusercontent, который обычно доступен там, где сайт OptiFine
+    // режет соединение на первых десятках килобайт.
+    let mut sources: Vec<(String, String)> = Vec::new();
+    if let Some(found) = bmclapi_optifine(&client, &game_version).await {
+        sources.push(found);
+    }
+    if let Some(found) = github_optifine(&client, &game_version).await {
+        sources.push(found);
     }
 
-    Err("Подходящая версия OptiFine не найдена".to_string())
+    if sources.is_empty() {
+        return Err(format!(
+            "Не удалось найти файл OptiFine для версии {game_version}"
+        ));
+    }
+
+    let instance = instance_dir(&instance_id)?;
+    let mods_dir = instance.join("mods");
+    fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
+
+    let mut errors: Vec<String> = Vec::new();
+    for (filename, url) in sources {
+        let name =
+            guard::file_name(&filename).unwrap_or_else(|_| format!("OptiFine_{game_version}.jar"));
+        let dest = mods_dir.join(&name);
+
+        let _ = app.emit(
+            "launch-progress",
+            format!("Скачивание OptiFine ({filename})..."),
+        );
+
+        // Куски быстрее и устойчивее там, где цельное соединение обрывается.
+        let mut ok = download_in_chunks(&client, &url, &dest, &|_done, _total| {})
+            .await
+            .is_ok();
+        if !ok {
+            ok = ensure_file_with(&client, &url, &dest, None).await.is_ok();
+        }
+
+        if ok && looks_like_optifine(&dest) {
+            let _ = app.emit("launch-progress", "OptiFine установлен!");
+            return Ok(serde_json::json!({
+                "status": "success",
+                "filename": name,
+                "filenames": [name]
+            }));
+        }
+
+        // Битый или чужой файл не оставляем в сборке.
+        let _ = fs::remove_file(&dest);
+        errors.push(url);
+    }
+
+    Err(format!(
+        "Не удалось скачать OptiFine ни с одного источника: {}",
+        errors.join(", ")
+    ))
+}
+
+/// Проверка, что скачался действительно OptiFine: zip-заголовок и классы мода.
+fn looks_like_optifine(path: &std::path::Path) -> bool {
+    let Ok(data) = fs::read(path) else {
+        return false;
+    };
+    if data.len() < 500_000 || !data.starts_with(b"PK") {
+        return false;
+    }
+    data.windows(12).any(|window| window == b"net/optifine")
+}
+
+/// OptiFine с BMCLAPI: список версий и ссылка на файл.
+async fn bmclapi_optifine(
+    client: &reqwest::Client,
+    game_version: &str,
+) -> Option<(String, String)> {
+    let list = client
+        .get("https://bmclapi2.bangbang93.com/optifine/versionList")
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .ok()?
+        .json::<Value>()
+        .await
+        .ok()?;
+
+    let items = list.as_array()?;
+    let target = items
+        .iter()
+        .filter(|v| v["mcversion"].as_str() == Some(game_version))
+        // Превью не берём: нужен обычный релиз, а он идёт последним.
+        .filter(|v| !v["filename"].as_str().unwrap_or("").contains("preview"))
+        .next_back()?;
+
+    let filename = target["filename"].as_str()?.to_string();
+    let url = format!(
+        "https://bmclapi2.bangbang93.com/optifine/{}/{}/{}",
+        target["mcversion"].as_str().unwrap_or(game_version),
+        target["type"].as_str().unwrap_or("HD_U"),
+        target["patch"].as_str().unwrap_or("I6")
+    );
+
+    Some((filename, url))
+}
+
+/// OptiFine из публичного архива на GitHub: путь по версии игры.
+async fn github_optifine(client: &reqwest::Client, game_version: &str) -> Option<(String, String)> {
+    let listing = client
+        .get(format!(
+            "https://api.github.com/repos/SynArchive/OptiFine-Archive/contents/{game_version}"
+        ))
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .ok()?
+        .json::<Value>()
+        .await
+        .ok()?;
+
+    let mut jars: Vec<(String, String)> = listing
+        .as_array()?
+        .iter()
+        .filter_map(|item| {
+            let name = item["name"].as_str()?.to_string();
+            let url = item["download_url"].as_str()?.to_string();
+            let is_release = name.starts_with("OptiFine_")
+                && name.ends_with(".jar")
+                && !name.contains("preview");
+            is_release.then_some((name, url))
+        })
+        .collect();
+
+    // Имя содержит букву патча: I6 новее I5, поэтому берём максимум.
+    jars.sort_by(|a, b| a.0.cmp(&b.0));
+    jars.pop()
 }
 
 #[tauri::command]
