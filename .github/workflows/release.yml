@@ -99,7 +99,11 @@ jobs:
         run: |
           $mingw = $env:MINGW_BIN
           Copy-Item "src-tauri\target\release\pagrysha-launcher.exe" "Pagrysha_Launcher_Setup.exe" -Force
-          Copy-Item "src-tauri\target\release\WebView2Loader.dll" "WebView2Loader.dll" -Force
+          # В репозитории лежит копия: бандлер создаёт DLL не во всех режимах.
+          $dll = "installer\WebView2Loader.dll"
+          if (-not (Test-Path $dll)) { $dll = "src-tauri\target\release\WebView2Loader.dll" }
+          if (-not (Test-Path $dll)) { throw "Не найден WebView2Loader.dll" }
+          Copy-Item $dll "WebView2Loader.dll" -Force
           & "$mingw\windres.exe" -i installer.rc -o installer_res.o
           & "$mingw\gcc.exe" -O2 -mwindows installer_main.c installer_res.o -o "Pagrysha_Setup.exe"
           if (-not (Test-Path "Pagrysha_Setup.exe")) { throw "Установщик не собрался" }

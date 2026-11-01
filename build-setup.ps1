@@ -7,7 +7,9 @@ npx tauri build --no-bundle
 
 Write-Host "2. Copying binaries..." -ForegroundColor Cyan
 Copy-Item "src-tauri\target\release\pagrysha-launcher.exe" "Pagrysha_Launcher_Setup.exe" -Force
-Copy-Item "src-tauri\target\release\WebView2Loader.dll" "WebView2Loader.dll" -Force
+$dll = "installer\WebView2Loader.dll"
+if (-not (Test-Path $dll)) { $dll = "src-tauri\target\release\WebView2Loader.dll" }
+Copy-Item $dll "WebView2Loader.dll" -Force
 
 Write-Host "3. Compiling standalone single-file installer..." -ForegroundColor Cyan
 windres.exe -i installer.rc -o installer_res.o

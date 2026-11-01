@@ -13,6 +13,7 @@ src-tauri/gen/schemas/
 Pagrysha_Launcher_Setup.exe
 Pagrysha_Setup.exe
 WebView2Loader.dll
+!installer/WebView2Loader.dll
 installer_res.o
 
 # Кадры старой анимации: сам GIF из проекта убран, папка больше не нужна
