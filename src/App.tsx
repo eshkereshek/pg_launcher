@@ -1566,23 +1566,31 @@ export default function App() {
   /**
    * Проверяет токен Ely.by и обновляет его, если срок вышел.
    *
-   * Возвращает false, когда обновить не удалось: тогда игроку нужно войти
-   * заново, иначе сервер отклонит вход как недействительную сессию.
+   * Возвращает актуальные токены или null, если сессию не восстановить: тогда
+   * игроку нужно войти заново, иначе сервер отклонит вход.
+   *
+   * Токены возвращаются значением, а не только через состояние: `activeAccount`
+   * в текущем рендере ещё старый, и игра получала просроченный токен даже после
+   * успешного обновления.
    */
-  const ensureElybySession = async () => {
-    if (!activeAccount || activeAccount.type !== 'elyby' || !activeAccount.token) return true
+  const ensureElybySession = async (): Promise<{ token: string; clientToken: string } | null> => {
+    const current = {
+      token: activeAccount?.token || '',
+      clientToken: activeAccount?.clientToken || '',
+    }
+    if (!activeAccount || activeAccount.type !== 'elyby' || !activeAccount.token) return current
 
     try {
       // @ts-ignore
       const valid = await window.electronAPI.authElybyValidate(activeAccount.token)
-      if (valid) return true
+      if (valid) return current
 
       // @ts-ignore
       const fresh = await window.electronAPI.authElybyRefresh(
         activeAccount.token,
         activeAccount.clientToken || ''
       )
-      if (!fresh || !fresh.token) return false
+      if (!fresh || !fresh.token) return null
 
       const updated = {
         ...activeAccount,
@@ -1594,9 +1602,10 @@ export default function App() {
       setActiveAccount(updated)
       // @ts-ignore
       await window.electronAPI.saveAccounts(next)
-      return true
+
+      return { token: updated.token, clientToken: updated.clientToken || '' }
     } catch {
-      return false
+      return null
     }
   }
 
@@ -1616,8 +1625,8 @@ export default function App() {
     // Токен Ely.by живёт ограниченное время. Если отдать игре просроченный,
     // сервер (в том числе сервер друга) отбивает вход с «Недействительная
     // сессия». Поэтому проверяем его до запуска и обновляем при необходимости.
-    const sessionOk = await ensureElybySession()
-    if (!sessionOk) {
+    const session = await ensureElybySession()
+    if (!session) {
       setLaunching(false)
       setGameRunning(false)
       setProgress('')
@@ -1632,8 +1641,8 @@ export default function App() {
       version: selectedVersion,
       username: activeAccount.name,
       uuid: activeAccount.uuid,
-      token: activeAccount.token,
-      clientToken: activeAccount.clientToken,
+      token: session.token,
+      clientToken: session.clientToken,
       authType: activeAccount.type,
       maxRam: ramValue,
       instanceId: selectedVersion,

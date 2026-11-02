@@ -1,7 +1,7 @@
 {
   "name": "pagrysha-launcher-tauri",
   "private": true,
-  "version": "7.2.2",
+  "version": "7.2.3",
   "author": "Pagrysha <support@pagrysha.com>",
   "type": "module",
   "scripts": {

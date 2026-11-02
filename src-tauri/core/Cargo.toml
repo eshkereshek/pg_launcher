@@ -1,6 +1,6 @@
 [package]
 name = "pagrysha-core"
-version = "7.2.2"
+version = "7.2.3"
 edition = "2021"
 description = "Pagrysha Launcher: загрузки, пути и проверки без Tauri"
 publish = false
