@@ -390,14 +390,20 @@ pub async fn cf_install_modpack(
     let mut downloaded = false;
     for candidate in &candidates {
         match ensure_file(candidate, &zip_path, None).await {
-            Ok(_) => { downloaded = true; break; }
+            Ok(_) => {
+                downloaded = true;
+                break;
+            }
             Err(err) => last_error = err,
         }
     }
     if !downloaded {
         for candidate in &candidates {
             match ensure_file_plain(candidate, &zip_path).await {
-                Ok(_) => { downloaded = true; break; }
+                Ok(_) => {
+                    downloaded = true;
+                    break;
+                }
                 Err(err) => last_error = err,
             }
         }
