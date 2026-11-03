@@ -211,6 +211,18 @@ pub fn http_client() -> reqwest::Client {
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
+/// Запасная попытка «как есть»: обычный клиент без IPv4-резолвера и без
+/// принудительного HTTP/1.1. Нужна, когда кастомный клиент вообще не может
+/// установить соединение (CDN отвечает RST на TLS или не отдаёт A-запись).
+pub async fn ensure_file_plain(url: &str, dest: &Path) -> Result<bool, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(900))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    ensure_file_with(&client, url, dest, None).await
+}
+
 /// Скачать файл, если его нет или он не сходится с хешем.
 ///
 /// Возвращает `true`, если файл действительно скачивался (для прогресса и для
@@ -472,10 +484,17 @@ where
         request = request.header("Range", format!("bytes={already}-"));
     }
 
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let response = request.send().await.map_err(|e| {
+        // reqwest прячет DNS/TLS-причину в source: без него в интерфейсе
+        // остаётся бесполезное «error sending request».
+        let mut text = format!("Request failed: {e}");
+        let mut source = std::error::Error::source(&e);
+        while let Some(cause) = source {
+            text.push_str(&format!(" → {cause}"));
+            source = std::error::Error::source(cause);
+        }
+        text
+    })?;
     let status = response.status();
 
     // 200 в ответ на Range значит, что сервер докачку не умеет: начинаем заново.

@@ -531,11 +531,11 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
           </div>
           
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ margin: '0 0 10px 0', fontSize: '24px', color: '#fff', fontWeight: 'bold' }}>{getModTitle(mod)}</h1>
-            <div style={{ color: '#aaa', fontSize: '16px', marginBottom: '15px', display: 'flex', gap: '8px' }}>
+            <h1 style={{ margin: '0 0 10px 0', fontSize: '24px', color: 'var(--pg-text)', fontWeight: 'bold' }}>{getModTitle(mod)}</h1>
+            <div style={{ color: 'var(--pg-text-muted)', fontSize: '16px', marginBottom: '15px', display: 'flex', gap: '8px' }}>
               Автор: <span style={{ color: 'var(--pg-yellow)', fontWeight: 'bold' }}>{mod.author || projectDetails?.organization || 'Unknown'}</span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px', color: '#aaa', fontSize: '14px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px', color: 'var(--pg-text-muted)', fontSize: '14px' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <PixelDownloadIcon size={18} color="currentColor" style={{ display: 'inline-block' }} /> {((projectDetails?.downloads || mod.downloads) || 0).toLocaleString()}
               </span>
@@ -560,7 +560,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
               <button
                 className="mc-btn-secondary"
                 disabled
-                style={{ background: '#2b2b2b', fontSize: '18px', padding: '15px 30px', fontWeight: 'bold', cursor: 'not-allowed' }}
+                style={{ background: 'var(--pg-dark3)', fontSize: '18px', padding: '15px 30px', fontWeight: 'bold', cursor: 'not-allowed' }}
                 title={isPack
                   ? t('mv.alreadyInstalledHint')
                   : t('mv.alreadyInstalled')}
@@ -601,7 +601,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
               style={{
                 padding: '10px 0',
                 cursor: 'pointer',
-                color: activeTab === tab.id ? 'var(--pg-yellow)' : '#aaa',
+                color: activeTab === tab.id ? 'var(--pg-yellow)' : 'var(--pg-text-muted)',
                 borderBottom: activeTab === tab.id ? '2px solid var(--pg-yellow)' : '2px solid transparent',
                 fontWeight: activeTab === tab.id ? 'bold' : 'normal',
                 fontSize: '14px',
@@ -617,8 +617,8 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 <span style={{
                   fontSize: '10px',
                   padding: '1px 6px',
-                  background: activeTab === tab.id ? 'rgba(241, 196, 15, 0.2)' : 'rgba(255,255,255,0.06)',
-                  color: activeTab === tab.id ? 'var(--pg-yellow)' : '#888',
+                  background: activeTab === tab.id ? 'var(--pg-accent-line)' : 'rgba(255,255,255,0.06)',
+                  color: activeTab === tab.id ? 'var(--pg-yellow)' : 'var(--pg-text-muted)',
                   border: activeTab === tab.id ? '1px solid var(--pg-yellow)' : '1px solid #333'
                 }}>
                   {tab.count}
@@ -648,12 +648,12 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   gap: '16px'
                 }}>
                   <Loader2 size={36} className="mc-spin" style={{ color: 'var(--pg-yellow)' }} />
-                  <span style={{ color: '#aaa', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
+                  <span style={{ color: 'var(--pg-text-muted)', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
                     {t('servers.loadingDescription')}
                   </span>
                 </div>
               ) : (
-                <div className="markdown-body" style={{ padding: '40px', color: '#ddd', lineHeight: 1.6, width: '100%', maxWidth: '100%', margin: '0 auto', fontSize: '15px', boxSizing: 'border-box' }}>
+                <div className="markdown-body" style={{ padding: '40px', color: 'var(--pg-text)', lineHeight: 1.6, width: '100%', maxWidth: '100%', margin: '0 auto', fontSize: '15px', boxSizing: 'border-box' }}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, [rehypeSanitize, descriptionSchema]]}>
                     {translationVisible
                       ? translation
@@ -686,8 +686,8 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       }}
                       className="hover-scale-btn"
                       style={{
-                        background: '#141414',
-                        border: '2px solid #000',
+                        background: 'var(--pg-dark)',
+                        border: '2px solid var(--pg-dark3)',
                         borderRadius: '0px',
                         boxShadow: 'inset -2px -2px 0 0 rgba(0,0,0,0.4), inset 2px 2px 0 0 rgba(255,255,255,0.06), 0 4px 8px rgba(0,0,0,0.5)',
                         cursor: 'pointer',
@@ -708,7 +708,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       <div style={{
                         width: '100%',
                         aspectRatio: '16 / 10',
-                        background: '#0a0a0a',
+                        background: 'var(--pg-dark)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -733,7 +733,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                           bottom: '6px',
                           right: '6px',
                           background: 'rgba(0,0,0,0.75)',
-                          border: '1px solid #333',
+                          border: '1px solid var(--pg-dark3)',
                           padding: '2px 6px',
                           fontSize: '11px',
                           fontFamily: '"MinecraftTen", "Blocks", sans-serif',
@@ -746,12 +746,12 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       {img.title && (
                         <div style={{
                           padding: '8px 10px',
-                          color: '#ddd',
+                          color: 'var(--pg-text)',
                           fontSize: '13px',
                           fontFamily: '"Blocks", sans-serif',
                           textAlign: 'center',
-                          background: '#181818',
-                          borderTop: '1px solid #282828',
+                          background: 'var(--pg-dark)',
+                          borderTop: '1px solid var(--pg-dark3)',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
@@ -769,7 +769,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '80px 20px',
-                  color: '#777',
+                  color: 'var(--pg-text-muted)',
                   gap: '14px'
                 }}>
                   <ImageIcon size={48} color="#444" />
@@ -796,12 +796,12 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   <Loader2 size={36} className="mc-spin" style={{ color: 'var(--pg-yellow)' }} />
                   <span style={{
                     fontFamily: '"MinecraftTen", "Blocks", sans-serif',
-                    color: '#ddd',
+                    color: 'var(--pg-text)',
                     fontSize: '16px'
                   }}>
                     {t('mv.loadingVersions')}
                   </span>
-                  <span style={{ color: '#777', fontSize: '13px', fontFamily: '"Blocks", sans-serif' }}>
+                  <span style={{ color: 'var(--pg-text-muted)', fontSize: '13px', fontFamily: '"Blocks", sans-serif' }}>
                     {t('mv.fetchingReleases')}
                   </span>
                 </div>
@@ -813,7 +813,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                     gridTemplateColumns: '120px minmax(220px, 1fr) 150px 150px 90px',
                     gap: '12px',
                     padding: '10px 24px',
-                    background: '#161616',
+                    background: 'var(--pg-dark)',
                     color: 'var(--pg-yellow)',
                     fontWeight: 'bold',
                     fontSize: '12px',
@@ -852,18 +852,18 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                               gridTemplateColumns: '120px minmax(220px, 1fr) 150px 150px 90px',
                               gap: '12px',
                               padding: '10px 24px',
-                              borderBottom: '1px solid #232323',
+                              borderBottom: '1px solid var(--pg-dark3)',
                               borderLeft: isCompatible ? '3px solid #2ecc71' : '3px solid transparent',
                               alignItems: 'center',
                               fontSize: '13px',
-                              color: '#ccc',
-                              background: idx % 2 === 0 ? '#131313' : '#171717',
+                              color: 'var(--pg-text-muted)',
+                              background: idx % 2 === 0 ? 'var(--surface-2)' : 'var(--surface-3)',
                               minWidth: '700px'
                             }}
                           >
                             {/* Date */}
                             <div style={{
-                              color: '#999',
+                              color: 'var(--pg-text-muted)',
                               fontSize: '12px',
                               fontFamily: '"Blocks", sans-serif'
                             }}>
@@ -873,7 +873,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                             {/* Version Name & Subtitle */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, overflow: 'hidden' }}>
                               <div style={{
-                                color: '#fff',
+                                color: 'var(--pg-text)',
                                 fontWeight: 600,
                                 fontSize: '13px',
                                 fontFamily: '"Blocks", sans-serif',
@@ -883,20 +883,20 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                               }} title={v.name || v.version_number}>
                                 {v.name || v.version_number}
                               </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', fontSize: '11px', color: '#777' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', fontSize: '11px', color: 'var(--pg-text-muted)' }}>
                                 {v.version_number && v.version_number !== v.name && (
                                   <span style={{
                                     fontFamily: 'monospace',
                                     color: 'var(--pg-yellow)',
-                                    background: 'rgba(241, 196, 15, 0.08)',
-                                    border: '1px solid rgba(241, 196, 15, 0.2)',
+                                    background: 'var(--pg-accent-faint)',
+                                    border: '1px solid var(--pg-accent-line)',
                                     padding: '1px 5px'
                                   }}>
                                     {v.version_number}
                                   </span>
                                 )}
                                 {typeof v.downloads === 'number' && v.downloads > 0 && (
-                                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#666' }}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--pg-text-muted)' }}>
                                     <PixelDownloadIcon size={12} color="currentColor" style={{ display: 'inline-block' }} /> {v.downloads.toLocaleString()}
                                   </span>
                                 )}
@@ -932,7 +932,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                   );
                                 })
                               ) : (
-                                <span style={{ color: '#666', fontSize: '12px' }}>-</span>
+                                <span style={{ color: 'var(--pg-text-muted)', fontSize: '12px' }}>-</span>
                               )}
                             </div>
 
@@ -944,9 +944,9 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                     <span key={gv} style={{
                                       fontSize: '11px',
                                       fontFamily: 'monospace',
-                                      color: '#eee',
-                                      background: '#232323',
-                                      border: '1px solid #3d3d3d',
+                                      color: 'var(--pg-text)',
+                                      background: 'var(--pg-dark2)',
+                                      border: '1px solid var(--pg-dark3)',
                                       padding: '2px 6px',
                                       whiteSpace: 'nowrap'
                                     }}>
@@ -956,9 +956,9 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                   {v.game_versions.length > 2 && (
                                     <span style={{
                                       fontSize: '10px',
-                                      color: '#888',
-                                      background: '#1a1a1a',
-                                      border: '1px solid #333',
+                                      color: 'var(--pg-text-muted)',
+                                      background: 'var(--pg-dark)',
+                                      border: '1px solid var(--pg-dark3)',
                                       padding: '2px 5px',
                                       whiteSpace: 'nowrap',
                                       cursor: 'default'
@@ -968,7 +968,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                   )}
                                 </>
                               ) : (
-                                <span style={{ color: '#666', fontSize: '12px' }}>-</span>
+                                <span style={{ color: 'var(--pg-text-muted)', fontSize: '12px' }}>-</span>
                               )}
                             </div>
 
@@ -979,9 +979,9 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                   className="mod-action-badge"
                                   title={t("mods.isInstalled") || t('mv.installedState')}
                                   style={{
-                                    background: '#232323',
-                                    border: '1px solid #3a3a3a',
-                                    color: '#ffffff',
+                                    background: 'var(--pg-dark2)',
+                                    border: '1px solid var(--pg-dark3)',
+                                    color: 'var(--pg-text)',
                                     boxShadow: 'none'
                                   }}
                                 >
@@ -992,8 +992,8 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                   className="mod-action-badge"
                                   title={t('app.loading')}
                                   style={{
-                                    background: 'rgba(241, 196, 15, 0.12)',
-                                    border: '1px solid rgba(241, 196, 15, 0.3)',
+                                    background: 'var(--pg-accent-soft)',
+                                    border: '1px solid var(--pg-accent-line)',
                                     color: 'var(--pg-yellow)'
                                   }}
                                 >
@@ -1013,7 +1013,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                                   className="mod-action-badge"
                                   title={`Не подходит для текущей сборки (${activeModpack ? activeModpack.loader + ' ' + activeModpack.version : 'нет сборки'})`}
                                   style={{
-                                    color: '#555'
+                                    color: 'var(--pg-text-muted)'
                                   }}
                                 >
                                   <PixelDownloadIcon size={18} color="#555555" opacity={0.35} />
@@ -1031,8 +1031,8 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                           display: 'flex',
                           justifyContent: 'center',
                           gap: '12px',
-                          background: '#111',
-                          borderTop: '1px solid #222'
+                          background: 'var(--pg-dark)',
+                          borderTop: '1px solid var(--pg-dark3)'
                         }}>
                           <button
                             onClick={() => setVisibleCount(prev => prev + 40)}
@@ -1040,9 +1040,9 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                             style={{
                               padding: '8px 20px',
                               fontSize: '12px',
-                              background: '#202020',
-                              border: '1px solid #444',
-                              color: '#fff',
+                              background: 'var(--pg-dark2)',
+                              border: '1px solid var(--pg-dark3)',
+                              color: 'var(--pg-text)',
                               cursor: 'pointer',
                               fontFamily: '"MinecraftTen", "Blocks", sans-serif'
                             }}
@@ -1055,8 +1055,8 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                             style={{
                               padding: '8px 20px',
                               fontSize: '12px',
-                              background: '#181818',
-                              border: '1px solid #333',
+                              background: 'var(--pg-dark)',
+                              border: '1px solid var(--pg-dark3)',
                               color: 'var(--pg-yellow)',
                               cursor: 'pointer',
                               fontFamily: '"MinecraftTen", "Blocks", sans-serif'
@@ -1074,10 +1074,10 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                       alignItems: 'center',
                       justifyContent: 'center',
                       padding: '80px 20px',
-                      color: '#777',
+                      color: 'var(--pg-text-muted)',
                       gap: '14px'
                     }}>
-                      <span style={{ fontSize: '15px', fontFamily: '"Blocks", sans-serif', color: '#bbb' }}>
+                      <span style={{ fontSize: '15px', fontFamily: '"Blocks", sans-serif', color: 'var(--pg-text-muted)' }}>
                         {t('mv.noVersions')}
                       </span>
                     </div>
@@ -1099,7 +1099,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   gap: '16px'
                 }}>
                   <Loader2 size={36} className="mc-spin" style={{ color: 'var(--pg-yellow)' }} />
-                  <span style={{ color: '#aaa', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
+                  <span style={{ color: 'var(--pg-text-muted)', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
                     {t('mv.loadingDependencies')}
                   </span>
                 </div>
@@ -1112,13 +1112,13 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                   }}>
                     <img src={dep.icon_url || './iconsblocks/Grass_Block_(inventory)_MCE.png'} alt="icon" style={{ width: '60px', height: '60px', borderRadius: '0', background: '#fff' }} />
                     <div>
-                      <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '18px', marginBottom: '5px' }}>{dep.title}</div>
-                      <div style={{ color: '#aaa', fontSize: '14px', lineHeight: 1.4 }}>{dep.description}</div>
+                      <div style={{ fontWeight: 'bold', color: 'var(--pg-text)', fontSize: '18px', marginBottom: '5px' }}>{dep.title}</div>
+                      <div style={{ color: 'var(--pg-text-muted)', fontSize: '14px', lineHeight: 1.4 }}>{dep.description}</div>
                     </div>
                   </div>
                 ))
               ) : (
-                <div style={{ color: '#aaa', textAlign: 'center', marginTop: '50px', fontSize: '18px', fontFamily: '"Blocks", sans-serif' }}>{t('mv.noDependencies')}</div>
+                <div style={{ color: 'var(--pg-text-muted)', textAlign: 'center', marginTop: '50px', fontSize: '18px', fontFamily: '"Blocks", sans-serif' }}>{t('mv.noDependencies')}</div>
               )}
             </div>
           )}
@@ -1138,9 +1138,9 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
             {(translating || translationNote) && (
               <span style={{
                 background: 'rgba(18, 18, 18, 0.92)',
-                border: '1px solid #333',
+                border: '1px solid var(--pg-dark3)',
                 padding: '6px 10px',
-                color: '#bbb',
+                color: 'var(--pg-text-muted)',
                 fontSize: '11.5px',
                 fontFamily: '"Blocks", sans-serif',
                 maxWidth: '340px',
@@ -1163,11 +1163,11 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: translationVisible ? 'var(--pg-yellow)' : '#2b2b2b',
-                border: '2px solid #0b0b0b',
+                background: translationVisible ? 'var(--pg-yellow)' : 'var(--pg-dark3)',
+                border: '2px solid var(--pg-dark3)',
                 borderRadius: '0',
                 boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.22), inset 0 -2px 0 rgba(0,0,0,0.35), 0 3px 0 0 #0b0b0b',
-                color: translationVisible ? '#171200' : '#ffffff',
+                color: translationVisible ? 'var(--pg-on-accent)' : 'var(--pg-text)',
                 fontFamily: '"Blocks", sans-serif',
                 cursor: translating ? 'default' : 'pointer',
                 opacity: translating ? 0.6 : 1,
@@ -1482,7 +1482,7 @@ export default function ModViewer({ mod, activeModpack, onClose, onInstall, isIn
                 background: 'rgba(18, 18, 18, 0.85)',
                 border: '1px solid #333',
                 padding: '6px 18px',
-                color: '#bbb',
+                color: 'var(--pg-text-muted)',
                 fontSize: '13px',
                 fontFamily: '"Blocks", sans-serif',
                 textAlign: 'center',

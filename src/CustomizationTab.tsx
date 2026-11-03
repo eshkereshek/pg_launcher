@@ -293,6 +293,19 @@ export default function CustomizationTab({ theme, onChange, onPreset, onMode, on
               <span className="settings-check-desc">{t('cz.effectsNote')}</span>
             </span>
           </label>
+          {/* Лента «Рекомендуем» на главном экране: её можно убрать, если
+              игроку нужен только собственный список сборок. */}
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={theme.showRecommended !== false}
+              onChange={event => onChange({ showRecommended: event.target.checked })}
+            />
+            <span className="settings-check-text">
+              <span className="settings-check-title">{t('cz.recommended')}</span>
+              <span className="settings-check-desc">{t('cz.recommendedDesc')}</span>
+            </span>
+          </label>
           {/* Хеллоуин живёт отдельным переключателем: он не часть темы, а
               сезонный декор, и по умолчанию включается сам на неделю Хеллоина. */}
           <label className="settings-check">

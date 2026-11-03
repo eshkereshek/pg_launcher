@@ -140,11 +140,12 @@
 }
 
 .accounts-card.active {
-  background: var(--pg-yellow);
+  /* Полупрозрачная рамка: сплошной акцент в списке аккаунтов бил по глазам. */
+  background: var(--pg-accent-line, rgba(241, 196, 15, 0.45));
 }
 
 .accounts-card.active .accounts-card-fill {
-  background: #1d1a10;
+  background: #1b1b1b;
 }
 
 .accounts-card-name {

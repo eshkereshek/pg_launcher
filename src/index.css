@@ -761,7 +761,7 @@ html, body {
   justify-content: center !important;
   gap: 8px !important;
   background-color: var(--pg-yellow) !important;
-  color: #000000 !important;
+  color: var(--pg-on-accent, #000000) !important;
   text-shadow: none !important;
   padding: 8px 16px !important;
   font-size: 14px !important;
@@ -782,10 +782,10 @@ html, body {
 .mc-btn-yellow:hover:not(:disabled),
 .download-btn:hover:not(:disabled),
 .nav-btn:hover:not(:disabled) {
-  outline: 2px solid #ffffff !important;
+  outline: 2px solid var(--pg-on-accent, #ffffff) !important;
   outline-offset: 2px !important;
-  background-color: var(--pg-yellow) !important;
-  color: #000000 !important;
+  background-color: var(--pg-yellow-hover) !important;
+  color: var(--pg-on-accent, #000000) !important;
   transform: none !important;
 }
 

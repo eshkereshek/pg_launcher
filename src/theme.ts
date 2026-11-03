@@ -38,6 +38,8 @@ export interface ThemeConfig {
   blur: boolean
   effects: boolean
   density: Density
+  /** Показывать ленту «Рекомендуем» на главном экране. */
+  showRecommended: boolean
 }
 
 export interface ThemePreset {
@@ -65,7 +67,8 @@ export const DEFAULT_THEME: ThemeConfig = {
   animations: true,
   blur: true,
   effects: true,
-  density: 'normal'
+  density: 'normal',
+  showRecommended: true
 }
 
 export const PRESETS: ThemePreset[] = [
@@ -291,7 +294,8 @@ export function sanitizeTheme(raw: any): ThemeConfig {
     animations: source.animations !== false,
     blur: source.blur !== false,
     effects: source.effects !== false,
-    density
+    density,
+    showRecommended: source.showRecommended !== false
   }
 }
 
@@ -353,6 +357,12 @@ export function themeCss(theme: ThemeConfig): string {
   --pg-card-pad: ${density.pad};
   --pg-nav-h: ${density.nav}px;
   --pg-track: ${shade(c.card, dark ? -0.06 : -0.04)};
+
+  /* Полупрозрачные слои акцента: рамки чипов, подсветка строк и плашек.
+     В разметке оставались rgba(241, 196, 15, …) от старой жёлтой палитры. */
+  --pg-accent-faint: ${alpha(c.accent, 0.08)};
+  --pg-accent-soft: ${alpha(c.accent, 0.14)};
+  --pg-accent-line: ${alpha(c.accent, 0.4)};
 
   /* Плашка кнопки «Играть» (инлайн-SVG): грань, подсветка, фаска, контур.
      Всё выводится из акцента, поэтому кнопка живёт в любой теме. */
@@ -549,6 +559,53 @@ body, .app-container {
 .mc-card-desc, .mc-card-meta { color: ${c.muted} !important; }
 
 /* --- Кнопки ----------------------------------------------------------- */
+/* Вторичная кнопка была белой всегда: в светлой теме надпись пропадала
+   на светлой плашке (например, «Установлено» в просмотре мода). */
+.mc-btn-secondary {
+  color: ${ink} !important;
+}
+
+/* Настройка «Кнопки» должна красить все нейтральные кнопки, а не только
+   плашки в настройках: ghost-кнопки каталога, иконки-кнопки, вторичные
+   кнопки диалогов и подсказки в ИИ-чате. */
+.mods-btn-primary {
+  background: ${c.accent} !important;
+  color: ${readableOn(c.accent)} !important;
+  border-color: ${shade(c.accent, -0.55)} !important;
+  box-shadow:
+    inset 0 2px 0 ${alpha('#ffffff', 0.28)},
+    inset 0 -3px 0 ${shade(c.accent, -0.22)} !important;
+}
+
+.mods-btn-primary:hover:not(:disabled) {
+  background: ${shade(c.accent, dark ? 0.12 : -0.06)} !important;
+  color: ${readableOn(c.accent)} !important;
+}
+
+.mods-btn-ghost { color: ${c.muted} !important; }
+
+.mods-btn-ghost:hover:not(:disabled) {
+  background: ${c.button} !important;
+  border-color: ${c.border} !important;
+  color: ${ink} !important;
+}
+
+.mods-icon-btn {
+  background: ${c.button} !important;
+  border-color: ${c.border} !important;
+  color: ${c.muted} !important;
+}
+
+.mods-icon-btn:hover {
+  background: ${shade(c.button, dark ? 0.1 : -0.05)} !important;
+  color: ${ink} !important;
+}
+
+.ai-chat-icon-btn:hover, .ai-chat-close:hover {
+  background: ${c.button} !important;
+  color: ${ink} !important;
+}
+
 .mods-btn-primary {
   background: ${c.accent} !important;
   color: ${readableOn(c.accent)} !important;
@@ -612,6 +669,11 @@ input[type="checkbox"]:checked {
 
 .account-dropdown-item.active {
   background: ${alpha(c.accent, 0.16)} !important;
+}
+
+/* Наведение на активный пункт было коричневым литералом #5c4b16. */
+.account-dropdown-item.active:hover {
+  background: ${alpha(c.accent, 0.24)} !important;
 }
 
 .dropdown-item { border-bottom-color: ${c.border} !important; }
@@ -914,8 +976,10 @@ ${light ? `
 .accounts-card-fill { background: ${c.card} !important; }
 .accounts-card:hover .accounts-card-fill { background: ${shade(c.card, dark ? 0.06 : -0.03)} !important; }
 
-.accounts-card.active { background: ${c.accent} !important; }
-.accounts-card.active .accounts-card-fill { background: ${alpha(c.accent, dark ? 0.16 : 0.12)} !important; }
+/* Выбранный аккаунт: мягкая полупрозрачная рамка вместо сплошной заливки
+   акцентом — список из нескольких карточек больше не «светится». */
+.accounts-card.active { background: ${alpha(c.accent, 0.45)} !important; }
+.accounts-card.active .accounts-card-fill { background: ${shade(c.card, dark ? 0.03 : -0.02)} !important; }
 .accounts-card-name { color: ${ink} !important; }
 .accounts-card-type { color: ${c.muted} !important; }
 .accounts-card-badge { background: ${c.accent} !important; color: ${readableOn(c.accent)} !important; }
@@ -1237,6 +1301,262 @@ input[type="checkbox"]:active { background: ${light ? '#eef1f6' : '#090909'} !im
 
 .server-skeleton-line {
   background: ${shade(c.card, dark ? 0.05 : -0.03)} !important;
+}
+
+/* --- Всплывающие окна и оверлеи --------------------------------------- */
+/* Всё, что рисуется поверх экрана, раньше жило на собственных цветах:
+   диалоги, просмотр мода/сервера, ИИ-чат. В светлой теме белый текст
+   оказывался на белой панели, а «золотые» кнопки оставались жёлтыми
+   в любой теме. Ниже — общий слой для этих поверхностей. */
+
+.mc-dialog-overlay, .mc-update-overlay {
+  background: ${alpha(c.background, light ? 0.72 : 0.82)} !important;
+}
+
+.mc-dialog-window, .mc-update-window {
+  background: ${shade(c.panel, dark ? 0.02 : 0)} !important;
+  border-color: ${shade(c.background, dark ? -0.3 : -0.15)} !important;
+  box-shadow:
+    inset 3px 3px 0 0 ${shade(c.panel, dark ? 0.18 : -0.04)},
+    inset -3px -3px 0 0 ${shade(c.panel, dark ? -0.38 : -0.12)},
+    0 20px 50px ${alpha(shadow, light ? 0.28 : 0.95)} !important;
+}
+
+.mc-dialog-header, .mc-update-header {
+  background: ${shade(c.panel, dark ? 0.06 : -0.02)} !important;
+  border-bottom-color: ${shade(c.background, dark ? -0.25 : -0.12)} !important;
+  box-shadow: inset 0 -2px 0 0 ${alpha(shadow, dark ? 0.6 : 0.12)}, 0 2px 0 0 ${shade(c.panel, dark ? 0.12 : -0.05)} !important;
+}
+
+/* Заголовки диалогов: «warning» был жёлтым литералом. */
+.mc-dialog-title.warning {
+  color: ${c.accent} !important;
+  text-shadow: none !important;
+}
+
+.mc-dialog-title.danger { text-shadow: none !important; }
+.mc-dialog-title.success { text-shadow: none !important; }
+
+.mc-dialog-content, .mc-update-content {
+  background: ${shade(c.card, dark ? -0.02 : 0)} !important;
+  border-color: ${shade(c.background, dark ? -0.25 : -0.12)} !important;
+  box-shadow:
+    inset 2px 2px 0 0 ${alpha(shadow, dark ? 0.6 : 0.08)},
+    inset -2px -2px 0 0 ${alpha(ink, 0.08)} !important;
+  color: ${ink} !important;
+}
+
+/* Кнопки диалогов: «золотая» — это акцент темы, а не жёлтый цвет. */
+.mc-cube-btn { border-color: ${shade(c.background, dark ? -0.45 : -0.2)} !important; }
+
+.mc-cube-btn.gold {
+  background: ${c.accent} !important;
+  color: ${readableOn(c.accent)} !important;
+  text-shadow: none !important;
+  box-shadow:
+    inset 2px 2px 0 0 ${alpha('#ffffff', 0.35)},
+    inset -2px -2px 0 0 ${shade(c.accent, -0.3)},
+    0 3px 0 0 ${shade(c.accent, -0.65)} !important;
+}
+
+.mc-cube-btn.gold:hover {
+  background: ${shade(c.accent, dark ? 0.12 : -0.06)} !important;
+  color: ${readableOn(c.accent)} !important;
+  outline-color: ${alpha(ink, 0.7)} !important;
+}
+
+.mc-cube-btn.gold:active {
+  box-shadow:
+    inset 2px 2px 0 0 ${alpha('#ffffff', 0.25)},
+    inset -2px -2px 0 0 ${shade(c.accent, -0.3)} !important;
+}
+
+.mc-cube-btn.neutral {
+  background: ${c.button} !important;
+  color: ${ink} !important;
+  text-shadow: none !important;
+  box-shadow:
+    inset 2px 2px 0 0 ${alpha(ink, 0.14)},
+    inset -2px -2px 0 0 ${alpha(shadow, dark ? 0.45 : 0.18)},
+    0 3px 0 0 ${shade(c.background, dark ? -0.45 : -0.2)} !important;
+}
+
+.mc-cube-btn.neutral:hover {
+  background: ${shade(c.button, dark ? 0.1 : -0.05)} !important;
+  color: ${ink} !important;
+  outline-color: ${alpha(ink, 0.6)} !important;
+}
+
+/* Просмотр мода и сервера: полноэкранный оверлей с шапкой и вкладками. */
+.mod-viewer-overlay,
+.mod-viewer-container,
+.mod-viewer-content {
+  background: ${c.background} !important;
+  color: ${ink} !important;
+}
+
+.mod-viewer-header,
+.mod-viewer-tabs {
+  background: ${c.card} !important;
+  border-color: ${c.border} !important;
+  color: ${ink} !important;
+}
+
+.mod-viewer-header h1 { color: ${ink} !important; }
+
+/* Плитки галереи и строки версий заданы инлайном — перекрываем цветом темы. */
+.mod-viewer-content .hover-scale-btn {
+  background: ${shade(c.card, dark ? -0.03 : 0)} !important;
+  border-color: ${c.border} !important;
+}
+
+.mod-version-row {
+  background: ${shade(c.card, dark ? -0.02 : 0)} !important;
+  border-bottom-color: ${c.border} !important;
+  color: ${ink} !important;
+}
+
+.mod-version-row:nth-child(even) {
+  background: ${shade(c.card, dark ? 0.02 : -0.01)} !important;
+}
+
+/* ИИ-чат: панель, карточки плана и история. */
+.ai-chat {
+  background: ${c.panel} !important;
+  border-color: ${c.border} !important;
+  box-shadow: 0 12px 34px ${alpha(shadow, light ? 0.28 : 0.6)} !important;
+}
+
+.ai-chat-head { border-bottom-color: ${c.border} !important; }
+.ai-chat-ctx { color: ${c.muted} !important; }
+.ai-chat-hint, .ai-plan-summary, .ai-plan-count,
+.ai-group-count, .ai-history-meta { color: ${c.muted} !important; }
+
+.ai-chat-icon-btn, .ai-chat-close { color: ${c.muted} !important; }
+
+.ai-chat-icon-btn:hover, .ai-chat-close:hover {
+  color: ${ink} !important;
+  background: ${shade(c.card, dark ? 0.08 : -0.04)} !important;
+}
+
+.ai-chat-icon-btn[aria-pressed='true'] {
+  color: ${c.accent} !important;
+  background: ${alpha(c.accent, dark ? 0.14 : 0.1)} !important;
+  border-color: ${alpha(c.accent, 0.4)} !important;
+}
+
+.ai-msg { border-color: ${c.border} !important; }
+
+.ai-msg-user {
+  background: ${c.accent} !important;
+  color: ${readableOn(c.accent)} !important;
+}
+
+.ai-msg-thinking, .ai-msg-plan {
+  background: ${shade(c.card, dark ? -0.05 : 0)} !important;
+  border-color: ${c.border} !important;
+  color: ${c.muted} !important;
+}
+
+.ai-plan-tag {
+  background: ${shade(c.card, dark ? -0.35 : -0.03)} !important;
+  border-color: ${c.border} !important;
+  color: ${c.accent} !important;
+}
+
+.ai-group, .ai-history-item {
+  background: ${shade(c.card, dark ? 0.02 : -0.02)} !important;
+  border-color: ${c.border} !important;
+}
+
+.ai-mod:hover, .ai-history-open:hover, .ai-history-delete:hover {
+  background: ${shade(c.card, dark ? 0.08 : -0.04)} !important;
+}
+
+.ai-mod-blank { background: ${shade(c.card, dark ? -0.06 : -0.03)} !important; }
+.ai-mod-title { color: ${ink} !important; }
+
+.ai-history-delete {
+  color: ${c.muted} !important;
+  border-left-color: ${c.border} !important;
+}
+
+.ai-chat-input {
+  background: ${shade(c.panel, dark ? 0.05 : -0.02)} !important;
+  border-top-color: ${c.border} !important;
+}
+
+/* Подсветка перетаскивания модов. */
+.mods-drop-overlay {
+  background: ${alpha(c.background, 0.82)} !important;
+  border-color: ${c.accent} !important;
+}
+
+.mods-drop-overlay-inner {
+  color: ${c.accent} !important;
+  text-shadow: none !important;
+}
+
+/* Кнопка скачивания в карточке каталога: заливка и наведение из акцента. */
+.mc-card-btn {
+  background: ${c.accent} !important;
+  color: ${readableOn(c.accent)} !important;
+  border-color: ${shade(c.accent, -0.6)} !important;
+  box-shadow:
+    inset 0 2px 0 ${alpha('#ffffff', 0.32)},
+    inset 0 -2px 0 ${shade(c.accent, -0.3)},
+    0 4px 0 0 ${shade(c.accent, -0.68)} !important;
+}
+
+.mc-card-btn:hover:not(:disabled),
+.mc-card-btn:focus-visible:not(:disabled) {
+  background: ${shade(c.accent, dark ? 0.12 : -0.06)} !important;
+  color: ${readableOn(c.accent)} !important;
+}
+
+.mc-card-btn.ghost {
+  background: ${c.button} !important;
+  border-color: ${c.border} !important;
+  color: ${ink} !important;
+  box-shadow: none !important;
+}
+
+.mc-card-btn.ghost:hover:not(:disabled) {
+  background: ${shade(c.button, dark ? 0.1 : -0.05)} !important;
+  color: ${ink} !important;
+}
+
+/* Мелкие подписи и кнопки карточек: авторы, теги версии, «...». */
+.mc-card-author,
+.mc-card-meta,
+.mc-card-facts,
+.mc-card-fact { color: ${c.muted} !important; }
+
+.mc-card-loader { color: ${c.accent} !important; }
+
+.mc-card-more {
+  background: ${c.button} !important;
+  color: ${c.muted} !important;
+  border-color: ${c.border} !important;
+}
+
+.mc-card-more:hover {
+  background: ${shade(c.button, dark ? 0.1 : -0.05)} !important;
+  color: ${ink} !important;
+}
+
+.mc-custom-select-option:hover:not(.selected) { border-color: ${c.border} !important; }
+
+.accounts-card-del {
+  background: ${c.button} !important;
+  border-color: ${c.border} !important;
+  color: ${c.muted} !important;
+}
+
+/* Старый список аккаунтов в модальном окне. */
+.mc-acc-list-item:hover {
+  background: ${shade(c.card, dark ? 0.08 : -0.04)} !important;
+  border-color: ${c.border} !important;
 }
 
 /* --- Плотность -------------------------------------------------------- */

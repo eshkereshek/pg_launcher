@@ -6,6 +6,7 @@ import { ProjectArt } from './ProjectArt'
 import { formatCount, projectLoaderLabel } from './projectMeta'
 import { showOk, showError, errorText } from './Toasts'
 import ModViewer from './ModViewer'
+import CardSkeletons from './CardSkeletons'
 import IconImg from './IconImg'
 import AiChat from './AiChat'
 
@@ -324,9 +325,7 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
 
       <div className="modpacks-content" style={{ position: 'relative', zIndex: 1 }} onScroll={handleScroll}>
         {loading ? (
-          <div className="mods-loading" style={{ gridColumn: '1 / -1', minHeight: '350px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {t("modpacks.loading")}
-          </div>
+          <CardSkeletons count={6} />
         ) : (
           <>
             {results.map((pack: any) => (

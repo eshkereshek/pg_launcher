@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef } from 'react'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
+import CardSkeletons from './CardSkeletons'
 import { useTranslation } from './i18n'
 import { Plus,
   Package,
@@ -1190,9 +1191,7 @@ export default function ModsMenu({
               <p>{t("mods.createOrSelect")}</p>
             </div>
           ) : loading ? (
-            <div className="mods-empty" style={{ gridColumn: '1 / -1' }}>
-              <p>{t("mods.loading")}</p>
-            </div>
+            <CardSkeletons count={6} />
           ) : (
             <>
               {showOptifineCard && (

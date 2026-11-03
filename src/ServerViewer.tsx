@@ -179,9 +179,9 @@ export default function ServerViewer({
               top: '15px',
               left: '15px',
               padding: '6px 12px',
-              background: '#222',
+              background: 'var(--pg-dark3)',
               border: 'none',
-              color: '#aaa',
+              color: 'var(--pg-text-muted)',
               display: 'flex',
               alignItems: 'center',
               cursor: 'pointer',
@@ -228,13 +228,13 @@ export default function ServerViewer({
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ margin: '0 0 10px 0', fontSize: '24px', color: '#fff', fontWeight: 'bold' }}>{title}</h1>
-            <div style={{ color: '#aaa', fontSize: '16px', marginBottom: '15px', display: 'flex', gap: '8px' }}>
+            <h1 style={{ margin: '0 0 10px 0', fontSize: '24px', color: 'var(--pg-text)', fontWeight: 'bold' }}>{title}</h1>
+            <div style={{ color: 'var(--pg-text-muted)', fontSize: '16px', marginBottom: '15px', display: 'flex', gap: '8px' }}>
               {t('servers.authorLabel')}: <span style={{ color: 'var(--pg-yellow)', fontWeight: 'bold' }}>{author}</span>
             </div>
             {/* Счётчик заходов у сервера ничего не значит: показываем версию
                 Minecraft, подписчиков и дату обновления. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px', color: '#aaa', fontSize: '14px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '30px', color: 'var(--pg-text-muted)', fontSize: '14px' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Tag size={18} /> Minecraft {versions.slice(0, 3).join(', ') || '—'}
               </span>
@@ -273,9 +273,9 @@ export default function ServerViewer({
                 style={{
                   fontSize: '13px',
                   padding: '8px 16px',
-                  background: '#202020',
-                  border: '1px solid #3a3a3a',
-                  color: '#ccc',
+                  background: 'var(--pg-dark2)',
+                  border: '1px solid var(--pg-dark3)',
+                  color: 'var(--pg-text-muted)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -306,7 +306,7 @@ export default function ServerViewer({
               style={{
                 padding: '10px 0',
                 cursor: 'pointer',
-                color: tab === item.id ? 'var(--pg-yellow)' : '#aaa',
+                color: tab === item.id ? 'var(--pg-yellow)' : 'var(--pg-text-muted)',
                 borderBottom: tab === item.id ? '2px solid var(--pg-yellow)' : '2px solid transparent',
                 fontWeight: tab === item.id ? 'bold' : 'normal',
                 fontSize: '14px',
@@ -323,8 +323,8 @@ export default function ServerViewer({
                   style={{
                     fontSize: '10px',
                     padding: '1px 6px',
-                    background: tab === item.id ? 'rgba(241, 196, 15, 0.2)' : 'rgba(255,255,255,0.06)',
-                    color: tab === item.id ? 'var(--pg-yellow)' : '#888',
+                    background: tab === item.id ? 'var(--pg-accent-line)' : 'rgba(255,255,255,0.06)',
+                    color: tab === item.id ? 'var(--pg-yellow)' : 'var(--pg-text-muted)',
                     border: tab === item.id ? '1px solid var(--pg-yellow)' : '1px solid #333',
                   }}
                 >
@@ -345,14 +345,14 @@ export default function ServerViewer({
               {loading && !body ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 20px', gap: '16px' }}>
                   <Loader2 size={36} className="mc-spin" style={{ color: 'var(--pg-yellow)' }} />
-                  <span style={{ color: '#aaa', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
+                  <span style={{ color: 'var(--pg-text-muted)', fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>
                     {t('servers.loadingDescription')}
                   </span>
                 </div>
               ) : (
                 <div
                   className="markdown-body"
-                  style={{ padding: '40px', color: '#ddd', lineHeight: 1.6, width: '100%', maxWidth: '100%', margin: '0 auto', fontSize: '15px', boxSizing: 'border-box' }}
+                  style={{ padding: '40px', color: 'var(--pg-text)', lineHeight: 1.6, width: '100%', maxWidth: '100%', margin: '0 auto', fontSize: '15px', boxSizing: 'border-box' }}
                 >
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -375,8 +375,8 @@ export default function ServerViewer({
                       onClick={() => setLightbox(idx)}
                       className="hover-scale-btn"
                       style={{
-                        background: '#141414',
-                        border: '2px solid #000',
+                        background: 'var(--pg-dark)',
+                        border: '2px solid var(--pg-dark3)',
                         boxShadow: 'inset -2px -2px 0 0 rgba(0,0,0,0.4), inset 2px 2px 0 0 rgba(255,255,255,0.06), 0 4px 8px rgba(0,0,0,0.5)',
                         cursor: 'pointer',
                         overflow: 'hidden',
@@ -384,7 +384,7 @@ export default function ServerViewer({
                         flexDirection: 'column',
                       }}
                     >
-                      <div style={{ width: '100%', aspectRatio: '16 / 10', background: '#0a0a0a', overflow: 'hidden', position: 'relative' }}>
+                      <div style={{ width: '100%', aspectRatio: '16 / 10', background: 'var(--pg-dark)', overflow: 'hidden', position: 'relative' }}>
                         <img src={img.url} alt={img.title || t('servers.screenshot', { p1: idx + 1 })} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                         <div
                           style={{
@@ -392,7 +392,7 @@ export default function ServerViewer({
                             bottom: '6px',
                             right: '6px',
                             background: 'rgba(0,0,0,0.75)',
-                            border: '1px solid #333',
+                            border: '1px solid var(--pg-dark3)',
                             padding: '2px 6px',
                             fontSize: '11px',
                             fontFamily: '"MinecraftTen", "Blocks", sans-serif',
@@ -407,12 +407,12 @@ export default function ServerViewer({
                         <div
                           style={{
                             padding: '8px 10px',
-                            color: '#ddd',
+                            color: 'var(--pg-text)',
                             fontSize: '13px',
                             fontFamily: '"Blocks", sans-serif',
                             textAlign: 'center',
-                            background: '#181818',
-                            borderTop: '1px solid #282828',
+                            background: 'var(--pg-dark)',
+                            borderTop: '1px solid var(--pg-dark3)',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -425,7 +425,7 @@ export default function ServerViewer({
                   ))}
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 20px', color: '#777', gap: '14px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '80px 20px', color: 'var(--pg-text-muted)', gap: '14px' }}>
                   <ImageIcon size={48} color="#444" />
                   <span style={{ fontSize: '16px', fontFamily: '"Blocks", sans-serif' }}>{t('servers.noScreenshots')}</span>
                 </div>
@@ -453,24 +453,24 @@ export default function ServerViewer({
                   </button>
                 )}
                 {data.discord_url && (
-                  <button className="mc-btn-primary" onClick={() => linkButton(data.discord_url)} style={{ fontSize: '13px', padding: '10px 18px', background: '#202020', border: '1px solid #3a3a3a', color: '#ccc' }}>
+                  <button className="mc-btn-primary" onClick={() => linkButton(data.discord_url)} style={{ fontSize: '13px', padding: '10px 18px', background: 'var(--pg-dark2)', border: '1px solid var(--pg-dark3)', color: 'var(--pg-text-muted)' }}>
                     Discord
                   </button>
                 )}
                 {data.source_url && (
-                  <button className="mc-btn-primary" onClick={() => linkButton(data.source_url)} style={{ fontSize: '13px', padding: '10px 18px', background: '#202020', border: '1px solid #3a3a3a', color: '#ccc' }}>
+                  <button className="mc-btn-primary" onClick={() => linkButton(data.source_url)} style={{ fontSize: '13px', padding: '10px 18px', background: 'var(--pg-dark2)', border: '1px solid var(--pg-dark3)', color: 'var(--pg-text-muted)' }}>
                     {t('servers.sources')}
                   </button>
                 )}
                 {data.wiki_url && (
-                  <button className="mc-btn-primary" onClick={() => linkButton(data.wiki_url)} style={{ fontSize: '13px', padding: '10px 18px', background: '#202020', border: '1px solid #3a3a3a', color: '#ccc' }}>
+                  <button className="mc-btn-primary" onClick={() => linkButton(data.wiki_url)} style={{ fontSize: '13px', padding: '10px 18px', background: 'var(--pg-dark2)', border: '1px solid var(--pg-dark3)', color: 'var(--pg-text-muted)' }}>
                     Wiki
                   </button>
                 )}
                 <button
                   className="mc-btn-primary"
                   onClick={() => linkButton(`https://modrinth.com/server/${slug}`)}
-                  style={{ fontSize: '13px', padding: '10px 18px', background: '#202020', border: '1px solid #3a3a3a', color: '#ccc' }}
+                  style={{ fontSize: '13px', padding: '10px 18px', background: 'var(--pg-dark2)', border: '1px solid var(--pg-dark3)', color: 'var(--pg-text-muted)' }}
                 >
                   {t('servers.modrinthPage')}
                 </button>
@@ -518,7 +518,7 @@ export default function ServerViewer({
               right: '20px',
               width: '32px',
               height: '32px',
-              background: '#222',
+              background: 'var(--pg-dark3)',
               border: '1px solid #3a3a3a',
               color: '#aaa',
               cursor: 'pointer',
@@ -571,12 +571,12 @@ function InfoRow({ label, value, mono, highlight }: { label: string; value: stri
         alignItems: 'center',
       }}
     >
-      <span style={{ color: '#8a8a8a', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.6px' }}>
+      <span style={{ color: 'var(--pg-text-muted)', fontFamily: '"MinecraftTen", "Blocks", sans-serif', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.6px' }}>
         {label}
       </span>
       <span
         style={{
-          color: highlight ? 'var(--pg-yellow)' : '#ddd',
+          color: highlight ? 'var(--pg-yellow)' : 'var(--pg-text)',
           fontFamily: mono ? 'monospace' : '"Blocks", sans-serif',
           overflowWrap: 'anywhere',
         }}

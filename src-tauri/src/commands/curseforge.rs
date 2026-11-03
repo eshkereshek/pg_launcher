@@ -10,7 +10,7 @@ use crate::utils::curseforge::{
     class_id, html_to_text, kind_folder, loader_name, loader_type, normalize_file,
     normalize_project, pick_file, sort_field, strip_id,
 };
-use crate::utils::download::{ensure_file, extract_zip_archive, Sum};
+use crate::utils::download::{ensure_file, ensure_file_plain, extract_zip_archive, Sum};
 use crate::utils::guard;
 use crate::utils::packscan;
 use crate::utils::paths::*;
@@ -379,7 +379,32 @@ pub async fn cf_install_modpack(
     let zip_path = temp_dir.join("modpack.zip");
 
     let _ = app.emit("launch-progress", "Скачивание архива сборки...");
-    ensure_file(url, &zip_path, None).await?;
+    // edge.forgecdn.net — только точка входа: файл лежит на mediafilez. Если
+    // первый хост не отвечает (VPN, RST от CDN), идём на хранилище напрямую,
+    // а затем пробуем обычный клиент без IPv4-резолвера.
+    let mut candidates = vec![url.to_string()];
+    if let Some(rest) = url.strip_prefix("https://edge.forgecdn.net/") {
+        candidates.push(format!("https://mediafilez.forgecdn.net/{rest}"));
+    }
+    let mut last_error = String::new();
+    let mut downloaded = false;
+    for candidate in &candidates {
+        match ensure_file(candidate, &zip_path, None).await {
+            Ok(_) => { downloaded = true; break; }
+            Err(err) => last_error = err,
+        }
+    }
+    if !downloaded {
+        for candidate in &candidates {
+            match ensure_file_plain(candidate, &zip_path).await {
+                Ok(_) => { downloaded = true; break; }
+                Err(err) => last_error = err,
+            }
+        }
+    }
+    if !downloaded {
+        return Err(format!("Не удалось скачать архив сборки: {last_error}"));
+    }
 
     let _ = app.emit("launch-progress", "Распаковка сборки...");
     extract_zip_archive(&zip_path, &temp_dir)?;

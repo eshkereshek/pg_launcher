@@ -407,9 +407,11 @@
   border-radius: 0;
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.38),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.22),
+     inset 0 -2px 0 rgba(0, 0, 0, 0.22),
     0 4px 0 0 #0b0b0b;
-  color: #171200;
+  /* Цвет текста на акценте: в тёмных темах — почти чёрный, на светлом
+     акценте тоже читается, в отличие от фиксированного #171200. */
+  color: var(--pg-on-accent, #171200);
   font-family: 'Blocks', sans-serif;
   font-size: 10.5px;
   letter-spacing: 0.5px;
@@ -418,8 +420,11 @@
   transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s ease;
 }
 
-.mc-card-btn:hover:not(:disabled) {
-  background: #f6cd25;
+/* Наведение берём из темы: раньше здесь стоял литерал #f6cd25, поэтому
+   кнопка становилась жёлтой даже в изумрудной, синей и светлой темах. */
+.mc-card-btn:hover:not(:disabled),
+.mc-card-btn:focus-visible:not(:disabled) {
+  background: var(--pg-yellow-hover);
 }
 
 .mc-card-btn:active:not(:disabled) {
@@ -596,7 +601,7 @@
   background: var(--pg-yellow);
   border: 1px solid #000;
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), inset 0 -3px 0 var(--pg-yellow-dark);
-  color: #171200;
+  color: var(--pg-on-accent, #171200);
   font-family: 'Blocks', sans-serif;
   font-size: 12px;
   letter-spacing: 0.4px;
@@ -604,7 +609,7 @@
 }
 
 .mods-btn-primary:hover:not(:disabled) {
-  background: #f6cd25;
+  background: var(--pg-yellow-hover);
 }
 
 .mods-btn-primary:disabled {
@@ -1289,4 +1294,61 @@
   font-size: 9.5px;
   letter-spacing: 0.3px;
   white-space: nowrap;
+}
+
+/* --- Заглушки загрузки каталога --------------------------------------- */
+/* Пока каталог грузится, вместо строки «Загрузка» показываем карточки:
+   они повторяют сетку и не дают экрану прыгать после подгрузки. */
+.mc-skeleton-card {
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--border-soft) 0%, var(--border-soft) 100%);
+}
+
+.mc-skeleton-card::before {
+  background: var(--surface-2);
+}
+
+.mc-skeleton-art,
+.mc-skeleton-line,
+.mc-skeleton-icon,
+.mc-skeleton-btn {
+  display: block;
+  background: linear-gradient(100deg,
+    var(--surface-3) 20%,
+    var(--surface-1) 40%,
+    var(--surface-3) 60%);
+  background-size: 220% 100%;
+  animation: mcSkeletonShimmer 1.35s ease-in-out infinite;
+}
+
+.mc-skeleton-art {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  min-height: 120px;
+}
+
+.mc-skeleton-icon {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+}
+
+.mc-skeleton-line {
+  height: 9px;
+  margin: 6px 0;
+  width: 100%;
+}
+
+.mc-skeleton-line.short { width: 55%; }
+.mc-skeleton-line.tiny { width: 32%; }
+
+.mc-skeleton-btn {
+  width: 96px;
+  height: 28px;
+  margin-left: auto;
+}
+
+@keyframes mcSkeletonShimmer {
+  0% { background-position: 140% 0; }
+  100% { background-position: -40% 0; }
 }

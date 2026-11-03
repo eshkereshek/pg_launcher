@@ -5,7 +5,6 @@ import {
   type Language } from './i18n'
 import { Trash,
   Blocks,
-  FlaskConical,
   SlidersHorizontal,
   ChevronRight,
   Palette,
@@ -252,7 +251,7 @@ export default function App() {
   const [isClosingVersionDropdown, setIsClosingVersionDropdown] = useState(false)
   const [newAccountName, setNewAccountName] = useState('')
 
-  const [settingsTab, setSettingsTab] = useState<'appearance' | 'customization' | 'main' | 'experimental'>('appearance')
+  const [settingsTab, setSettingsTab] = useState<'appearance' | 'customization' | 'main'>('appearance')
 
   // Оформление. Читаем из localStorage сразу, чтобы не было вспышки
   // стандартных цветов перед загрузкой настроек с диска.
@@ -2051,6 +2050,7 @@ export default function App() {
             <div className="jl-content lobby-content">
               {!enableNewDesign ? (
                 <>
+                  {theme.showRecommended !== false && (
                   <section className="lobby-recs">
                     <div className="lobby-recs-head">
                       <div>
@@ -2121,6 +2121,7 @@ export default function App() {
                       )}
                     </div>
                   </section>
+                  )}
 
                   <div className="lobby-play-row">
                     {/* Рамку и тени панели задаёт CSS (.jl-play-bar): раньше они жили
@@ -2606,8 +2607,7 @@ export default function App() {
                   {[
                     { id: 'appearance', label: t('settings.navAppearance'), icon: <Palette size={15} /> },
                     { id: 'customization', label: t('settings.navLauncher'), icon: <SlidersHorizontal size={15} /> },
-                    { id: 'main', label: t('settings.navMinecraft'), icon: <Blocks size={15} /> },
-                    { id: 'experimental', label: t('settings.navExperimental'), icon: <FlaskConical size={15} /> }
+                    { id: 'main', label: t('settings.navMinecraft'), icon: <Blocks size={15} /> }
                   ].map(item => (
                     <button
                       key={item.id}
@@ -2631,18 +2631,14 @@ export default function App() {
                         ? t('settings.navAppearance')
                         : settingsTab === 'customization'
                           ? t('settings.navLauncher')
-                          : settingsTab === 'main'
-                            ? t('settings.navMinecraft')
-                            : t('settings.navExperimental')}
+                          : t('settings.navMinecraft')}
                     </h1>
                     <p>
                       {settingsTab === 'appearance'
                         ? t('settings.descAppearance')
                         : settingsTab === 'customization'
                           ? t('settings.descLauncher')
-                          : settingsTab === 'main'
-                            ? t('settings.descMinecraft')
-                            : t('settings.descExperimental')}
+                          : t('settings.descMinecraft')}
                     </p>
                   </header>
                 {settingsTab === 'appearance' && (
@@ -2803,6 +2799,37 @@ export default function App() {
                         <button type="button" className="settings-action-btn" onClick={handleClearCacheClick}>
                           {t('settings.clearCacheBtn')}
                         </button>
+                      </div>
+                    </section>
+
+                    {/* Раньше это жило на отдельной вкладке «Экспериментальные»:
+                        функций всего две, отдельный раздел только путал. */}
+                    <section className="settings-card">
+                      <div className="settings-card-head">
+                        <h2>{t('settings.experimentalTitle')}</h2>
+                        <p>{t('settings.experimentalDesc')}</p>
+                      </div>
+                      <div className="settings-check-list">
+                        <label className="settings-check">
+                          <input type="checkbox" checked={enableServersTab} onChange={e => {
+                            setEnableServersTab(e.target.checked);
+                            localStorage.setItem('mc_enable_servers_tab', e.target.checked.toString());
+                          }} />
+                          <span className="settings-check-text">
+                            <span className="settings-check-title">{t('settings.serversTabTitle')}</span>
+                            <span className="settings-check-desc">{t('settings.serversTabDesc')}</span>
+                          </span>
+                        </label>
+                        <label className="settings-check">
+                          <input type="checkbox" checked={enableTabAnimations} onChange={e => {
+                            setEnableTabAnimations(e.target.checked);
+                            localStorage.setItem('mc_enable_tab_animations', e.target.checked.toString());
+                          }} />
+                          <span className="settings-check-text">
+                            <span className="settings-check-title">{t('settings.tabsAnimationTitle')}</span>
+                            <span className="settings-check-desc">{t('settings.tabsAnimationDesc')}</span>
+                          </span>
+                        </label>
                       </div>
                     </section>
 
@@ -3036,37 +3063,6 @@ export default function App() {
                   </>
                 )}
 
-                {/* Tab 3: ЭКСПЕРИМЕНТАЛЬНЫЕ (Experimental) */}
-                {settingsTab === 'experimental' && (
-                  <section className="settings-card">
-                    <div className="settings-card-head">
-                      <h2>{t('settings.experimentalTitle')}</h2>
-                      <p>{t('settings.experimentalDesc')}</p>
-                    </div>
-                    <div className="settings-check-list">
-                      <label className="settings-check">
-                        <input type="checkbox" checked={enableServersTab} onChange={e => {
-                          setEnableServersTab(e.target.checked);
-                          localStorage.setItem('mc_enable_servers_tab', e.target.checked.toString());
-                        }} />
-                        <span className="settings-check-text">
-                          <span className="settings-check-title">{t('settings.serversTabTitle')}</span>
-                          <span className="settings-check-desc">{t('settings.serversTabDesc')}</span>
-                        </span>
-                      </label>
-                      <label className="settings-check">
-                        <input type="checkbox" checked={enableTabAnimations} onChange={e => {
-                          setEnableTabAnimations(e.target.checked);
-                          localStorage.setItem('mc_enable_tab_animations', e.target.checked.toString());
-                        }} />
-                        <span className="settings-check-text">
-                          <span className="settings-check-title">{t('settings.tabsAnimationTitle')}</span>
-                          <span className="settings-check-desc">{t('settings.tabsAnimationDesc')}</span>
-                        </span>
-                      </label>
-                    </div>
-                  </section>
-                )}
                 </div>
               </div>
             </div>
@@ -3336,18 +3332,18 @@ export default function App() {
             </div>
             
             <div className="mc-dialog-content" style={{ padding: '12px' }}>
-              <div style={{ color: '#888', fontSize: '11px', marginBottom: '8px', fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase' }}>
+              <div style={{ color: 'var(--pg-text-muted)', fontSize: '11px', marginBottom: '8px', fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase' }}>
                 {t('app.launchErrorLog')}
               </div>
               <div style={{ 
-                background: '#0a0a0a', 
+                background: 'var(--pg-dark)', 
                 color: '#2ecc71', 
                 fontFamily: 'monospace', 
                 fontSize: '12px', 
                 padding: '12px', 
                 height: '350px', 
                 overflowY: 'auto',
-                border: '2px solid #000',
+                border: '2px solid var(--pg-dark3)',
                 boxShadow: 'inset 2px 2px 0 0 #000',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
@@ -3413,10 +3409,10 @@ export default function App() {
                         const dataUrl = await window.electronAPI.selectIconFile();
                         if (dataUrl) setEditPlayIcon(dataUrl);
                       }}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed #555', cursor: 'pointer', background: '#181818' }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: '2px dashed var(--pg-text-muted)', cursor: 'pointer', background: 'var(--pg-dark2)' }}
                       title={t('app.chooseFile')}
                     >
-                      <span style={{ fontSize: 20, color: '#aaa' }}>+</span>
+                      <span style={{ fontSize: 20, color: 'var(--pg-text-muted)' }}>+</span>
                     </label>
                     {PRESET_ICONS.map(icon => (
                       <img
@@ -3479,7 +3475,7 @@ export default function App() {
             </div>
 
             <div className="mc-dialog-content" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12.5px', color: '#ccc', lineHeight: '1.5' }}>
+              <p style={{ margin: '0 0 12px 0', fontSize: '12.5px', color: 'var(--pg-text-muted)', lineHeight: '1.5' }}>
                 {t('app.javaAutoNote')}
               </p>
 
@@ -3522,8 +3518,8 @@ export default function App() {
 
                   return (
                     <div key={item.version} style={{
-                      backgroundColor: '#181818', 
-                      border: '2px solid #000',
+                      backgroundColor: 'var(--pg-dark2)', 
+                      border: '2px solid var(--pg-dark3)',
                       boxShadow: isInst ? 'inset 0 0 0 1px #27ae60' : 'inset 1px 1px 0 #282828',
                       padding: '12px 16px', 
                       display: 'flex', 
@@ -3533,10 +3529,10 @@ export default function App() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <strong style={{ color: '#fff', fontSize: '13.5px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', letterSpacing: '0.5px' }}>{item.title}</strong>
-                            <span style={{ fontSize: '10px', background: '#252525', color: 'var(--pg-yellow)', padding: '2px 6px', border: '1px solid #333' }}>{item.badge}</span>
+                            <strong style={{ color: 'var(--pg-text)', fontSize: '13.5px', fontFamily: '"MinecraftTen", "Blocks", sans-serif', letterSpacing: '0.5px' }}>{item.title}</strong>
+                            <span style={{ fontSize: '10px', background: 'var(--pg-dark3)', color: 'var(--pg-yellow)', padding: '2px 6px', border: '1px solid var(--pg-dark3)' }}>{item.badge}</span>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#888', marginTop: '3px' }}>{item.desc}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--pg-text-muted)', marginTop: '3px' }}>{item.desc}</div>
                         </div>
 
                         <div>
@@ -3560,7 +3556,7 @@ export default function App() {
 
                       {isThisInstalling && (
                         <div style={{ marginTop: '4px' }}>
-                          <div style={{ width: '100%', height: '12px', backgroundColor: '#000', border: '1px solid #333', overflow: 'hidden' }}>
+                          <div style={{ width: '100%', height: '12px', backgroundColor: 'var(--surface-0)', border: '1px solid var(--pg-dark3)', overflow: 'hidden' }}>
                             <div style={{
                               height: '100%', width: `${pct}%`,
                               background: 'linear-gradient(to right, #d4a90a, #f1c40f)',
@@ -3751,8 +3747,8 @@ export default function App() {
                 <div style={{ marginTop: '16px' }}>
                   <div style={{ 
                     height: '14px', 
-                    background: '#0a0a0a', 
-                    border: '2px solid #000', 
+                    background: 'var(--pg-dark)', 
+                    border: '2px solid var(--pg-dark3)', 
                     boxShadow: 'inset 1px 1px 0 #222',
                     position: 'relative',
                     overflow: 'hidden'
@@ -3801,7 +3797,7 @@ export default function App() {
         position: 'absolute',
         bottom: '10px',
         right: '15px',
-        color: '#666',
+        color: 'var(--pg-text-muted)',
         fontSize: '12px',
         fontFamily: 'monospace',
         pointerEvents: 'none',
