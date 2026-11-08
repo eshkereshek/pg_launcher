@@ -4,6 +4,9 @@ import { listen } from '@tauri-apps/api/event'
 export const tauriBridge = {
   getVersions: () => invoke('get_versions'),
   launchGame: (options: any) => invoke('launch_game', { options }),
+  // Horizon (Rust-версия Minecraft): статус установки и отдельный запуск.
+  horizonStatus: () => invoke<{ installed: boolean; prepared: boolean; tag: string | null; gameVersion: string | null; running: boolean }>('horizon_status'),
+  launchHorizon: (options: any) => invoke('launch_horizon', { options }),
   getModpacks: () => invoke('get_modpacks'),
   saveModpacks: (modpacks: any) => invoke('save_modpacks', { modpacks }),
   getAccounts: () => invoke('get_accounts'),
@@ -37,7 +40,68 @@ export const tauriBridge = {
   // ИИ-сборщик: модель отдаёт план, моды в нём уже подобраны по Modrinth.
   aiStatus: () => invoke('ai_status'),
   aiPlan: (request: string, gameVersion: string, loader: string, count = 20) =>
-    invoke('ai_plan', { request, gameVersion, loader, count }),  // История чатов ИИ-сборщика: файл в папке лаунчера.
+    invoke('ai_plan', { request, gameVersion, loader, count }),
+  // Чат сборок: ответ на вопрос, заказ новой сборки (pack) или правка
+  // последней сборки чата (edit) — контекст передаём в pack.
+  aiAssistant: (
+    message: string,
+    history: Array<{ role: string; content: string }> = [],
+    pack: any = null,
+  ) =>
+    invoke<{
+      kind: 'chat' | 'pack' | 'edit'
+      answer?: string
+      name?: string
+      add?: any[]
+      remove?: string[]
+      unresolved?: string[]
+    }>('ai_assistant', { message, history, pack }),
+  // Отзыв модели о готовой сборке.
+  aiPackComment: (pack: any) => invoke<{ comment: string }>('ai_pack_comment', { pack }),
+
+  // ── Память и бэкапы ──────────────────────────────────────────────
+  memoryStats: () =>
+    invoke<{
+      systemTotalMb: number
+      systemFreeMb: number
+      launcherRssMb: number
+      disk: { versions: number; assets: number; libraries: number; logs: number; backups: number; launcher: number }
+      backups: Array<{ name: string; sizeMb: number; created: number }>
+    }>('memory_stats'),
+  // Перенос всех данных лаунчера (включая AppData) на другой диск.
+  moveDataDir: (target: string) =>
+    invoke<{ dataDir: string; movedMb: number; removedOld: boolean; oldDir: string }>(
+      'move_data_dir',
+      { target },
+    ),
+  // Перезапуск после переноса: путь данных применён к новым процессам.
+  restartLauncher: () => invoke('restart_launcher'),
+  listInstances: () =>
+    invoke<Array<{ name: string; kind: 'version' | 'pack'; hasSaves: boolean }>>('list_instances'),
+  createBackup: (instanceId: string, keep = 3) =>
+    invoke<{ name: string; backups: Array<{ name: string; sizeMb: number; created: number }> }>(
+      'create_backup',
+      { instanceId, keep },
+    ),
+  restoreBackup: (name: string, instanceId: string) =>
+    invoke('restore_backup', { name, instanceId }),
+  deleteBackup: (name: string) =>
+    invoke<{ backups: Array<{ name: string; sizeMb: number; created: number }> }>('delete_backup', { name }),  // Разбор краша: ИИ называет виноватый мод и предлагает удалить/отключить/доставить.
+  aiDiagnoseCrash: (crashLog: string, instanceId: string | null, gameVersion: string, loader: string) =>
+    invoke<{
+      action: 'remove' | 'disable' | 'install' | 'other'
+      file: string | null
+      title: string | null
+      reason: string
+      explain: string
+      missing: Array<{
+        project_id?: string
+        title?: string
+        icon_url?: string
+        description?: string
+        query?: string
+      }>
+    }>('ai_diagnose_crash', { crashLog, instanceId, gameVersion, loader }),  // История чатов ИИ-сборщика: файл в папке лаунчера.
   aiHistory: () => invoke('ai_history_load'),
   aiSaveHistory: (chats: any[]) => invoke('ai_history_save', { chats }),  // Сессия Ely.by: проверка и обновление токена перед запуском игры.
   authElybyValidate: (accessToken: string) => invoke('auth_elyby_validate', { accessToken }),
@@ -127,6 +191,10 @@ export const tauriBridge = {
   createShortcuts: (targetPath: string, desktop?: boolean, startMenu?: boolean) =>
     invoke('create_shortcuts', { targetPath, desktop, startMenu }),
   launchInstalled: (targetPath: string) => invoke('launch_installed', { targetPath }),
+  // Прошлая установка (папка лаунчера + папка данных): по ней установщик
+  // делает тихое обновление вместо мастера.
+  getExistingInstall: () =>
+    invoke<{ installDir: string; dataDir: string } | null>('get_existing_install'),
   checkIsInstalled: (targetPath: string) => invoke('check_is_installed', { targetPath }),
   uninstallApp: (targetPath: string) => invoke('uninstall_app', { targetPath }),
 

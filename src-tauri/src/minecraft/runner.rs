@@ -14,6 +14,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufWriter, Write};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -22,6 +23,65 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 static IS_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Java-игра сейчас запущена: этот факт нужен модулю Horizon, чтобы два
+/// клиента не стартовали одновременно.
+pub fn is_java_game_running() -> bool {
+    IS_RUNNING.load(Ordering::SeqCst)
+}
+
+/// Текст краша для интерфейса и ИИ. Бывает, что перехваченный stdout пуст:
+/// Fabric при падении резолва модов пишет только в свой `logs/latest.log`
+/// (игрок видел пустое окно лога). Поэтому берём самый содержательный
+/// источник, а crash-report добавляем, если он свежий.
+fn crash_text(log_path: &Path, game_dir: &Path) -> String {
+    let captured = fs::read_to_string(log_path).unwrap_or_default();
+    let mut parts: Vec<String> = Vec::new();
+
+    let latest = game_dir.join("logs").join("latest.log");
+    let latest_text = fs::read_to_string(&latest).unwrap_or_default();
+    if !latest_text.trim().is_empty() {
+        parts.push(latest_text);
+    } else if captured.contains("[STDOUT]") || captured.contains("[STDERR]") {
+        parts.push(captured.clone());
+    }
+
+    // Свежий crash-report (жёсткое падение JVM) — только если он появился
+    // сейчас, а не остался от прошлых запусков.
+    let reports = game_dir.join("crash-reports");
+    let fresh_after = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(15 * 60));
+    let newest = fs::read_dir(&reports).ok().and_then(|dir| {
+        dir.flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".txt"))
+            .filter_map(|entry| {
+                let modified = entry.metadata().ok()?.modified().ok()?;
+                Some((modified, entry.path()))
+            })
+            .filter(|(modified, _)| match fresh_after {
+                Some(after) => *modified >= after,
+                None => true,
+            })
+            .max_by_key(|(modified, _)| *modified)
+            .map(|(_, path)| path)
+    });
+    if let Some(path) = newest {
+        if let Ok(text) = fs::read_to_string(&path) {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            parts.push(format!("=== crash-reports/{name} ===\n{text}"));
+        }
+    }
+
+    if parts.is_empty() {
+        captured
+    } else {
+        parts.join("\n\n")
+    }
+}
+
 /// Окно игры уже создано.
 ///
 /// Процесс Java стартует за доли секунды, а окно у загрузчиков с модами
@@ -769,6 +829,9 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
     });
 
     let app_handle = app.clone();
+    // Игровая папка нужна после выхода процесса: там logs/latest.log и
+    // crash-reports, если перехваченный stdout оказался пустым.
+    let crash_dir = game_dir.clone();
     tokio::spawn(async move {
         let status = child.wait().await;
         IS_RUNNING.store(false, Ordering::SeqCst);
@@ -788,7 +851,7 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
 
         let code = status.map(|s| s.code().unwrap_or(0)).unwrap_or(-1);
         if code != 0 {
-            let log_text = fs::read_to_string(&log_path).unwrap_or_default();
+            let log_text = crash_text(&log_path, &crash_dir);
             let _ = app_handle.emit("game-crashed", log_text);
         } else {
             let _ = app_handle.emit("game-closed", ());

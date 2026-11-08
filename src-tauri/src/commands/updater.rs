@@ -210,6 +210,12 @@ pub fn is_installer(window: tauri::Window) -> bool {
     is_inst
 }
 
+/// Перезапуск лаунчера — нужен после переноса данных на другой диск.
+#[tauri::command]
+pub fn restart_launcher(app: tauri::AppHandle) {
+    app.restart();
+}
+
 #[tauri::command]
 pub fn select_folder(default_path: Option<String>) -> Option<String> {
     let mut dialog =
@@ -287,7 +293,93 @@ pub fn install_app(target_path: String) -> Result<Value, String> {
     std::fs::write(dest_dir.join(guard::INSTALL_MARKER), marker.to_string())
         .map_err(|e| format!("Не удалось записать маркер установки: {}", e))?;
 
-    Ok(serde_json::json!({ "status": "ok" }))
+    // ── Где хранить данные (версии, миры, логи) ────────────────────────
+    // Свежая установка в нестандартную папку получает <папка установки>\data,
+    // и лаунчер читает этот путь из data-dir.txt рядом с exe. Если у игрока
+    // уже есть библиотека в AppData — ничего не переносим: иначе версии
+    // пришлось бы качать заново.
+    let default_dir = default_data_dir();
+    let appdata_has_data = default_dir.join("minecraft_data").is_dir();
+    let is_default_target =
+        dest_dir.to_string_lossy().to_lowercase() == get_default_install_path().to_lowercase();
+
+    let data_dir = if let Some((_, existing_data)) = read_install_state() {
+        // Обновление: путь данных не меняем ни при каких условиях.
+        std::path::PathBuf::from(existing_data)
+    } else if !is_default_target && !appdata_has_data {
+        dest_dir.join("data")
+    } else {
+        default_dir.clone()
+    };
+
+    if data_dir != default_dir {
+        std::fs::create_dir_all(&data_dir)
+            .map_err(|e| format!("Не удалось создать папку данных: {}", e))?;
+        std::fs::write(
+            dest_dir.join("data-dir.txt"),
+            data_dir.to_string_lossy().to_string(),
+        )
+        .map_err(|e| format!("Не удалось записать путь данных: {}", e))?;
+    } else {
+        // Данные в AppData — маркер не нужен и только путал бы.
+        let _ = std::fs::remove_file(dest_dir.join("data-dir.txt"));
+    }
+
+    // Где установлено: по этому файлу новый установщик узнаёт, что идёт
+    // обновление, и не показывает мастер установки повторно.
+    let state = serde_json::json!({
+        "installDir": dest_dir.to_string_lossy(),
+        "dataDir": data_dir.to_string_lossy(),
+        "version": env!("CARGO_PKG_VERSION"),
+    });
+    let _ = std::fs::create_dir_all(&default_dir);
+    std::fs::write(install_state_path(), state.to_string())
+        .map_err(|e| format!("Не удалось записать состояние установки: {}", e))?;
+
+    Ok(serde_json::json!({
+        "status": "ok",
+        "installDir": dest_dir.to_string_lossy(),
+        "dataDir": data_dir.to_string_lossy(),
+    }))
+}
+
+/// Каталог данных по умолчанию (AppData), без учёта data-dir.txt.
+fn default_data_dir() -> std::path::PathBuf {
+    dirs::data_dir()
+        .or_else(dirs::config_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("pagrysha-launcher")
+}
+
+fn install_state_path() -> std::path::PathBuf {
+    default_data_dir().join("install.json")
+}
+
+/// (папка установки, папка данных) прошлой установки, если она ещё на месте.
+fn read_install_state() -> Option<(String, String)> {
+    let text = std::fs::read_to_string(install_state_path()).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let install_dir = value["installDir"].as_str()?.to_string();
+    let data_dir = value["dataDir"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| default_data_dir().to_string_lossy().to_string());
+    if !std::path::Path::new(&install_dir)
+        .join("Pagrysha Launcher.exe")
+        .is_file()
+    {
+        return None;
+    }
+    Some((install_dir, data_dir))
+}
+
+/// Существующая установка — установщик запускает тихое обновление и сразу
+/// открывает лаунчер, вместо мастера установки.
+#[tauri::command]
+pub fn get_existing_install() -> Option<serde_json::Value> {
+    read_install_state().map(|(install_dir, data_dir)| {
+        serde_json::json!({ "installDir": install_dir, "dataDir": data_dir })
+    })
 }
 
 #[tauri::command]

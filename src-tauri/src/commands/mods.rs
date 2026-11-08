@@ -9,6 +9,7 @@ use crate::utils::paths::*;
 use crate::utils::search;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use futures_util::StreamExt;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
@@ -407,6 +408,72 @@ pub async fn search_modpacks(
     .await
 }
 
+/// Запрос к API Modrinth с повторами. При установке сотни модов подряд
+/// Modrinth отвечает 429 «слишком много запросов», и без повтора зависимость
+/// молча терялась — сборка оставалась без библиотек.
+async fn modrinth_get(client: &reqwest::Client, url: &str) -> Result<Value, String> {
+    let mut last = String::new();
+    for attempt in 0..3u64 {
+        let resp = match client
+            .get(url)
+            .header("User-Agent", "PagryshaLauncher/7.2")
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                last = e.to_string();
+                tokio::time::sleep(std::time::Duration::from_millis(400 * (attempt + 1))).await;
+                continue;
+            }
+        };
+        let status = resp.status();
+        let text = resp.text().await.map_err(|e| e.to_string())?;
+        if status.is_success() {
+            return serde_json::from_str(&text).map_err(|e| format!("Разбор ответа Modrinth: {e}"));
+        }
+        last = format!("Modrinth вернул {}", status.as_u16());
+        // 429 и 5xx имеют смысл повторить, остальные 4xx — нет.
+        if status.as_u16() != 429 && status.is_client_error() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(600 * (attempt + 1))).await;
+    }
+    Err(last)
+}
+
+/// Кэш названий: fabric-api и прочие библиотеки встречаются в каждой сборке,
+/// и повторно запрашивать их у Modrinth незачем — установка от этого быстрее.
+fn title_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, String>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Человеческое название проекта для окна прогресса: игрок должен видеть
+/// «Sodium», а не `AANobbMI`. Ошибка сети не критична — вернём id.
+async fn project_title(client: &reqwest::Client, project_id: &str) -> String {
+    if let Ok(cache) = title_cache().lock() {
+        if let Some(title) = cache.get(project_id) {
+            return title.clone();
+        }
+    }
+    let url = format!("https://api.modrinth.com/v2/project/{project_id}");
+    let title = match modrinth_get(client, &url).await {
+        Ok(value) => value["title"]
+            .as_str()
+            .filter(|title| !title.is_empty())
+            .unwrap_or(project_id)
+            .to_string(),
+        Err(_) => project_id.to_string(),
+    };
+    if let Ok(mut cache) = title_cache().lock() {
+        cache.insert(project_id.to_string(), title.clone());
+    }
+    title
+}
+
 /// Одна версия мода с Modrinth: выбор подходящей версии, проверка имени/хеша и
 /// скачивание файла. Возвращает имя установленного файла и обязательные
 /// зависимости в виде `(project_id, version_id)`.
@@ -421,14 +488,9 @@ async fn install_mod_version(
     folder: &str,
 ) -> Result<(String, Vec<(String, Option<String>)>), String> {
     let url = format!("https://api.modrinth.com/v2/project/{}/version", project_id);
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "PagryshaLauncher/7.2")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let versions: Value = resp.json().await.map_err(|e| e.to_string())?;
+    // Через modrinth_get: повторы при 429/5xx, иначе часть зависимостей
+    // при массовой установке теряется.
+    let versions = modrinth_get(client, &url).await?;
     let versions_arr = versions
         .as_array()
         .ok_or("Некорректный ответ Modrinth со списком версий")?;
@@ -516,9 +578,21 @@ async fn install_mod_version(
             if dep["dependency_type"].as_str() != Some("required") {
                 continue;
             }
-            if let Some(dep_id) = dep["project_id"].as_str() {
-                let dep_ver = dep["version_id"].as_str().map(|s| s.to_string());
-                deps.push((dep_id.to_string(), dep_ver));
+            let dep_ver = dep["version_id"].as_str().map(|s| s.to_string());
+            match dep["project_id"].as_str() {
+                Some(dep_id) => deps.push((dep_id.to_string(), dep_ver)),
+                // У части зависимостей указан только version_id без проекта —
+                // раньше такие молча терялись, и мод падал без библиотеки.
+                None => {
+                    if let Some(version_id) = dep_ver.as_deref() {
+                        let url = format!("https://api.modrinth.com/v2/version/{version_id}");
+                        if let Ok(value) = modrinth_get(client, &url).await {
+                            if let Some(project) = value["project_id"].as_str() {
+                                deps.push((project.to_string(), Some(version_id.to_string())));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -537,15 +611,6 @@ pub async fn download_mod(
     version_id: Option<String>,
 ) -> Result<Value, String> {
     let p_type = project_type.unwrap_or_else(|| "mod".to_string());
-    let _ = app.emit(
-        "download-update",
-        serde_json::json!({
-            "id": format!("mod_{}", project_id),
-            "name": &project_id,
-            "text": format!("Скачивание {}...", p_type),
-            "progress": 20
-        }),
-    );
 
     let folder = if p_type == "resourcepack" {
         "resourcepacks"
@@ -558,6 +623,18 @@ pub async fn download_mod(
     let instance = instance_dir(&instance_id)?;
     // Таймауты обязательны: иначе установка мода может висеть вечно.
     let client = http_client();
+
+    // В окне прогресса — настоящее название проекта, а не его id.
+    let title = project_title(&client, &project_id).await;
+    let _ = app.emit(
+        "download-update",
+        serde_json::json!({
+            "id": format!("mod_{}", project_id),
+            "name": title,
+            "text": format!("Скачивание «{}»…", title),
+            "progress": 15
+        }),
+    );
 
     // Основной файл: его ошибка отменяет установку целиком.
     let (main_file, deps) = install_mod_version(
@@ -582,41 +659,66 @@ pub async fn download_mod(
     let mut pending: Vec<(String, Option<String>, u32)> =
         deps.into_iter().map(|(id, ver)| (id, ver, 1u32)).collect();
 
+    // Прогресс считаем по числу зависимостей: раньше полоса стояла на 20%,
+    // пока последовательно качались библиотеки.
+    let mut known = pending.len().max(1);
+    let mut processed = 0usize;
+
     while let Some((dep_id, dep_ver, depth)) = pending.pop() {
         // Глубже третьего уровня не идём, повторно один проект не качаем —
         // иначе циклические зависимости крутят установку бесконечно.
         if depth > 3 || !visited.insert(dep_id.clone()) {
             continue;
         }
+        let dep_title = project_title(&client, &dep_id).await;
+        processed += 1;
+        let pct = 15 + ((processed.min(known) as f64 / known as f64) * 80.0).round() as u64;
         let _ = app.emit(
             "download-update",
             serde_json::json!({
                 "id": format!("mod_{}", project_id),
-                "name": &project_id,
-                "text": format!("Установка зависимости {}...", dep_id),
-                "progress": 40
+                "name": dep_title,
+                "text": format!("Зависимость «{}»…", dep_title),
+                "progress": pct.min(95)
             }),
         );
 
-        match install_mod_version(
-            &client,
-            &dep_id,
-            dep_ver.as_deref(),
-            &version,
-            &loader,
-            "mod",
-            &instance,
-            "mods",
-        )
-        .await
-        {
+        // Сбой сети при массовой установке — не приговор: пробуем ещё раз.
+        // Именно из-за таких сбоев сборки оставались без половины библиотек.
+        let mut attempt = 0u32;
+        let result = loop {
+            attempt += 1;
+            match install_mod_version(
+                &client,
+                &dep_id,
+                dep_ver.as_deref(),
+                &version,
+                &loader,
+                "mod",
+                &instance,
+                "mods",
+            )
+            .await
+            {
+                Ok(value) => break Ok(value),
+                Err(e) => {
+                    if attempt >= 2 {
+                        break Err(e);
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                }
+            }
+        };
+
+        match result {
             Ok((file, sub_deps)) => {
                 filenames.push(file);
+                known += sub_deps.len();
                 for (id, ver) in sub_deps {
                     pending.push((id, ver, depth + 1));
                 }
             }
-            Err(e) => warnings.push(format!("Зависимость «{}» не установлена: {}", dep_id, e)),
+            Err(e) => warnings.push(format!("Зависимость «{}» не установлена: {}", dep_title, e)),
         }
     }
 
@@ -624,7 +726,7 @@ pub async fn download_mod(
         "download-update",
         serde_json::json!({
             "id": format!("mod_{}", project_id),
-            "name": &project_id,
+            "name": title,
             "text": "Установка завершена",
             "progress": 100
         }),
@@ -937,9 +1039,12 @@ pub async fn install_modpack(
     fs::create_dir_all(&instance_path)
         .map_err(|e| format!("Не удалось создать папку сборки «{}»: {}", pack_dir_name, e))?;
 
+    // Файлы сборки качаем параллельно (до 4 одновременно): раньше они шли
+    // строго по одному, и большая сборка растягивалась на минуты.
+    // Хеши кладём как String: Sum держит заём, а он не переживает async-блок.
+    let mut tasks: Vec<(PathBuf, String, String, String)> = Vec::new();
     if let Some(files_to_download) = index_data["files"].as_array() {
-        let total = files_to_download.len();
-        for (idx, f) in files_to_download.iter().enumerate() {
+        for f in files_to_download.iter() {
             // Серверная часть мода в клиенте не работает и может ломать запуск,
             // поэтому файлы с `env.client == "unsupported"` не качаем. Если
             // блока `env` нет, автор ограничений не указал — ставим как обычно.
@@ -955,24 +1060,53 @@ pub async fn install_modpack(
 
                     // sha1/sha512 лежат рядом со ссылкой в modrinth.index.json.
                     let hashes = &f["hashes"];
-                    let sum = Sum::sha512(hashes["sha512"].as_str().unwrap_or(""))
-                        .or_else(|| Sum::sha1(hashes["sha1"].as_str().unwrap_or("")));
+                    let sha512 = hashes["sha512"].as_str().unwrap_or("").to_string();
+                    let sha1 = hashes["sha1"].as_str().unwrap_or("").to_string();
 
-                    let progress = ((idx + 1) * 100) / total;
-                    let _ = app.emit(
-                        "download-update",
-                        serde_json::json!({
-                            "id": format!("modpack_{}", modpack_name),
-                            "name": &modpack_name,
-                            "text": format!("Файл {} из {}", idx + 1, total),
-                            "progress": progress
-                        }),
-                    );
-
-                    ensure_file(dl_url, &dest, sum).await?;
+                    tasks.push((dest, dl_url.to_string(), sha512, sha1));
                 }
             }
         }
+    }
+
+    let total = tasks.len();
+    let done_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let app_dl = app.clone();
+    let pack_label = modpack_name.clone();
+    let results: Vec<Result<(), String>> = futures_util::stream::iter(tasks.into_iter().map(
+        |(dest, url, sha512, sha1)| {
+            let done_counter = done_counter.clone();
+            let app_dl = app_dl.clone();
+            let pack_label = pack_label.clone();
+            async move {
+                // У файлов модпака бывают глубокие пути — папку создаём заранее.
+                if let Some(parent) = dest.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let sum = Sum::sha512(&sha512).or_else(|| Sum::sha1(&sha1));
+                let result = ensure_file(&url, &dest, sum).await;
+
+                let done = done_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                let progress = (done.min(total) * 97) / total.max(1);
+                let _ = app_dl.emit(
+                    "download-update",
+                    serde_json::json!({
+                        "id": format!("modpack_{}", pack_label),
+                        "name": pack_label,
+                        "text": format!("Файл {} из {}", done, total),
+                        "progress": progress
+                    }),
+                );
+                result.map(|_| ()).map_err(|e| e.to_string())
+            }
+        },
+    ))
+    .buffer_unordered(4)
+    .collect()
+    .await;
+
+    if let Some(Err(error)) = results.into_iter().find(|result| result.is_err()) {
+        return Err(format!("Не удалось скачать файлы сборки: {}", error));
     }
 
     // Copy overrides

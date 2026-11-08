@@ -8,12 +8,14 @@ use commands::config::*;
 use commands::curseforge::*;
 use commands::java::*;
 use commands::loaders::*;
+use commands::memory::*;
 use commands::mods::*;
 use commands::servers::*;
 use commands::skins::*;
 use commands::translate::*;
 use commands::updater::*;
 use commands::window::*;
+use minecraft::horizon::{horizon_status, launch_horizon};
 use minecraft::launcher::*;
 use minecraft::manifest::*;
 
@@ -92,6 +94,14 @@ pub fn run() {
             get_mods_metadata,
             toggle_mod,
             uninstall_mod,
+            // Память и бэкапы
+            memory_stats,
+            list_instances,
+            move_data_dir,
+            restart_launcher,
+            create_backup,
+            restore_backup,
+            delete_backup,
             delete_modpack_folder,
             rename_modpack_folder,
             import_mod_file,
@@ -115,6 +125,9 @@ pub fn run() {
             // ИИ-сборщик
             ai_status,
             ai_plan,
+            ai_assistant,
+            ai_pack_comment,
+            ai_diagnose_crash,
             ai_history_load,
             ai_history_save,
             // Перевод описаний
@@ -129,6 +142,7 @@ pub fn run() {
             is_installer,
             select_folder,
             get_default_install_path,
+            get_existing_install,
             install_app,
             create_shortcuts,
             launch_installed,
@@ -138,6 +152,9 @@ pub fn run() {
             // Minecraft Core
             get_versions,
             launch_game,
+            // Horizon (Rust)
+            horizon_status,
+            launch_horizon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

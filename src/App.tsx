@@ -8,7 +8,11 @@ import { Trash,
   SlidersHorizontal,
   ChevronRight,
   Palette,
+  Sparkles,
+  Loader2,
+  Database,
 } from 'lucide-react'
+import MemorySettings from './MemorySettings'
 import ModsMenu from './ModsMenu'
 import ModpacksMenu from './ModpacksMenu'
 import { ServersMenu } from './ServersMenu'
@@ -172,9 +176,24 @@ const renderLoaderIcon = (verName: string) => {
   return null;
 };
 
+// Horizon — «Minecraft на Rust»: отдельная нативная версия в списке версий.
+// Отдельный префикс, как у сборок (`mp:`), чтобы идентификатор не столкнулся
+// с папками Java-версий: его скачивает и запускает свой путь в Rust (horizon.rs).
+const HORIZON_VERSION_ID = 'hz:horizon';
+const HORIZON_ICON = './iconsblocks/Netherrack_(inventory)_MCE.png';
+const isHorizonVersion = (v: string | null | undefined) => v === HORIZON_VERSION_ID;
+const displayVersionName = (v: string) => {
+  if (isHorizonVersion(v)) return '26.3 Rust';
+  if (v.startsWith('mp:')) return v.replace('mp:', '');
+  return v;
+};
+
 const renderSelectedVersionIcon = (selectedVersion: string, modpacks: any[], size = 46, isSnapshot = false) => {
   if (!selectedVersion) return <img src="./iconsblocks/Grass_Block_(inventory)_MCE.png" width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} alt="icon" />;
   const lower = selectedVersion.toLowerCase();
+  if (isHorizonVersion(selectedVersion)) {
+    return <img src={HORIZON_ICON} width={size} height={size} style={{ imageRendering: 'pixelated', objectFit: 'contain' }} alt="Horizon" />;
+  }
   if (lower.startsWith('mp:')) {
     const mpName = selectedVersion.replace('mp:', '');
     const mp = modpacks.find(m => m.name === mpName);
@@ -251,7 +270,7 @@ export default function App() {
   const [isClosingVersionDropdown, setIsClosingVersionDropdown] = useState(false)
   const [newAccountName, setNewAccountName] = useState('')
 
-  const [settingsTab, setSettingsTab] = useState<'appearance' | 'customization' | 'main'>('appearance')
+  const [settingsTab, setSettingsTab] = useState<'appearance' | 'customization' | 'main' | 'memory'>('appearance')
 
   // Оформление. Читаем из localStorage сразу, чтобы не было вспышки
   // стандартных цветов перед загрузкой настроек с диска.
@@ -331,6 +350,8 @@ export default function App() {
 
   const [rawVersions, setRawVersions] = useState<any[]>([])
   const [versions, setVersions] = useState<string[]>([])
+  // Статус Horizon: { installed, prepared, tag, gameVersion, running }.
+  const [horizonStatus, setHorizonStatus] = useState<any>(null)
   // Сообщение о проблемах загрузки списка версий (нет сети, бэкенд недоступен)
   const [versionsError, setVersionsError] = useState('')
   const [forgeVersions] = useState<string[]>(FORGE_VERSIONS.map(v => `${v} Forge`))
@@ -341,6 +362,22 @@ export default function App() {
   const [launching, setLaunching] = useState(false)
   const [gameRunning, setGameRunning] = useState(false)
   const [crashLog, setCrashLog] = useState<string | null>(null)
+  // ИИ-разбор краша: вердикт, занятость, ошибка и «настоящие» имя/иконка мода.
+  const [crashAi, setCrashAi] = useState<any>(null)
+  const [crashAiBusy, setCrashAiBusy] = useState(false)
+  const [crashAiError, setCrashAiError] = useState<string | null>(null)
+  const [crashAiMod, setCrashAiMod] = useState<{ name?: string; icon?: string } | null>(null)
+  // Один запуск разбора на один краш: спам кнопкой жжёт токены модели.
+  const [crashAiUsed, setCrashAiUsed] = useState(false)
+  // Что было запущено в момент краша: чинить надо именно эту сборку.
+  const [crashTarget, setCrashTarget] = useState({ instance: '', version: '', loader: '' })
+
+  // Подписка на события игры живёт в одном useEffect и видит только значения
+  // на момент подписки — актуальные версию и сборки держим в ref.
+  const selectedVersionRef = useRef(selectedVersion)
+  const modpacksRef = useRef(modpacks)
+  useEffect(() => { selectedVersionRef.current = selectedVersion }, [selectedVersion])
+  useEffect(() => { modpacksRef.current = modpacks }, [modpacks])
   const [activeDownloads, setActiveDownloads] = useState<{ id: string, name: string, text: string, progress: number }[]>([])
   const [showDownloadsDropdown, setShowDownloadsDropdown] = useState(false)
   const [isClosingDownloadsDropdown, setIsClosingDownloadsDropdown] = useState(false)
@@ -368,6 +405,16 @@ export default function App() {
   const [showOldReleases, setShowOldReleases] = useState(localStorage.getItem('mc_show_old_releases') === 'true')
   const [showBeta, setShowBeta] = useState(localStorage.getItem('mc_show_beta') === 'true')
   const [showAlpha, setShowAlpha] = useState(localStorage.getItem('mc_show_alpha') === 'true')
+
+  // Статус Horizon: нужен и для плашки «скачано» в списке версий, и для
+  // подписи кнопки. Ошибка сети не мешает: статус просто остаётся прежним.
+  const refreshHorizonStatus = () => {
+    // @ts-ignore
+    const p = window.electronAPI?.horizonStatus?.()
+    if (p && typeof p.then === 'function') {
+      p.then((s: any) => setHorizonStatus(s)).catch(() => { })
+    }
+  }
 
   const handleSelectVersion = (v: string) => {
     setSelectedVersion(v)
@@ -983,6 +1030,7 @@ export default function App() {
       setLaunching(false)
       // Подпись «Игра запускается...» не должна пережить сам процесс.
       setProgress('')
+      launchReadyRef.current = false
 
       // @ts-ignore
       if (window.electronAPI && window.electronAPI.updateDiscordPresence) {
@@ -1006,6 +1054,32 @@ export default function App() {
         launchReadyTimerRef.current = null
       }
       setLaunching(false)
+      // Полоса «Игра запускается...» не должна пережить упавший процесс:
+      // таймер-страховка ниже уже отменён, и без этой строки текст висел бы
+      // вечно — игрок видел «Запуск», хотя игра давно закрылась.
+      setProgress('')
+      launchReadyRef.current = false
+
+      // ИИ-починка начинается с чистого листа, а чинить будем ту сборку,
+      // которую запускали (её имя могло поменяться за время игры).
+      const ver = selectedVersionRef.current || ''
+      if (ver.startsWith('mp:')) {
+        const pack = (modpacksRef.current as any[]).find((m: any) => m.name === ver.slice(3))
+        setCrashTarget({
+          instance: ver.slice(3),
+          version: pack?.version || '',
+          loader: pack?.loader || '',
+        })
+      } else if (!ver || isHorizonVersion(ver)) {
+        // Ванильная версия без модов и Horizon: чинить нечего, совет — в логе.
+        setCrashTarget({ instance: '', version: '', loader: '' })
+      } else {
+        setCrashTarget({ instance: ver, version: ver, loader: '' })
+      }
+      setCrashAi(null)
+      setCrashAiError(null)
+      setCrashAiMod(null)
+      setCrashAiUsed(false)
       setCrashLog(log)
     }))
 
@@ -1044,6 +1118,7 @@ export default function App() {
       }
     }
     fetchVersions()
+    refreshHorizonStatus()
 
     // @ts-ignore
     window.electronAPI.getSystemInfo().then((info: any) => {
@@ -1277,6 +1352,7 @@ export default function App() {
       const isVersionValid = (ver: string | null | undefined): boolean => {
         if (!ver) return false
         if (ver.startsWith('mp:')) return true
+        if (isHorizonVersion(ver)) return true
         if (versionIds.includes(ver)) return true
         if (showModified && (forgeVersions.includes(ver) || ver.includes('Forge'))) return true
         if (installedVersions.includes(ver)) return true
@@ -1621,10 +1697,14 @@ export default function App() {
     
     setProgress(t('app.progressInit'))
 
+    // Horizon — нативный Rust-клиент, он всегда запускается офлайн, поэтому
+    // токен Ely.by ему не нужен вовсе.
+    const isHorizon = isHorizonVersion(selectedVersion)
+
     // Токен Ely.by живёт ограниченное время. Если отдать игре просроченный,
     // сервер (в том числе сервер друга) отбивает вход с «Недействительная
     // сессия». Поэтому проверяем его до запуска и обновляем при необходимости.
-    const session = await ensureElybySession()
+    const session = isHorizon ? { token: '', clientToken: '' } : await ensureElybySession()
     if (!session) {
       setLaunching(false)
       setGameRunning(false)
@@ -1693,15 +1773,41 @@ export default function App() {
         // @ts-ignore
         window.electronAPI.updateDiscordPresence({
           details: translate('app.presencePlaying'),
-          state: t('app.presenceVersion', { p1: isModpack ? selectedVersion.replace('mp:', '') : selectedVersion }),
+          state: t('app.presenceVersion', { p1: displayVersionName(selectedVersion) }),
           startTimestamp: Date.now(),
           largeImageKey: "logo",
           largeImageText: "Pagrysha Launcher"
         })
       }
       
+      // Авто-бэкап миров перед запуском (настройка во вкладке «Управление памятью»).
+      // Пишем об этом в полосе запуска: игрок должен видеть, что миры сохраняются.
+      if (!isHorizon && localStorage.getItem('pg_backup_auto') === 'true') {
+        const backupInstance = isModpack ? selectedVersion.replace('mp:', '') : selectedVersion
+        setProgress(t('mem.backupInProgress'))
+        try {
+          // @ts-ignore
+          await window.electronAPI.createBackup(
+            backupInstance,
+            Number(localStorage.getItem('pg_backup_keep') || '3'),
+          )
+          setProgress(t('mem.backupDone'))
+        } catch {
+          /* нет миров или архив занят — запуску это не мешает */
+        }
+      }
+
       // @ts-ignore
-      await window.electronAPI.launchGame(launchOpts)
+      if (isHorizon) {
+        // @ts-ignore
+        await window.electronAPI.launchHorizon(launchOpts)
+        // Первая «Играть» могла включить скачивание и подготовку — плашку
+        // «скачано» в списке версий обновляем сразу.
+        refreshHorizonStatus()
+      } else {
+        // @ts-ignore
+        await window.electronAPI.launchGame(launchOpts)
+      }
       // Команда вернулась сразу после `spawn`: окна ещё нет. Полосу гасит
       // событие `game-ready`, а таймер — страховка, если игра так и не
       // напишет в лог (тогда запуск считаем состоявшимся, но не висим вечно).
@@ -1721,6 +1827,147 @@ export default function App() {
       setProgress(`Error: ${text}`)
       setGameRunning(false)
       setLaunching(false)
+      // У Horizon провал мог случиться на halfway скачке — статус перечитываем.
+      if (isHorizon) refreshHorizonStatus()
+    }
+  }
+
+  // Зависимости вердикта: что ещё не поставлено (для кнопки «Установить все»).
+  const crashDeps: any[] = Array.isArray(crashAi?.missing) ? crashAi.missing : []
+  const crashDepsLeft = crashDeps.filter((d: any) => !d?.installed)
+
+  // Закрытие окна краша: гасим и вердикт, и подпись «Игра запускается...»,
+  // чтобы лаунчер возвращался в спокойное состояние.
+  const closeCrashDialog = () => {
+    setCrashLog(null)
+    setCrashAi(null)
+    setCrashAiError(null)
+    setCrashAiMod(null)
+    setProgress('')
+  }
+
+  // Разбор краша ИИ: модель смотрит лог и моды сборки и называет виноватого.
+  const diagnoseCrash = async () => {
+    if (!crashLog || crashAiBusy || crashAiUsed) return
+    setCrashAiUsed(true)
+    setCrashAiBusy(true)
+    setCrashAiError(null)
+    setCrashAi(null)
+    setCrashAiMod(null)
+    try {
+      // @ts-ignore
+      const res = await window.electronAPI.aiDiagnoseCrash(
+        crashLog,
+        crashTarget.instance || null,
+        crashTarget.version || '',
+        crashTarget.loader || '',
+      )
+      setCrashAi(res)
+      // Имя и иконку берём из самого файла сборки: так на карточке будет
+      // то, что игрок видит в списке модов, а не вольный перевод модели.
+      if (res?.file && crashTarget.instance) {
+        try {
+          // @ts-ignore
+          const meta = await window.electronAPI.getModsMetadata(crashTarget.instance, [res.file])
+          const item = meta?.items?.[0]
+          if (item) setCrashAiMod({ name: item.name, icon: item.icon })
+        } catch {
+          // метаданные необязательны — карточка покажет название из вердикта
+        }
+      }
+    } catch (e: any) {
+      setCrashAiError(typeof e === 'string' ? e : (e?.message || String(e)))
+    } finally {
+      setCrashAiBusy(false)
+    }
+  }
+
+  // Скачать одну зависимость: бэкенд уже искал её в Modrinth, но если не
+  // нашёл — добираем поиском по названию прямо отсюда.
+  const installDep = async (dep: any) => {
+    let projectId = dep?.project_id
+    if (!projectId && dep) {
+      // @ts-ignore
+      const found = await window.electronAPI.searchMods(
+        String(dep.query || dep.title || ''),
+        crashTarget.loader || '',
+        crashTarget.version || '',
+        0,
+        'mod',
+        'relevance',
+      )
+      projectId = (found?.hits || [])[0]?.project_id
+      if (!projectId) throw new Error(t('crash.aiNotFound'))
+    }
+    if (!projectId) throw new Error(t('crash.aiNotFound'))
+    // @ts-ignore
+    await window.electronAPI.downloadMod(
+      projectId,
+      crashTarget.version || '',
+      crashTarget.loader || '',
+      crashTarget.instance,
+      'mod',
+    )
+  }
+
+  // Вердикт считается исправленным только когда снят виноватый мод (если это
+  // нужно) И поставлены ВСЕ недостающие зависимости — иначе игрок чинит одну
+  // и не может поставить вторую.
+  const settleCrash = (next: any) => {
+    const deps: any[] = Array.isArray(next?.missing) ? next.missing : []
+    const depsDone = deps.every((d: any) => d?.installed)
+    const needsMod = next?.action === 'remove' || next?.action === 'disable'
+    const modDone = needsMod ? !!next?.modFixed : true
+    return { ...next, fixed: depsDone && modDone }
+  }
+
+  // Кнопка вердикта: удалить мод, выключить его или доставить зависимость.
+  const applyCrashFix = async (kind: 'remove' | 'disable' | 'install', dep?: any, index?: number) => {
+    if (!crashAi || crashAiBusy) return
+    setCrashAiBusy(true)
+    setCrashAiError(null)
+    try {
+      if (kind === 'remove' && crashAi.file) {
+        // @ts-ignore
+        await window.electronAPI.uninstallMod(crashAi.file, crashTarget.instance)
+        setCrashAi(settleCrash({ ...crashAi, modFixed: true }))
+      } else if (kind === 'disable' && crashAi.file) {
+        // @ts-ignore
+        await window.electronAPI.toggleMod(crashAi.file, crashTarget.instance, false)
+        setCrashAi(settleCrash({ ...crashAi, modFixed: true }))
+      } else if (kind === 'install' && dep) {
+        await installDep(dep)
+        const deps = (crashAi.missing || []).map((d: any, i: number) =>
+          index !== undefined && i === index ? { ...d, installed: true } : d,
+        )
+        setCrashAi(settleCrash({ ...crashAi, missing: deps }))
+      }
+    } catch (e: any) {
+      setCrashAiError(typeof e === 'string' ? e : (e?.message || String(e)))
+    } finally {
+      setCrashAiBusy(false)
+    }
+  }
+
+  // «Установить все»: по очереди ставим оставшиеся, ошибку одного не теряем.
+  const installAllDeps = async () => {
+    if (!crashAi || crashAiBusy) return
+    setCrashAiBusy(true)
+    setCrashAiError(null)
+    const deps: any[] = Array.isArray(crashAi.missing) ? crashAi.missing.map((d: any) => ({ ...d })) : []
+    try {
+      for (let i = 0; i < deps.length; i += 1) {
+        if (deps[i]?.installed) continue
+        try {
+          await installDep(deps[i])
+          deps[i] = { ...deps[i], installed: true }
+        } catch (e: any) {
+          setCrashAiError(typeof e === 'string' ? e : (e?.message || String(e)))
+        }
+        setCrashAi(settleCrash({ ...crashAi, missing: deps.map((d) => ({ ...d })) }))
+      }
+    } finally {
+      setCrashAiBusy(false)
     }
   }
 
@@ -2123,6 +2370,13 @@ export default function App() {
                   </section>
                   )}
 
+                  {/* Скрытая лента рекомендаций не должна тянуть ряд кнопок
+                      наверх: распорка забирает всё свободное место и держит
+                      кнопки у нижней границы при любой высоте контейнера. */}
+                  {theme.showRecommended === false && (
+                    <div style={{ flex: 1, minHeight: 0 }} aria-hidden="true" />
+                  )}
+
                   <div className="lobby-play-row">
                     {/* Рамку и тени панели задаёт CSS (.jl-play-bar): раньше они жили
                         в инлайн-стилях и не перекрашивались темой. */}
@@ -2142,7 +2396,7 @@ export default function App() {
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
                             <span style={{ fontSize: '14px', color: 'var(--pg-text)', fontWeight: 'bold' }}>
-                              {selectedVersion.startsWith('mp:') ? selectedVersion.replace('mp:', '') : selectedVersion || t("app.selectVersion")}
+                              {selectedVersion ? displayVersionName(selectedVersion) : t("app.selectVersion")}
                             </span>
                             {selectedVersion.startsWith('mp:') && (
                               <span style={{ fontSize: '11px', color: 'var(--pg-text-muted)' }}>
@@ -2185,6 +2439,17 @@ export default function App() {
                               ))}
                             </>
                           )}
+                          <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>Horizon</div>
+                          <div
+                            className="dropdown-item"
+                            onClick={() => { handleSelectVersion(HORIZON_VERSION_ID); handleCloseVersionDropdown(); }}
+                            style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--border-soft)', background: isHorizonVersion(selectedVersion) ? 'var(--surface-3)' : 'transparent' }}
+                          >
+                            <img src={HORIZON_ICON} width={24} height={24} style={{ imageRendering: 'pixelated' }} alt="" />
+                            <span style={{ color: 'var(--pg-text)', fontSize: '13px', fontWeight: 'bold', flex: 1 }}>
+                              26.3 Rust {horizonStatus?.installed && horizonStatus?.prepared && t('app.downloaded')}
+                            </span>
+                          </div>
                           <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>{t("app.officialReleases")}</div>
                           {versions.map(v => {
                             const isVanillaInstalled = installedVersions.includes(v);
@@ -2298,6 +2563,7 @@ export default function App() {
                       {launching ? t('app.launching') : gameRunning ? t('app.gameRunning') : (() => {
                         if (!selectedVersion) return t('app.playBtn');
                         if (selectedVersion.startsWith('mp:')) return t('app.playBtn');
+                        if (isHorizonVersion(selectedVersion)) return (horizonStatus?.installed && horizonStatus?.prepared) ? t('app.playBtn') : t('app.installBtn');
                         if (selectedVersion?.endsWith(' Forge')) {
                           const baseV = selectedVersion.replace(' Forge', '');
                           const isForgeInstalled = installedVersions.some(iv => iv.startsWith(baseV + '-') && (/^\d/.test(iv.slice(baseV.length + 1)) || iv.includes('-forge-'))) || installedVersions.includes(selectedVersion);
@@ -2337,7 +2603,7 @@ export default function App() {
                           whiteSpace: 'nowrap',
                           display: 'inline-block'
                         }}>
-                          {selectedVersion.startsWith('mp:') ? selectedVersion.replace('mp:', '') : selectedVersion || t("app.selectVersion")}
+                          {selectedVersion ? displayVersionName(selectedVersion) : t("app.selectVersion")}
                         </span>
                         <span
                           style={{
@@ -2358,6 +2624,8 @@ export default function App() {
                         <span style={{ fontSize: '11px', color: '#888' }}>
                           {selectedVersion.startsWith('mp:') ? (
                             `${modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.loader} ${modpacks.find(m => m.name === selectedVersion.replace('mp:', ''))?.version}`
+                          ) : isHorizonVersion(selectedVersion) ? (
+                            'Rust-клиент Minecraft ' + (horizonStatus?.gameVersion || '26.3')
                           ) : selectedVersion?.endsWith(' Forge') ? (
                             'ForgeOptiFine ' + selectedVersion.replace(' Forge', '')
                           ) : (
@@ -2387,6 +2655,17 @@ export default function App() {
                             ))}
                           </>
                         )}
+                        <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>Horizon</div>
+                        <div
+                          className="dropdown-item"
+                          onClick={(e) => { e.stopPropagation(); handleSelectVersion(HORIZON_VERSION_ID); handleCloseVersionDropdown(); }}
+                          style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid var(--border-soft)', background: isHorizonVersion(selectedVersion) ? 'var(--surface-3)' : 'transparent' }}
+                        >
+                          <img src={HORIZON_ICON} width={24} height={24} style={{ imageRendering: 'pixelated' }} alt="" />
+                          <span style={{ color: 'var(--pg-text)', fontSize: '13px', fontWeight: 'bold', flex: 1 }}>
+                            26.3 Rust {horizonStatus?.installed && horizonStatus?.prepared && t('app.downloaded')}
+                          </span>
+                        </div>
                         <div style={{ padding: '8px 10px', fontSize: '11px', color: 'var(--pg-text-muted)', background: 'var(--surface-2)', textTransform: 'uppercase' }}>{t("app.officialReleases")}</div>
                         {versions.map(v => {
                           const isVanillaInstalled = installedVersions.includes(v);
@@ -2511,6 +2790,7 @@ export default function App() {
                       {launching ? t('app.launching') : gameRunning ? t('app.gameRunning') : (() => {
                         if (!selectedVersion) return t('app.playBtn');
                         if (selectedVersion.startsWith('mp:')) return t('app.playBtn');
+                        if (isHorizonVersion(selectedVersion)) return (horizonStatus?.installed && horizonStatus?.prepared) ? t('app.playBtn') : t('app.installBtn');
                         if (selectedVersion?.endsWith(' Forge')) {
                           const baseV = selectedVersion.replace(' Forge', '');
                           const isForgeInstalled = installedVersions.some(iv => iv.startsWith(baseV + '-') && (/^\d/.test(iv.slice(baseV.length + 1)) || iv.includes('-forge-'))) || installedVersions.includes(selectedVersion);
@@ -2607,7 +2887,8 @@ export default function App() {
                   {[
                     { id: 'appearance', label: t('settings.navAppearance'), icon: <Palette size={15} /> },
                     { id: 'customization', label: t('settings.navLauncher'), icon: <SlidersHorizontal size={15} /> },
-                    { id: 'main', label: t('settings.navMinecraft'), icon: <Blocks size={15} /> }
+                    { id: 'main', label: t('settings.navMinecraft'), icon: <Blocks size={15} /> },
+                    { id: 'memory', label: t('settings.navMemory'), icon: <Database size={15} /> }
                   ].map(item => (
                     <button
                       key={item.id}
@@ -2631,16 +2912,22 @@ export default function App() {
                         ? t('settings.navAppearance')
                         : settingsTab === 'customization'
                           ? t('settings.navLauncher')
-                          : t('settings.navMinecraft')}
+                          : settingsTab === 'memory'
+                            ? t('settings.navMemory')
+                            : t('settings.navMinecraft')}
                     </h1>
                     <p>
                       {settingsTab === 'appearance'
                         ? t('settings.descAppearance')
                         : settingsTab === 'customization'
                           ? t('settings.descLauncher')
-                          : t('settings.descMinecraft')}
+                          : settingsTab === 'memory'
+                            ? t('settings.descMemory')
+                            : t('settings.descMinecraft')}
                     </p>
                   </header>
+
+                  {settingsTab === 'memory' && <MemorySettings />}
                 {settingsTab === 'appearance' && (
                   <>
                     <CustomizationTab
@@ -3310,7 +3597,7 @@ export default function App() {
 
       {/* Crash Modal */}
       {crashLog !== null && (
-        <div className="mc-dialog-overlay" onClick={() => setCrashLog(null)}>
+        <div className="mc-dialog-overlay" onClick={closeCrashDialog}>
           <div className="mc-dialog-window" style={{ width: '800px', maxWidth: '92vw' }} onClick={e => e.stopPropagation()}>
             <div className="mc-dialog-header">
               <div className="mc-dialog-title danger">
@@ -3323,7 +3610,7 @@ export default function App() {
                 <span>{t('app.gameCrashed')}</span>
               </div>
               <button
-                onClick={() => setCrashLog(null)}
+                onClick={closeCrashDialog}
                 className="mc-close-cube-btn"
                 title={t('ui.close')}
               >
@@ -3332,6 +3619,102 @@ export default function App() {
             </div>
             
             <div className="mc-dialog-content" style={{ padding: '12px' }}>
+              {crashAiError && (
+                <div style={{ color: '#e74c3c', fontSize: '12px', marginBottom: '10px', lineHeight: 1.4 }}>
+                  {crashAiError}
+                </div>
+              )}
+
+              {/* Вердикт ИИ: кто виноват и что с ним сделать. */}
+              {crashAi && !crashAi.fixed && (
+                <div style={{ border: '2px solid var(--pg-dark3)', background: 'var(--surface-2)', padding: '10px', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--pg-text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    {t('crash.aiVerdict')}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    {crashAiMod?.icon
+                      ? <img src={crashAiMod.icon} alt="" width={28} height={28} style={{ imageRendering: 'pixelated', flexShrink: 0 }} />
+                      : null}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: 'var(--pg-text)', fontSize: '13px', fontWeight: 'bold' }}>
+                        {crashAiMod?.name || crashAi.title || t('crash.aiNoMod')}
+                      </div>
+                      {crashAi.reason && (
+                        <div style={{ color: 'var(--pg-text-muted)', fontSize: '12px', marginTop: '3px' }}>{crashAi.reason}</div>
+                      )}
+                    </div>
+                  </div>
+                  {crashAi.explain && (
+                    <div style={{ color: 'var(--pg-text-muted)', fontSize: '12px', marginTop: '8px' }}>{crashAi.explain}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                    {crashAi.action === 'remove' && crashAi.file && !crashAi.modFixed && (
+                      <button
+                        type="button"
+                        className="mc-cube-btn gold"
+                        disabled={crashAiBusy}
+                        onClick={() => { void applyCrashFix('remove') }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Trash size={14} /> {t('crash.aiRemove')}
+                      </button>
+                    )}
+                    {crashAi.action === 'disable' && crashAi.file && !crashAi.modFixed && (
+                      <button type="button" className="mc-cube-btn neutral" disabled={crashAiBusy} onClick={() => { void applyCrashFix('disable') }}>
+                        {t('crash.aiDisable')}
+                      </button>
+                    )}
+                    {/* Зависимости: каждая ставится отдельно, пока не поставлены
+                        все — иначе игрок чинит одну и не может вторую. */}
+                    {crashDeps.map((dep: any, i: number) => (
+                      dep?.installed ? (
+                        <span
+                          key={`dep-${i}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#2ecc71' }}
+                        >
+                          ✓ {dep?.title || dep?.query}
+                        </span>
+                      ) : (
+                        <button
+                          key={`dep-${i}`}
+                          type="button"
+                          className="mc-cube-btn gold"
+                          disabled={crashAiBusy}
+                          onClick={() => { void applyCrashFix('install', dep, i) }}
+                        >
+                          {t('crash.aiInstall')} «{dep?.title || dep?.query}»
+                        </button>
+                      )
+                    ))}
+                    {crashDepsLeft.length > 1 && (
+                      <button
+                        type="button"
+                        className="mc-cube-btn neutral"
+                        disabled={crashAiBusy}
+                        onClick={() => { void installAllDeps() }}
+                      >
+                        {crashAiBusy ? `${t('crash.aiInstalling')}…` : t('crash.aiInstallAll')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Исправлено: сразу предложить перезапуск той же сборки. */}
+              {crashAi && crashAi.fixed && (
+                <div style={{ border: '2px solid var(--pg-dark3)', background: 'var(--surface-2)', padding: '10px', marginBottom: '12px' }}>
+                  <div style={{ color: '#2ecc71', fontSize: '13px', fontWeight: 'bold' }}>{t('crash.aiDone')}</div>
+                  <button
+                    type="button"
+                    className="mc-cube-btn gold"
+                    style={{ marginTop: '8px' }}
+                    onClick={() => { setCrashLog(null); setCrashAi(null); void handleLaunch() }}
+                  >
+                    {t('crash.aiRelaunch')}
+                  </button>
+                </div>
+              )}
+
               <div style={{ color: 'var(--pg-text-muted)', fontSize: '11px', marginBottom: '8px', fontFamily: '"Blocks", sans-serif', textTransform: 'uppercase' }}>
                 {t('app.launchErrorLog')}
               </div>
@@ -3341,7 +3724,7 @@ export default function App() {
                 fontFamily: 'monospace', 
                 fontSize: '12px', 
                 padding: '12px', 
-                height: '350px', 
+                height: crashAi ? '190px' : '350px', 
                 overflowY: 'auto',
                 border: '2px solid var(--pg-dark3)',
                 boxShadow: 'inset 2px 2px 0 0 #000',
@@ -3349,11 +3732,22 @@ export default function App() {
                 wordBreak: 'break-all',
                 userSelect: 'text'
               }}>
-                {crashLog}
+                {crashLog?.trim() ? crashLog : t('crash.emptyLog')}
               </div>
             </div>
             
             <div className="mc-dialog-footer">
+              <button
+                type="button"
+                className="mc-cube-btn gold"
+                disabled={crashAiBusy || crashAiUsed || !crashTarget.instance}
+                title={!crashTarget.instance ? t('crash.aiNoPack') : crashAiUsed ? t('crash.aiUsed') : undefined}
+                onClick={() => { void diagnoseCrash() }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              >
+                {crashAiBusy ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+                {crashAiBusy ? t('crash.aiThinking') : crashAiUsed ? t('crash.aiUsed') : t('crash.aiFix')}
+              </button>
               <button 
                 type="button"
                 className="mc-cube-btn neutral"
@@ -3364,7 +3758,7 @@ export default function App() {
               >
                 {t('app.copyLog')}
               </button>
-              <button type="button" className="mc-cube-btn gold" onClick={() => setCrashLog(null)}>
+              <button type="button" className="mc-cube-btn gold" onClick={closeCrashDialog}>
                 {t('ui.close')}
               </button>
             </div>

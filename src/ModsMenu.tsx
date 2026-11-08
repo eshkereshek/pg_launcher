@@ -132,7 +132,6 @@ export default function ModsMenu({
   // курсора, и второй клик не создаёт дубль.
   const [creatingModpack, setCreatingModpack] = useState(false)
   // Моды из плана ИИ: ставятся сразу после создания сборки.
-  const [aiPlanMods, setAiPlanMods] = useState<any[]>([])
   // Настройки сборки открываются страницей, а не модальным окном.
   const [showSettingsPage, setShowSettingsPage] = useState(false)
   const [editModpackName, setEditModpackName] = useState('')
@@ -266,6 +265,36 @@ export default function ModsMenu({
     setModpacks(updated)
     // @ts-ignore
     window.electronAPI.saveModpacks(updated)
+  }
+
+  // Свежий список сборок для параллельных установок: замыкание на state
+  // отстаёт, а сохранять файл из updater'а нельзя (StrictMode зовёт его дважды).
+  const modpacksRef = useRef<Modpack[]>(modpacks)
+  useEffect(() => {
+    modpacksRef.current = modpacks
+  }, [modpacks])
+
+  // Добавление модов в сборку из параллельных загрузок: считаем от свежего
+  // списка, иначе два одновременных мода затирают друг друга.
+  const mergeInstalledMods = (packName: string, addedMods: any[], removedFiles: string[] = []) => {
+    const merge = (list: any[]) => {
+      const kept = list.filter((mod: any) => !removedFiles.includes(mod.id))
+      const addedNorms = new Set(addedMods.map((mod: any) => normalizeModFilename(mod.id)))
+      const filtered = kept.filter((mod: any) => !addedNorms.has(normalizeModFilename(mod.id)))
+      return [...filtered, ...addedMods]
+    }
+
+    const next = modpacksRef.current.map((pack) =>
+      pack.name === packName ? { ...pack, installedMods: merge(pack.installedMods || []) } : pack,
+    )
+    modpacksRef.current = next
+    setModpacks(next)
+    // @ts-ignore
+    window.electronAPI.saveModpacks(next)
+
+    setActiveModpack((prev) =>
+      prev && prev.name === packName ? { ...prev, installedMods: merge(prev.installedMods || []) } : prev,
+    )
   }
 
   const loadRecommended = async (mp: Modpack, currentOffset = 0, append = false) => {
@@ -435,32 +464,6 @@ export default function ModsMenu({
 
       await selectModpack(mp)
 
-      /* Моды из плана ИИ ставим только сейчас: до создания сборки папки ещё нет.
-         Ошибки отдельного мода не рушат создание — показываем, сколько встало. */
-      if (aiPlanMods.length > 0) {
-        let installedCount = 0
-        for (const mod of aiPlanMods) {
-          try {
-            // @ts-ignore
-            const res = await window.electronAPI.downloadMod(
-              mod.project_id,
-              createdVersion,
-              createdLoader,
-              createdName,
-              'mod',
-            )
-            const files = res?.filenames || (res?.filename ? [res.filename] : [])
-            installedCount += files.length
-          } catch (e) {
-            console.error('AI mod install failed', mod.project_id, e)
-          }
-        }
-        if (installedCount > 0) {
-          showOk(t('ai.installed', { count: installedCount }))
-        }
-        setAiPlanMods([])
-      }
-
       // Форма очищается и закрывается только когда сборка создана и выбрана.
       setNewName('')
       setNewIcon(PRESET_ICONS[0])
@@ -610,19 +613,9 @@ export default function ModsMenu({
         isEnabled: true
       }))
 
-      // Deduplicate against existing installed mods by normalized filename
-      const newNorms = new Set(newMods.map((m: any) => normalizeModFilename(m.id)))
-      const filteredExisting = activeModpack.installedMods.filter(
-        m => !newNorms.has(normalizeModFilename(m.id))
-      )
-
-      const updatedMp = {
-        ...activeModpack,
-        installedMods: [...filteredExisting, ...newMods]
-      }
-      setActiveModpack(updatedMp)
-      const updatedAll = modpacks.map(m => m.name === updatedMp.name ? updatedMp : m)
-      persistModpacks(updatedAll)
+      // Параллельная установка: состав собираем от свежего списка, а не от
+      // замыкания на старом modpacks — иначе моды теряются при гонке.
+      mergeInstalledMods(activeModpack.name, newMods)
 
     } catch (e: any) {
       // Tauri отклоняет invoke строкой, поэтому e.message тут часто undefined
@@ -1314,8 +1307,6 @@ export default function ModsMenu({
           creating={creatingModpack}
           onCreate={createModpack}
           onClose={closeCreatePage}
-          aiMods={aiPlanMods}
-          onAiModsChange={setAiPlanMods}
         />
       )}
 

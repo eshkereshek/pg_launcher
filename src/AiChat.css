@@ -168,6 +168,15 @@
   border-color: #3a1b1b;
 }
 
+/* Ответ ассистента на обычный вопрос (не план сборки). */
+.ai-msg-assistant {
+  align-self: flex-start;
+  max-width: 92%;
+  color: #e8e8e8;
+  background: #171717;
+  white-space: pre-wrap;
+}
+
 .ai-msg-thinking {
   display: flex;
   align-items: center;

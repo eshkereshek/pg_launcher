@@ -10,6 +10,9 @@ export default function InstallerApp() {
   const [uninstalling, setUninstalling] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
+  // Тихое обновление: установщик нашёл прошлую установку и обновляет её.
+  const [autoUpdating, setAutoUpdating] = useState(false)
+  const [defaultPath, setDefaultPath] = useState('')
 
   // Java management state
   const [showJavaModal, setShowJavaModal] = useState(false)
@@ -87,15 +90,42 @@ export default function InstallerApp() {
       })
     }
 
+    // Обновление не показывает мастер: если лаунчер уже установлен, тихо
+    // копируем новые файлы в прежнюю папку и сразу открываем лаунчер.
     // @ts-ignore
-    window.electronAPI.getDefaultInstallPath().then(async (path: string) => {
-      setInstallPath(path)
-      // @ts-ignore
-      const installed = await window.electronAPI.checkIsInstalled(path)
-      setIsInstalled(installed)
-      if (installed) {
-        setInstallMode('update')
+    const startAutoUpdate = async () => {
+      try {
+        // @ts-ignore
+        const existing = await window.electronAPI.getExistingInstall()
+        if (!existing?.installDir) return false
+        setAutoUpdating(true)
+        // @ts-ignore
+        await window.electronAPI.installApp(existing.installDir)
+        // @ts-ignore
+        await window.electronAPI.launchInstalled(existing.installDir)
+        // @ts-ignore
+        window.electronAPI.windowClose?.()
+        return true
+      } catch (e) {
+        console.error('Silent update failed:', e)
+        setAutoUpdating(false)
+        return false
       }
+    }
+
+    startAutoUpdate().then((handled) => {
+      if (handled) return
+      // @ts-ignore
+      window.electronAPI.getDefaultInstallPath().then(async (path: string) => {
+        setDefaultPath(path)
+        setInstallPath(path)
+        // @ts-ignore
+        const installed = await window.electronAPI.checkIsInstalled(path)
+        setIsInstalled(installed)
+        if (installed) {
+          setInstallMode('update')
+        }
+      })
     })
   }, [])
 
@@ -173,6 +203,43 @@ export default function InstallerApp() {
   const warmPanel = '#25201d';
   const warmBorder = '#3e3630';
   const warmText = '#d8ccb8';
+
+  // Куда пойдут версии и миры: нестандартная папка — рядом с лаунчером,
+  // папка по умолчанию — AppData, как было раньше.
+  const trimmedPath = installPath.replace(/[\\/]+$/, '')
+  const isDefaultPath =
+    !!defaultPath && trimmedPath.toLowerCase() === defaultPath.replace(/[\\/]+$/, '').toLowerCase()
+  const dataHint = trimmedPath
+    ? isDefaultPath
+      ? 'AppData\\pagrysha-launcher'
+      : `${trimmedPath}\\data`
+    : '…'
+
+  if (autoUpdating) {
+    return (
+      <div
+        style={{
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: warmBg,
+          color: '#fff',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+        }}
+      >
+        <div style={{ fontFamily: titleFont, fontSize: '22px', letterSpacing: '1px', textShadow: '2px 2px 0 rgba(0,0,0,0.5)' }}>
+          Обновление Pagrysha Launcher
+        </div>
+        <div style={{ fontSize: '13px', color: warmText }}>Копирую новые файлы и запускаю лаунчер…</div>
+        <div style={{ width: '240px', height: '8px', background: '#1a1614', border: '1px solid #111', overflow: 'hidden', marginTop: '6px' }}>
+          <div style={{ width: '100%', height: '100%', background: '#f1c40f' }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -363,7 +430,12 @@ export default function InstallerApp() {
                   }}
                 >Обзор...</button>
               </div>
-              <p style={{ fontSize: '12px', color: '#9c8e7e', marginTop: '8px', marginBottom: '15px' }}>Требуется свободного места: ~150 МБ</p>
+              <p style={{ fontSize: '12px', color: '#9c8e7e', marginTop: '8px', marginBottom: '4px' }}>Требуется свободного места: ~150 МБ</p>
+              {/* Игрок должен видеть, на какой диск лягут версии и миры. */}
+              <p style={{ fontSize: '12px', color: '#9c8e7e', marginBottom: '15px' }}>
+                Версии, миры и логи:{' '}
+                <span style={{ color: '#d8ccb8', fontFamily: 'monospace' }}>{dataHint}</span>
+              </p>
 
               <div style={{ marginTop: 'auto', padding: '12px 14px', background: warmPanel, border: `1px solid ${warmBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                 <div>

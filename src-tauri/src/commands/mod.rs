@@ -4,6 +4,7 @@ pub mod config;
 pub mod curseforge;
 pub mod java;
 pub mod loaders;
+pub mod memory;
 pub mod mods;
 pub mod servers;
 pub mod skins;

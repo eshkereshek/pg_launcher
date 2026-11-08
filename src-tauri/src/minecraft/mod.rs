@@ -1,4 +1,6 @@
 pub mod assets;
+pub mod horizon;
+pub mod horizon_brand;
 pub mod launcher;
 pub mod libraries;
 pub mod loaders;

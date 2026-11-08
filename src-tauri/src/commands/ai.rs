@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use crate::utils::modgroups::{group_of, ORDER as GROUP_ORDER};
 use crate::utils::modpick::{pick_hit, variants};
 
-use super::mods::search_modrinth;
+use super::mods::{get_installed_mods, search_modrinth};
 
 /// Ключ из `ai.json` в папке лаунчера: им можно перекрыть зашитый.
 fn runtime_config() -> Value {
@@ -54,6 +54,20 @@ pub fn ai_status() -> Value {
 }
 
 async fn ask_cloudflare(system: &str, user: &str) -> Result<Value, String> {
+    let content = cloudflare_raw(
+        json!([
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ]),
+        None,
+    )
+    .await?;
+    parse_json_reply(&content)
+}
+
+/// Низкий уровень: отправляет произвольный список сообщений и возвращает текст
+/// ответа. Нужен чату, которому важно передать историю диалога.
+async fn cloudflare_raw(messages: Value, max_tokens: Option<u32>) -> Result<String, String> {
     let token = cloudflare_token();
     let account = cloudflare_account();
     if token.is_empty() || account.is_empty() {
@@ -65,12 +79,18 @@ async fn ask_cloudflare(system: &str, user: &str) -> Result<Value, String> {
         .unwrap_or("@cf/meta/llama-3.3-70b-instruct-fp8-fast")
         .to_string();
 
+    // Сто с лишним модов планом — это тысячи токенов JSON; 4096 хватало лишь
+    // старым коротким сборкам. Лимит можно поднять/понизить в ai.json.
+    let max_tokens = max_tokens.unwrap_or_else(|| {
+        runtime_config()["maxTokens"]
+            .as_u64()
+            .unwrap_or(8192)
+            .clamp(1024, 32768) as u32
+    });
+
     let body = json!({
-        "max_tokens": 4096,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ]
+        "max_tokens": max_tokens,
+        "messages": messages
     });
 
     let url = format!("https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}");
@@ -100,7 +120,7 @@ async fn ask_cloudflare(system: &str, user: &str) -> Result<Value, String> {
         .or_else(|| message["reasoning_content"].as_str())
         .ok_or("В ответе Cloudflare нет текста")?;
 
-    parse_json_reply(content)
+    Ok(content.to_string())
 }
 
 /// Модели любят добавлять ```json и пояснения — берём первый объект в ответе.
@@ -223,7 +243,7 @@ async fn resolve_one(
     Err(query)
 }
 
-/// Ищет моды пачками по 6 запросов: сорок модов подряд по одному — это минута
+/// Ищет моды пачками по 6 запросов: сотня модов подряд по одному — это минута
 /// ожидания, хотя поиск друг от друга не зависит.
 async fn resolve_batch(
     items: Vec<(String, String)>,
@@ -282,8 +302,9 @@ fn normalize_version(value: &str) -> Option<String> {
         None
     }
 }
-/// Предел модов в сборке: больше — и установка превращается в марафон.
-const MAX_MODS: u32 = 60;
+/// Предел модов в сборке: игрок просил «от ста и больше», поэтому потолок —
+/// 160, а не бывшие шестьдесят; установка больших сборок идёт с прогрессом.
+const MAX_MODS: u32 = 160;
 
 /// Составляет план сборки и подбирает под него реальные моды Modrinth.
 #[tauri::command]
@@ -300,14 +321,19 @@ pub async fn ai_plan(
 
     let system = "Ты помощник лаунчера Minecraft и составляешь сборки модов. \
 Отвечай строго одним JSON-объектом без пояснений и markdown. Схема: \
-{\"name\":\"короткое название сборки\",\"summary\":\"одно предложение о сборке\",\
+{\"name\":\"короткое название сборки по-английски, 2-4 слова латиницей, без кавычек и эмодзи\",\"summary\":\"одно предложение о сборке по-русски\",\
 \"loader\":\"fabric|forge|neoforge|quilt\",\"gameVersion\":\"например 1.20.1\",\
 \"mods\":[{\"query\":\"название мода для поиска в Modrinth\",\"role\":\"зачем он нужен\"}]}. \
 В query указывай реально существующие популярные моды, названия как в Modrinth \
 (например Create, JEI, AE2, Farmer's Delight), а не описания. \
-Сборка должна быть полной: несколько модов на оптимизацию (Sodium/Embeddium, Lithium, FerriteCore), \
+Следуй теме запроса строго: узкий запрос (оптимизация, \
+производительность, только техника и т. п.) собирай только из модов этой \
+темы и нужных им библиотек — контентные моды ради объёма не добавляй. \
+Для обычных сборок держи базу: несколько модов на оптимизацию (Sodium/Embeddium, Lithium, FerriteCore), \
 обязательные библиотеки (Architectury API, Cloth Config, GeckoLib — если они нужны), \
 затем контент по теме запроса. Шейдеры и ресурспаки не включай. \
+Количество — не самоцель: лучше вернуть 50 точных существующих проектов, \
+чем 150 с выдуманными или малоизвестными названиями. \
 Загрузчик и моды должны сходиться: Sodium, Lithium, Fabric API, Origins — только Fabric; \
 Embeddium, Thermal Expansion, Immersive Engineering, EnderIO, IndustrialCraft, Thaumcraft, \
 Better Questing, Waila — только Forge. Не предлагай мод, если не уверен, что он есть в Modrinth \
@@ -315,7 +341,7 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
 
     // Модель ошибается в названиях, и часть запросов не находится, поэтому просим
     // с запасом: до цели доберём вторым проходом.
-    let ask_first = ((target as f32 * 1.2).ceil() as usize).min(60);
+    let ask_first = ((target as f32 * 1.25).ceil() as usize).min(MAX_MODS as usize);
     let target_line = match (auto_version, auto_loader) {
         (true, true) => "Версию игры и загрузчик выбери сам — те, под которые есть \
 нужные моды (для техники и квестов это обычно Forge, для оптимизации и лёгких сборок — Fabric). \
@@ -326,7 +352,12 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
 поддерживать эту версию и загрузчик."
         ),
     };
-    let user = format!("Запрос игрока: {request}\n{target_line}\nНужно {ask_first} модов.");
+    let user = format!(
+        "Запрос игрока: {request}\n{target_line}\n\
+         Цель — большая сборка, около {ask_first} модов, если тема широкая. \
+         Для узкой темы верни столько реальных модов, сколько по ней существует: \
+         выдумывать названия и брать моды не своей темы нельзя."
+    );
 
     let mut plan = ask_model(system, &user).await?;
 
@@ -404,10 +435,12 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
     push_results(results, &mut resolved, &mut unresolved, &mut seen);
 
     // Второй проход: просим именно тех модов, которых не хватает до цели.
+    // Для больших сборок (100+) одного захода мало: добираем до пятью заходами
+    // по 30 модов за раз.
     let mut rounds = 0;
-    while resolved.len() < target && rounds < 2 {
+    while resolved.len() < target && rounds < 5 {
         rounds += 1;
-        let need = (target - resolved.len()).min(12);
+        let need = (target - resolved.len()).min(30);
         let have: Vec<String> = resolved
             .iter()
             .filter_map(|m| m["title"].as_str().map(str::to_string))
@@ -417,7 +450,9 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
 Уже выбраны: {}.\n\
 Предложи ещё {need} других модов под ту же тему. Правила: не повторяй выбранные, \
 не добавляй к названиям суффиксы вроде ': Quests', 'Expansion', 'Enhanced' — \
-пиши точные названия существующих проектов Modrinth, которые есть под {loader} {game_version}.",
+пиши точные названия существующих проектов Modrinth, которые есть под {loader} {game_version}. \
+Если модов этой темы больше не знаешь — верни короткий список или пустой массив mods, \
+выдумывать названия нельзя.",
             have.join(", ")
         );
         let more = match ask_model(system, &refill_user).await {
@@ -442,9 +477,17 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
         if items.is_empty() {
             break;
         }
+        let before = resolved.len();
         let results = resolve_batch(items, loader.clone(), game_version.clone()).await;
         push_results(results, &mut resolved, &mut unresolved, &mut seen);
         plan["name"] = more["name"].clone();
+
+        // Качество важнее количества: если заход принёс почти одни ненайденные
+        // названия — реальные моды этой темы кончились, дальше будет только
+        // «не найдено» в копилку.
+        if resolved.len() - before < need.min(6) {
+            break;
+        }
     }
 
     if resolved.is_empty() {
@@ -453,7 +496,7 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
         );
     }
 
-    // Перебор не нужен: игрок просил сорок, лишние двадцать только удлиняют установку.
+    // Перебор не нужен: лишние сверх запроса моды только удлиняют установку.
     resolved.truncate((target + 8).min(MAX_MODS as usize));
 
     // Держим порядок групп, а внутри — по популярности: так предпросмотр читается.
@@ -473,6 +516,538 @@ Better Questing, Waila — только Forge. Не предлагай мод, �
         "gameVersion": game_version,
         "mods": resolved,
         "unresolved": unresolved,
+    }))
+}
+
+/// Чат на вкладке сборок: либо обычный ответ на вопрос, либо заказ сборки.
+/// Однословные темы («оптимизация», «техно», …) считаем заказом без похода
+/// в модель — так игрок получает сборку сразу и не жжёт токены.
+#[tauri::command]
+pub async fn ai_assistant(
+    message: String,
+    history: Option<Vec<Value>>,
+    pack: Option<Value>,
+) -> Result<Value, String> {
+    let text = message.trim().to_string();
+    if text.is_empty() {
+        return Err("Пустое сообщение".into());
+    }
+
+    // Контекст последней сборки этого чата: имя, загрузчик, версия и моды.
+    let pack_name = pack
+        .as_ref()
+        .and_then(|p| p["name"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let pack_loader = pack
+        .as_ref()
+        .and_then(|p| p["loader"].as_str())
+        .unwrap_or("fabric")
+        .to_string();
+    let pack_version = pack
+        .as_ref()
+        .and_then(|p| p["version"].as_str())
+        .unwrap_or("")
+        .to_string();
+    let pack_titles: Vec<String> = pack
+        .as_ref()
+        .and_then(|p| p["mods"].as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|mod_item| mod_item["title"].as_str())
+                .map(|title| title.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if looks_like_pack_request(&text) {
+        return Ok(json!({ "kind": "pack" }));
+    }
+
+    let mut system = String::from(
+        "Ты — помощник лаунчера Minecraft «Pagrysha». Игрок пишет в чат на вкладке сборок. \
+Реши, что он хочет, и ответь СТРОГО одним JSON-объектом без markdown: \
+{\"kind\":\"pack\"} — если просит собрать новую сборку (в том числе одной темой: оптимизация, \
+производительность, техно, магия, RPG, выживание, приключение, декор, фермерство, мобы, квесты); \
+{\"kind\":\"chat\",\"answer\":\"ответ по-русски, до 700 символов, без markdown\"} — на любой другой вопрос. \
+Вопросы (как, что, почему, можно ли, какой мод лучше, что ты умеешь) — это chat, даже если в них есть тема. \
+На «какие моды для …» отвечай как chat: назови 3–6 реально существующих модов и предложи собрать сборку.",
+    );
+    if !pack_name.is_empty() {
+        system.push_str(&format!(
+            "\n\nУ игрока уже есть сборка «{pack_name}» ({pack_loader} {pack_version}), в ней {count} модов: {list}. \
+Если сообщение просит ИЗМЕНИТЬ эту сборку (добавь, убери, замени, сделай легче или тяжелее, без магии и т. п.) — \
+верни {{\"kind\":\"edit\",\"add\":[\"названия реальных модов Modrinth для добавления\"],\"remove\":[\"точные названия из списка, которые убрать\"]}}. \
+В remove бери только названия из списка выше; в add — до 8 существующих модов. \
+Если просит совсем другую сборку — {{\"kind\":\"pack\"}}.",
+            count = pack_titles.len(),
+            list = pack_titles.iter().take(60).cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    let mut messages: Vec<Value> = vec![json!({ "role": "system", "content": system })];
+    let history = history.unwrap_or_default();
+    let start = history.len().saturating_sub(6);
+    for item in &history[start..] {
+        let role = item["role"].as_str().unwrap_or("user");
+        let content = item["content"].as_str().unwrap_or("").trim();
+        if content.is_empty() || (role != "user" && role != "assistant") {
+            continue;
+        }
+        let short: String = content.chars().take(600).collect();
+        messages.push(json!({ "role": role, "content": short }));
+    }
+    messages.push(json!({ "role": "user", "content": text }));
+
+    let content = cloudflare_raw(Value::Array(messages), Some(1024)).await?;
+    // Модель может проигнорировать формат — тогда это просто текстовый ответ.
+    match parse_json_reply(&content) {
+        Ok(reply) if reply["kind"].as_str() == Some("edit") && !pack_name.is_empty() => {
+            let collect = |value: &Value| -> Vec<String> {
+                value
+                    .as_array()
+                    .map(|list| {
+                        list.iter()
+                            .filter_map(|item| item.as_str())
+                            .map(|name| name.trim().to_string())
+                            .filter(|name| !name.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let add_names = collect(&reply["add"]);
+            let remove_names = collect(&reply["remove"]);
+
+            // Новые моды превращаем в реальные проекты Modrinth, иначе
+            // кнопка «Применить» не знала бы, что скачивать.
+            let items: Vec<(String, String)> = add_names
+                .iter()
+                .take(8)
+                .map(|query| (query.clone(), "добавление в сборку".to_string()))
+                .collect();
+            let results = if items.is_empty() {
+                Vec::new()
+            } else {
+                resolve_batch(items, pack_loader.clone(), pack_version.clone()).await
+            };
+            let mut add: Vec<Value> = Vec::new();
+            let mut unresolved: Vec<String> = Vec::new();
+            for result in results {
+                match result {
+                    Ok(mod_card) => add.push(mod_card),
+                    Err(query) => unresolved.push(query),
+                }
+            }
+
+            Ok(json!({
+                "kind": "edit",
+                "name": pack_name,
+                "add": add,
+                "remove": remove_names,
+                "unresolved": unresolved,
+            }))
+        }
+        Ok(reply) if reply["kind"].as_str() == Some("pack") => Ok(json!({ "kind": "pack" })),
+        Ok(reply) => {
+            let answer = reply["answer"].as_str().unwrap_or("").trim().to_string();
+            Ok(json!({
+                "kind": "chat",
+                "answer": if answer.is_empty() { content } else { answer }
+            }))
+        }
+        Err(_) => Ok(json!({ "kind": "chat", "answer": content })),
+    }
+}
+
+/// Короткий отзыв модели о готовой сборке — его игрок видит после установки.
+#[tauri::command]
+pub async fn ai_pack_comment(pack: Value) -> Result<Value, String> {
+    let name = pack["name"].as_str().unwrap_or("сборка");
+    let loader = pack["loader"].as_str().unwrap_or("");
+    let version = pack["version"].as_str().unwrap_or("");
+    let titles: Vec<String> = pack["mods"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|mod_item| mod_item["title"].as_str())
+                .map(|title| title.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    if titles.is_empty() {
+        return Err("В сборке нет модов".into());
+    }
+
+    let system = "Ты — помощник лаунчера Minecraft. Напиши короткий отзыв о собранной сборке модов: \
+3–4 предложения по-русски, без markdown, до 600 символов, по делу — что это за сборка, на чём она держится, \
+кому подойдёт, на что обратить внимание. Не перечисляй все моды подряд.";
+    let user = format!(
+        "Сборка «{name}», {loader} {version}, {count} модов: {list}",
+        count = titles.len(),
+        list = titles.iter().take(70).cloned().collect::<Vec<_>>().join(", ")
+    );
+    let content = cloudflare_raw(
+        json!([
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ]),
+        Some(512),
+    )
+    .await?;
+
+    Ok(json!({ "comment": content.trim() }))
+}
+
+/// «оптимизация», «сборка на магию», «собери техно» — это заказы сборки,
+/// а «как поставить шейдеры?» — вопрос. Вопросы не перехватываем.
+fn looks_like_pack_request(text: &str) -> bool {
+    const THEMES: [&str; 20] = [
+        "оптимизация",
+        "оптимизацию",
+        "производительность",
+        "техно",
+        "техномагия",
+        "магия",
+        "магию",
+        "rpg",
+        "рпг",
+        "выживание",
+        "приключение",
+        "декор",
+        "строительство",
+        "фермерство",
+        "мобы",
+        "квесты",
+        "индустрия",
+        "техника",
+        "технику",
+        "сборка",
+    ];
+    let low = text.to_lowercase();
+    let words: Vec<&str> = low.split_whitespace().collect();
+
+    // Короткая тема без вопроса: «оптимизация», «сборка на магию».
+    if words.len() <= 3 && !low.contains('?') {
+        let joined = words.join(" ");
+        let mut stripped = joined.as_str();
+        for prefix in ["сборка ", "сборку ", "сборке ", "на ", "для ", "по "] {
+            stripped = stripped.trim_start_matches(prefix);
+        }
+        if THEMES
+            .iter()
+            .any(|theme| stripped == *theme || stripped.starts_with(&format!("{theme} ")))
+        {
+            return true;
+        }
+    }
+
+    // Явная просьба собрать (императив), но не вопрос о сборке.
+    let explicit = [
+        "собери",
+        "соберите",
+        "подбери моды",
+        "сделай сборку",
+        "создай сборку",
+        "собери сборку",
+    ];
+    explicit.iter().any(|prefix| low.starts_with(prefix))
+}
+
+/// Лог краша для модели: шапка (описание и первый стек) важнее хвоста, но и
+/// последние строки нужны. Режем по символам — в UTF-8 байты рвут слова.
+fn trim_crash_log(log: &str, limit: usize) -> String {
+    if log.chars().count() <= limit {
+        return log.to_string();
+    }
+    let head: String = log.chars().take(limit * 3 / 5).collect();
+    let tail_rev: String = log.chars().rev().take(limit * 2 / 5).collect();
+    let tail: String = tail_rev.chars().rev().collect();
+    format!("{head}\n... [середина лога вырезана] ...\n{tail}")
+}
+
+/// Ключ сравнения названий: «Sodium 0.5.8.jar» → «sodium 0 5 8».
+fn name_key(name: &str) -> String {
+    let base = name
+        .trim()
+        .trim_end_matches(".disabled")
+        .trim_end_matches(".jar");
+    base.chars()
+        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Мод из списка сборки, на который указывает модель. Сначала точное
+/// совпадение имени/файла, затем вхождение в обе стороны.
+fn find_installed(files: &[(String, String)], hint: &str) -> Option<(String, String)> {
+    let key = name_key(hint);
+    if key.is_empty() {
+        return None;
+    }
+    if let Some((file, title)) = files
+        .iter()
+        .find(|(file, title)| name_key(file) == key || name_key(title) == key)
+    {
+        return Some((file.clone(), title.clone()));
+    }
+    files
+        .iter()
+        .find(|(file, title)| {
+            let f = name_key(file);
+            let t = name_key(title);
+            let file_hits = !f.is_empty() && (f.contains(&key) || key.contains(&f));
+            file_hits || (!t.is_empty() && t.contains(&key))
+        })
+        .map(|(file, title)| (file.clone(), title.clone()))
+}
+
+/// Куски в кавычках: `Mod 'a' requires mod 'b'` → ["a", "b"].
+fn quoted_tokens(line: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('\'') {
+        let after = &rest[start + 1..];
+        match after.find('\'') {
+            Some(end) => {
+                out.push(after[..end].to_string());
+                rest = &after[end + 1..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+fn push_unique(list: &mut Vec<String>, name: String) {
+    let key = name_key(&name);
+    if key.is_empty() || key == "minecraft" || key == "java" {
+        return;
+    }
+    if !list.iter().any(|existing| name_key(existing) == key) {
+        list.push(name);
+    }
+}
+
+/// Названия недостающих модов прямо из текста краша — это надёжнее модели.
+/// Fabric: «Mod ID: 'fabric-api', Requested by: ...» под заголовком
+/// «Missing or unsupported mandatory dependencies»;
+/// Fabric/Quilt: «... requires any version of mod 'x', which is missing!»;
+/// Forge: «Mod file ... requires modid y, which is missing».
+fn missing_from_log(log: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_old_section = false;
+    let mut in_solution = false;
+    for line in log.lines().take(400) {
+        let low = line.to_lowercase();
+
+        // Fabric: готовый список «- Install fabric-api, any version.»
+        if low.contains("potential solution") {
+            in_solution = true;
+            continue;
+        }
+        if in_solution {
+            let text = line.trim();
+            if text.is_empty() {
+                in_solution = false;
+            } else if let Some(pos) = text.to_lowercase().find("install ") {
+                let after = &text[pos + "install ".len()..];
+                let name = after.split(',').next().unwrap_or("").trim().trim_matches('\'');
+                if !name.is_empty() {
+                    push_unique(&mut out, name.to_string());
+                }
+            }
+            continue;
+        }
+
+        // Старый блок Fabric/Quilt: «Mod ID: 'fabric-api', Requested by: ...»
+        if low.contains("missing or unsupported mandatory dependencies") {
+            in_old_section = true;
+            continue;
+        }
+        if in_old_section {
+            if let Some(pos) = low.find("mod id:") {
+                if let Some(name) = quoted_tokens(&line[pos..]).into_iter().next() {
+                    push_unique(&mut out, name);
+                }
+            }
+            if line.trim().is_empty() {
+                in_old_section = false;
+            }
+            continue;
+        }
+
+        if low.contains("which is missing") {
+            let before = &line[..low.find("which is missing").unwrap_or(0)];
+            let before = before.trim_end_matches(|c: char| c == ',' || c == '!' || c.is_whitespace());
+            if before.ends_with('\'') {
+                // «... of mod 'fabric-api', which is missing!»
+                if let Some(open) = before[..before.len() - 1].rfind('\'') {
+                    let name = &before[open + 1..before.len() - 1];
+                    push_unique(&mut out, name.to_string());
+                }
+            } else if let Some(of_pos) = before.rfind(" of ") {
+                // Fabric 0.19+: «... or later of geckolib, which is missing!»
+                let name = before[of_pos + 4..].trim();
+                if !name.is_empty() && !name.contains(' ') && name.len() < 64 {
+                    push_unique(&mut out, name.to_string());
+                }
+            }
+        } else if let Some(pos) = low.find("requires modid ") {
+            let tail = line[pos + "requires modid ".len()..].trim();
+            let name = tail
+                .split(|c: char| c == ',' || c.is_whitespace())
+                .next()
+                .unwrap_or("");
+            if !name.is_empty() {
+                push_unique(&mut out, name.to_string());
+            }
+        }
+    }
+    out.truncate(3);
+    out
+}
+
+/// Моды сборки для подсказки модели: файл и человеческое название.
+fn installed_mod_files(instance_id: &str) -> Vec<(String, String)> {
+    get_installed_mods(instance_id.to_string())
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| item["type"].as_str().unwrap_or("mod") == "mod")
+                .filter_map(|item| {
+                    let file = item["id"].as_str()?.to_string();
+                    let title = item["title"].as_str().unwrap_or(&file).to_string();
+                    Some((file, title))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Разбор краша: модель получает лог и список модов сборки и называет
+/// виноватого. Кнопки «удалить/отключить/установить» на экране краша делает
+/// фронтенд — сюда он приходит за вердиктом и `project_id` для зависимости.
+#[tauri::command]
+pub async fn ai_diagnose_crash(
+    crash_log: String,
+    instance_id: Option<String>,
+    game_version: String,
+    loader: String,
+) -> Result<Value, String> {
+    if crash_log.trim().is_empty() {
+        return Err("Лог краша пуст — разбирать нечего".into());
+    }
+
+    let files: Vec<(String, String)> = instance_id
+        .as_deref()
+        .map(installed_mod_files)
+        .unwrap_or_default();
+
+    let mut mod_lines = String::new();
+    for (file, title) in &files {
+        mod_lines.push_str(&format!("- {title} ({file})\n"));
+    }
+    if mod_lines.is_empty() {
+        mod_lines.push_str("- (модов нет)\n");
+    }
+
+    let system = "Ты диагностируешь краш Minecraft Java Edition. \
+Ответь строго одним JSON-объектом без markdown и пояснений: \
+{\"mod\":\"имя или файл виноватого мода из списка (точно как в списке) или пустая строка\",\
+\"reason\":\"почему виноват, по-русски, 1–2 предложения\",\
+\"action\":\"remove|disable|install|other\",\
+\"deps\":[\"названия модов/библиотек, которых не хватает в сборке, — даже если action не install (пустой массив, если недостающих нет)\"],\
+\"explain\":\"короткий совет игроку по-русски, до 200 символов\"}. \
+Правила: action=remove — мод сам ломает игру (несовместимость, баг); \
+action=disable — конфликт двух модов, достаточно выключить виноватого; \
+action=install — не хватает зависимости или библиотеки; \
+action=other — виноват не мод (Java, память, кривой мир, драйверы). \
+Не выдумывай модов вне списка: если виноватого в списке нет — action=other. \
+Если виноватых несколько — назови главного.";
+
+    let user = format!(
+        "Версия игры: {}. Загрузчик: {}.\nМоды сборки:\n{}\nЛог краша (может быть обрезан):\n{}",
+        if game_version.trim().is_empty() { "неизвестно" } else { game_version.as_str() },
+        if loader.trim().is_empty() { "неизвестен" } else { loader.as_str() },
+        mod_lines,
+        trim_crash_log(&crash_log, 9000)
+    );
+
+    let answer = ask_model(system, &user).await?;
+
+    let hint = answer["mod"].as_str().unwrap_or("").trim().to_string();
+    let reason = answer["reason"].as_str().unwrap_or("").trim().to_string();
+    let explain = answer["explain"].as_str().unwrap_or("").trim().to_string();
+    let mut action = answer["action"]
+        .as_str()
+        .unwrap_or("other")
+        .to_lowercase();
+
+    let matched = find_installed(&files, &hint);
+    // Модель назвала мод, которого в сборке нет: кнопка удаления сломала бы
+    // доверие, поэтому это просто совет.
+    if matched.is_none() && (action == "remove" || action == "disable") {
+        action = "other".to_string();
+    }
+
+    // Зависимости собираем из двух источников: ответ модели и текст самого
+    // лога. Лог надёжнее — Fabric/Forge пишут недостающий мод явно, даже если
+    // модель выбрала action=remove и назвала только виновника.
+    let mut deps: Vec<String> = Vec::new();
+    if let Some(list) = answer["deps"].as_array() {
+        for item in list {
+            if let Some(name) = item.as_str() {
+                push_unique(&mut deps, name.trim().to_string());
+            }
+        }
+    }
+    for name in missing_from_log(&crash_log) {
+        if deps.len() >= 3 {
+            break;
+        }
+        push_unique(&mut deps, name);
+    }
+    deps.truncate(3);
+
+    // Каждую зависимость превращаем в карточку Modrinth: кнопке «Установить»
+    // нужен project_id и иконка. Не нашлась — фронт дотянет её поиском.
+    let mut missing: Vec<Value> = Vec::new();
+    for name in &deps {
+        let mut card = resolve_one(
+            name.clone(),
+            "зависимость из краша".to_string(),
+            loader.clone(),
+            game_version.clone(),
+        )
+        .await
+        .unwrap_or_else(|_| json!({}));
+        if let Some(obj) = card.as_object_mut() {
+            obj.insert("query".to_string(), json!(name));
+            if !obj.contains_key("title") {
+                obj.insert("title".to_string(), json!(name));
+            }
+        }
+        missing.push(card);
+    }
+    if action == "other" && !missing.is_empty() {
+        action = "install".to_string();
+    }
+
+    let (file, title) = match matched {
+        Some((file, title)) => (json!(file), json!(title)),
+        None => (Value::Null, Value::Null),
+    };
+
+    Ok(json!({
+        "action": action,
+        "file": file,
+        "title": title,
+        "reason": reason,
+        "explain": explain,
+        "missing": missing,
     }))
 }
 

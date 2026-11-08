@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderOpen, HardDrive, Loader2, Plus, Search, Sparkles } from 'lucide-react'
+import { FolderOpen, HardDrive, Loader2, Plus, Search } from 'lucide-react'
 import { useTranslation } from './i18n'
 import { McSelect } from './McSelect'
 import BackButton from './BackButton'
@@ -199,119 +199,6 @@ function DiskImport({ disabled }: { disabled?: boolean }) {
     </section>
   )
 }
-/**
- * ИИ-сборщик: игрок описывает сборку словами, модель отдаёт план, а моды в плане
- * уже подобраны по Modrinth — с реальными id и иконками. План подставляет
- * название, загрузчик и версию в форму, а сами моды ставятся после создания.
- */
-function AiBuild({
-  version,
-  loader,
-  onName,
-  onLoader,
-  onVersion,
-  onMods,
-}: {
-  version: string
-  loader: string
-  onName: (v: string) => void
-  onLoader: (v: string) => void
-  onVersion: (v: string) => void
-  onMods: (mods: any[]) => void
-}) {
-  const { t } = useTranslation()
-  const [prompt, setPrompt] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [plan, setPlan] = useState<any | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const generate = async () => {
-    if (!prompt.trim() || busy) return
-    setBusy(true)
-    setError(null)
-    try {
-      // @ts-ignore
-      const res = await window.electronAPI.aiPlan(
-        prompt.trim(),
-        version || '1.20.1',
-        loader || 'fabric',
-        20,
-      )
-      setPlan(res)
-      if (res?.name) onName(res.name)
-      if (res?.loader) onLoader(res.loader)
-      if (res?.gameVersion) onVersion(res.gameVersion)
-      onMods(res?.mods || [])
-    } catch (e: any) {
-      setError(errorText(e, t('app.unknownError')))
-      onMods([])
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="mcp-step mcp-step-ai">
-      <div className="mcp-step-head">
-        <span className="mcp-step-num mcp-step-num-icon">
-          <Sparkles size={13} />
-        </span>
-        <h2 className="mcp-step-title">{t('ai.title')}</h2>
-      </div>
-      <div className="mcp-step-body">
-        <p className="mcp-import-desc">{t('ai.desc')}</p>
-        <textarea
-          className="mc-input mcp-ai-prompt"
-          placeholder={t('ai.placeholder')}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={3}
-          disabled={busy}
-        />
-        <div className="mcp-import-actions">
-          <button
-            type="button"
-            className="mods-btn-primary mcp-import-scan"
-            onClick={() => { void generate() }}
-            disabled={busy || !prompt.trim()}
-          >
-            {busy ? (
-              <>
-                <Loader2 size={14} className="spin" /> {t('ai.generating')}
-              </>
-            ) : (
-              <>
-                <Sparkles size={14} /> {t('ai.generate')}
-              </>
-            )}
-          </button>
-          {plan?.mods?.length ? (
-            <span className="mcp-import-count">
-              {t('ai.found', { count: plan.mods.length })}
-            </span>
-          ) : null}
-        </div>
-
-        {error ? <p className="mcp-ai-error">{error}</p> : null}
-
-        {plan?.mods?.length ? (
-          <>
-            <p className="mcp-ai-summary">{plan.summary}</p>
-            <ul className="mcp-ai-mods">
-              {plan.mods.map((mod: any) => (
-                <li key={mod.project_id} className="mcp-ai-mod">
-                  {mod.icon_url ? <img src={mod.icon_url} alt="" /> : null}
-                  <span title={mod.title}>{mod.title}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mcp-import-desc">{t('ai.note')}</p>
-          </>
-        ) : null}
-      </div>
-    </section>
-  )
-}
 
 interface ModpackCreatePageProps {
   name: string
@@ -335,9 +222,6 @@ interface ModpackCreatePageProps {
   creating: boolean
   onCreate: () => void
   onClose: () => void
-  /** Моды, подобранные ИИ: ставятся сразу после создания сборки. */
-  aiMods: any[]
-  onAiModsChange: (mods: any[]) => void
 }
 
 /**
@@ -402,8 +286,6 @@ export default function ModpackCreatePage({
   creating,
   onCreate,
   onClose,
-  aiMods,
-  onAiModsChange,
   }: ModpackCreatePageProps) {
   const { t } = useTranslation()
 
@@ -444,15 +326,6 @@ export default function ModpackCreatePage({
       <form className="mcp-main" onSubmit={handleSubmit}>
         <div className="mcp-body">
           <div className="mcp-form">
-            <AiBuild
-              version={version}
-              loader={loader}
-              onName={onNameChange}
-              onLoader={onLoaderChange}
-              onVersion={onVersionChange}
-              onMods={onAiModsChange}
-            />
-
             <section className="mcp-step">
               <div className="mcp-step-head">
                 <span className="mcp-step-num">1</span>

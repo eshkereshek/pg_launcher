@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useTranslation } from './i18n'
 import { Star } from 'lucide-react'
 import { McSelect } from './McSelect'
@@ -159,6 +159,15 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
     }
   }
 
+  // Очередь записи списка сборок: когда несколько сборок ставятся
+  // одновременно, каждая запись читает файл заново — иначе установки
+  // затирали бы записи друг друга.
+  const writeChain = useRef<Promise<void>>(Promise.resolve())
+  const enqueuePackWrite = (task: () => Promise<void>) => {
+    writeChain.current = writeChain.current.then(task, task)
+    return writeChain.current
+  }
+
   const installModpack = async (modpack: any, version?: any) => {
     setDownloading(prev => ({ ...prev, [modpack.project_id]: true }))
     try {
@@ -192,25 +201,27 @@ export default function ModpacksMenu({ currentVersion, opacity = 95, initialQuer
       const actualVersion = result?.gameVersion || (versionFilter !== 'all' ? versionFilter : (modpack.versions?.[0] || ''))
       const finalLoader = result?.actualLoader || (loader !== 'all' ? loader : '')
       
-      const mps = await (window as any).electronAPI.getModpacks() || []
-      const installedMods = await (window as any).electronAPI.getInstalledMods?.(modpackName) || []
-      const newMp = {
-        name: modpackName,
-        modrinthId: modpack.project_id,
-        loader: finalLoader,
-        version: actualVersion,
-        installedMods: installedMods,
-        icon: modpack.icon_url || modpack.gallery?.[0] || './iconsblocks/Chest_(inventory)_MCE.png'
-      }
+      await enqueuePackWrite(async () => {
+        const mps = await (window as any).electronAPI.getModpacks() || []
+        const installedMods = await (window as any).electronAPI.getInstalledMods?.(modpackName) || []
+        const newMp = {
+          name: modpackName,
+          modrinthId: modpack.project_id,
+          loader: finalLoader,
+          version: actualVersion,
+          installedMods: installedMods,
+          icon: modpack.icon_url || modpack.gallery?.[0] || './iconsblocks/Chest_(inventory)_MCE.png'
+        }
 
-      const existingIndex = mps.findIndex((m: any) => m.name === newMp.name)
-      if (existingIndex !== -1) {
-        mps[existingIndex] = { ...mps[existingIndex], ...newMp }
-      } else {
-        mps.push(newMp)
-      }
-      await (window as any).electronAPI.saveModpacks(mps)
-      window.dispatchEvent(new CustomEvent('modpacks-updated'))
+        const existingIndex = mps.findIndex((m: any) => m.name === newMp.name)
+        if (existingIndex !== -1) {
+          mps[existingIndex] = { ...mps[existingIndex], ...newMp }
+        } else {
+          mps.push(newMp)
+        }
+        await (window as any).electronAPI.saveModpacks(mps)
+        window.dispatchEvent(new CustomEvent('modpacks-updated'))
+      })
 
       showOk(t('modpacks.installedOk', { name: rawName }))
     } catch (e: any) {

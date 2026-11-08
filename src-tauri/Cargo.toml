@@ -1,6 +1,6 @@
 [package]
 name = "pagrysha-launcher"
-version = "7.2.3"
+version = "7.2.4"
 description = "Pagrysha Launcher"
 authors = ["Pagrysha <support@pagrysha.com>"]
 edition = "2021"
@@ -41,3 +41,4 @@ regex = "1"
 rfd = "0.15"
 base64 = "0.22"
 urlencoding = "2.1"
+zip = { version = "2", default-features = false, features = ["deflate"] }

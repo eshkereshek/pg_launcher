@@ -1216,3 +1216,155 @@
   gap: 8px;
 }
 
+
+/* ── Управление памятью ─────────────────────────────────────────── */
+.mem-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.mem-ring {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  flex: 0 0 124px;
+}
+
+.mem-ring svg {
+  transform: rotate(-90deg);
+}
+
+.mem-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.mem-ring-value {
+  font-family: 'Blocks', sans-serif;
+  font-size: 20px;
+  color: #f2f2f2;
+  line-height: 1;
+}
+
+.mem-ring-label {
+  font-size: 9px;
+  color: #7a7a7a;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.mem-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.mem-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12px;
+  color: #d2d2d2;
+}
+
+.mem-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.mem-value {
+  color: #f2f2f2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mem-sub {
+  color: #7a7a7a;
+  font-size: 10.5px;
+}
+
+.mem-bar {
+  display: flex;
+  height: 12px;
+  background: #101010;
+  border: 1px solid #262626;
+  overflow: hidden;
+}
+
+.mem-cat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 0;
+  border-bottom: 1px solid #232323;
+}
+
+.mem-cat:last-child {
+  border-bottom: none;
+}
+
+.mem-cat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #d2d2d2;
+}
+
+.mem-cat-bar {
+  height: 6px;
+  background: #101010;
+  border: 1px solid #232323;
+}
+
+.mem-cat-fill {
+  height: 100%;
+}
+
+.mem-backups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mem-backup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #131313;
+  border: 1px solid #272727;
+}
+
+.mem-backup-name {
+  font-size: 12px;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mem-backup-meta {
+  font-size: 10.5px;
+  color: #7a7a7a;
+  margin-top: 2px;
+}
+
+/* Иконка + текст в кнопках вкладки памяти */
+.settings-card .mc-cube-btn {
+  gap: 6px;
+}

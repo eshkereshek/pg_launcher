@@ -32,8 +32,26 @@ type PlanMod = {
   group?: string
 }
 
+/** Последняя сборка чата: контекст правок и отзыва модели. */
+type PackContext = {
+  name: string
+  loader: string
+  version: string
+  mods: { title: string; project_id?: string }[]
+}
+
 type ChatMessage =
   | { kind: 'user'; text: string }
+  | { kind: 'assistant'; text: string }
+  | {
+      kind: 'edit'
+      name: string
+      loader: string
+      version: string
+      add: PlanMod[]
+      remove: string[]
+      unresolved: string[]
+    }
   | {
       kind: 'plan'
       name: string
@@ -50,7 +68,25 @@ interface StoredChat {
   title: string
   createdAt: number
   messages: ChatMessage[]
+  /** Последняя собранная в этом чате сборка — память для правок. */
+  pack?: PackContext
 }
+
+/** Иконки для новой сборки: случайный блок вместо одного и того же сундука. */
+const PACK_ICONS = [
+  './iconsblocks/Grass_Block_(inventory)_MCE.png',
+  './iconsblocks/Emerald_Block_(inventory)_MCE.png',
+  './iconsblocks/Obsidian_(inventory)_MCE.png',
+  './iconsblocks/Crafting_Table_(inventory)_MCE.png',
+  './iconsblocks/Furnace_(inventory)_MCE.png',
+  './iconsblocks/Brick_Block_(inventory)_MCE.png',
+  './iconsblocks/MCE_Diamond_Ore_(inventory).png',
+  './iconsblocks/Netherrack_(inventory)_MCE.png',
+  './iconsblocks/MCE_Bedrock_(inventory).png',
+  './iconsblocks/Anvil.png',
+]
+
+const randomPackIcon = () => PACK_ICONS[Math.floor(Math.random() * PACK_ICONS.length)]
 
 interface AiChatProps {
   version: string
@@ -173,8 +209,40 @@ export default function AiChat({ version, loader }: AiChatProps) {
     append({ kind: 'user', text }, true)
     setThinking(true)
     try {
+      // Сначала выясняем, вопрос это или заказ сборки: однословные темы
+      // («оптимизация», «магия») бэкенд распознаёт без обращения к модели.
+      const history = messages
+        .filter((m) => m.kind === 'user' || m.kind === 'assistant')
+        .slice(-8)
+        .map((m) => ({
+          role: m.kind === 'user' ? 'user' : 'assistant',
+          content: String((m as any).text || ''),
+        }))
       // @ts-ignore
-      const plan = await window.electronAPI.aiPlan(text, gameVersion, gameLoader, 40)
+      const route = await window.electronAPI.aiAssistant(text, history, active?.pack || null)
+
+      // Правка последней сборки: показываем, что добавится и что уйдёт.
+      if (route?.kind === 'edit') {
+        append({
+          kind: 'edit',
+          name: String(route.name || active?.pack?.name || ''),
+          loader: active?.pack?.loader || gameLoader,
+          version: active?.pack?.version || gameVersion,
+          add: (route.add || []) as PlanMod[],
+          remove: route.remove || [],
+          unresolved: route.unresolved || [],
+        })
+        return
+      }
+      if (route?.kind !== 'pack') {
+        append({ kind: 'assistant', text: String(route?.answer || t('ai.emptyAnswer')) })
+        return
+      }
+
+      // @ts-ignore
+      // Большие сборки в приоритете: просим план до 110 модов. Это цель,
+      // а не минимум — узкую тему бэкенд не раздувает выдумками.
+      const plan = await window.electronAPI.aiPlan(text, gameVersion, gameLoader, 110)
       const mods: PlanMod[] = plan?.mods || []
       if (mods.length === 0) {
         append({ kind: 'error', text: t('ai.empty') })
@@ -220,38 +288,52 @@ export default function AiChat({ version, loader }: AiChatProps) {
           loader: plan.loader,
           version: plan.version,
           installedMods: installed,
-          icon: './iconsblocks/Chest_(inventory)_MCE.png',
+          icon: randomPackIcon(),
         },
       ])
       window.dispatchEvent(new CustomEvent('modpacks-updated'))
 
       let done = 0
-      for (const mod of plan.mods) {
-        setProgress(t('ai.installing', { done, total: plan.mods.length }))
-        try {
-          // @ts-ignore
-          const res = await window.electronAPI.downloadMod(
-            mod.project_id,
-            plan.version,
-            plan.loader,
-            name,
-            'mod',
-          )
-          const files = res?.filenames || (res?.filename ? [res.filename] : [])
-          files.forEach((f: string) =>
-            installed.push({
-              id: f,
-              title: f,
-              type: 'mod',
-              isEnabled: true,
-              projectId: mod.project_id,
-            }),
-          )
-        } catch (e) {
-          console.error('AI mod install failed', mod.project_id, e)
-        }
-        done += 1
+      // Предупреждения back-end'а: какие зависимости не встали.
+      const installWarnings: string[] = []
+      // Ставим пачками по три: сеть не задыхается, а сотня модов не
+      // превращается в десятиминутное ожидание.
+      const totalMods = plan.mods.length
+      const BATCH = 3
+      for (let i = 0; i < totalMods; i += BATCH) {
+        setProgress(t('ai.installing', { done, total: totalMods }))
+        const batch = plan.mods.slice(i, i + BATCH)
+        await Promise.all(
+          batch.map(async (mod) => {
+            try {
+              // @ts-ignore
+              const res = await window.electronAPI.downloadMod(
+                mod.project_id,
+                plan.version,
+                plan.loader,
+                name,
+                'mod',
+              )
+              const files = res?.filenames || (res?.filename ? [res.filename] : [])
+              if (Array.isArray(res?.warnings)) installWarnings.push(...res.warnings)
+              files.forEach((f: string) =>
+                installed.push({
+                  id: f,
+                  // Человеческое имя из плана, а не имя файла с хешем.
+                  title: mod.title || f,
+                  type: 'mod',
+                  isEnabled: true,
+                  projectId: mod.project_id,
+                }),
+              )
+            } catch (e) {
+              console.error('AI mod install failed', mod.project_id, e)
+            }
+          }),
+        )
+        done += batch.length
       }
+      setProgress(t('ai.installing', { done: totalMods, total: totalMods }))
 
       // Состав пишем после установки: иначе в сборке не будет списка модов.
       // @ts-ignore
@@ -267,6 +349,128 @@ export default function AiChat({ version, loader }: AiChatProps) {
         showError(t('ai.createdEmpty', { name }))
       } else {
         showOk(t('ai.created', { name, count: installed.length }))
+
+        // Память чата: следующие сообщения смогут править именно эту сборку.
+        const ctx: PackContext = {
+          name,
+          loader: plan.loader,
+          version: plan.version,
+          mods: plan.mods.map((mod) => ({ title: mod.title, project_id: mod.project_id })),
+        }
+        const chatId = activeIdRef.current
+        if (chatId) {
+          setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, pack: ctx } : c)))
+        }
+
+        // Если какие-то зависимости не встали — говорим прямо, а не молчим.
+        if (installWarnings.length > 0) {
+          console.warn('AI pack dependency warnings', installWarnings)
+          append({ kind: 'error', text: t('ai.depsWarn', { count: installWarnings.length }) })
+        }
+      }
+    } catch (e: any) {
+      setProgress(null)
+      showError(errorText(e, t('app.unknownError')))
+    }
+  }
+
+  /** Применяет правку сборки: убирает лишние моды, ставит новые, обновляет состав. */
+  const applyEdit = async (msg: Extract<ChatMessage, { kind: 'edit' }>) => {
+    if (progress || (msg.add.length === 0 && msg.remove.length === 0)) return
+    const packName = msg.name
+    const norm = (value: string) => value.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, ' ').trim()
+
+    try {
+      // Удаление: файл ищем по названию среди установленных модов сборки.
+      const removedFiles: string[] = []
+      if (msg.remove.length > 0) {
+        // @ts-ignore
+        const installed: any[] = (await window.electronAPI.getInstalledMods(packName)) || []
+        for (const want of msg.remove) {
+          const key = norm(want)
+          const hit =
+            installed.find(
+              (mod: any) => norm(String(mod?.title || '')) === key || norm(String(mod?.id || '')) === key,
+            ) || installed.find((mod: any) => norm(String(mod?.title || '')).includes(key))
+          if (hit?.id) {
+            // @ts-ignore
+            await window.electronAPI.uninstallMod(hit.id, packName)
+            removedFiles.push(hit.id)
+          }
+        }
+      }
+
+      // Добавление: по одному, с прогрессом.
+      const added: any[] = []
+      const editWarnings: string[] = []
+      let done = 0
+      // Та же схема, что и при создании сборки: пачки по три, а не по одному.
+      const BATCH = 3
+      for (let i = 0; i < msg.add.length; i += BATCH) {
+        setProgress(t('ai.installing', { done, total: msg.add.length }))
+        const batch = msg.add.slice(i, i + BATCH)
+        await Promise.all(
+          batch.map(async (mod) => {
+            try {
+              // @ts-ignore
+              const res = await window.electronAPI.downloadMod(
+                mod.project_id,
+                msg.version || '1.20.1',
+                msg.loader || 'fabric',
+                packName,
+                'mod',
+              )
+              const files = res?.filenames || (res?.filename ? [res.filename] : [])
+              if (Array.isArray(res?.warnings)) editWarnings.push(...res.warnings)
+              files.forEach((file: string) =>
+                added.push({
+                  id: file,
+                  title: mod.title || file,
+                  type: 'mod',
+                  isEnabled: true,
+                  projectId: mod.project_id,
+                }),
+              )
+            } catch (e) {
+              console.error('AI edit install failed', mod.project_id, e)
+            }
+          }),
+        )
+        done += batch.length
+      }
+      setProgress(null)
+
+      // Состав сборки в modpacks.json.
+      // @ts-ignore
+      const all: any[] = (await window.electronAPI.getModpacks()) || []
+      // @ts-ignore
+      await window.electronAPI.saveModpacks(
+        all.map((pack: any) => {
+          if (pack.name !== packName) return pack
+          const kept = (pack.installedMods || []).filter((mod: any) => !removedFiles.includes(mod.id))
+          return { ...pack, installedMods: [...kept, ...added] }
+        }),
+      )
+      window.dispatchEvent(new CustomEvent('modpacks-updated'))
+
+      // Контекст чата: снятые убираем, новые запоминаем.
+      const chatId = activeIdRef.current
+      const addedCtx = msg.add.map((mod) => ({ title: mod.title, project_id: mod.project_id }))
+      if (chatId) {
+        const removeKeys = new Set(msg.remove.map(norm))
+        setChats((prev) =>
+          prev.map((chat) => {
+            if (chat.id !== chatId || !chat.pack) return chat
+            const mods = chat.pack.mods.filter((mod) => !removeKeys.has(norm(mod.title)))
+            return { ...chat, pack: { ...chat.pack, mods: [...mods, ...addedCtx] } }
+          }),
+        )
+      }
+
+      showOk(t('ai.editApplied'))
+      if (editWarnings.length > 0) {
+        console.warn('AI edit dependency warnings', editWarnings)
+        append({ kind: 'error', text: t('ai.depsWarn', { count: editWarnings.length }) })
       }
     } catch (e: any) {
       setProgress(null)
@@ -425,6 +629,66 @@ export default function AiChat({ version, loader }: AiChatProps) {
                       return (
                         <div key={i} className="ai-msg ai-msg-error">
                           {m.text}
+                        </div>
+                      )
+                    }
+                    if (m.kind === 'assistant') {
+                      return (
+                        <div key={i} className="ai-msg ai-msg-assistant">
+                          {m.text}
+                        </div>
+                      )
+                    }
+                    if (m.kind === 'edit') {
+                      return (
+                        <div key={i} className="ai-msg ai-msg-plan">
+                          <div className="ai-plan-name">
+                            {t('ai.editTitle')}: {m.name}
+                          </div>
+                          {m.remove.length > 0 ? (
+                            <div className="ai-plan-count">
+                              <span className="ai-plan-tag">{t('ai.editRemove')}</span>
+                              {m.remove.join(', ')}
+                            </div>
+                          ) : null}
+                          {m.add.length > 0 ? (
+                            <>
+                              <div className="ai-plan-count">
+                                <span className="ai-plan-tag">{t('ai.editAdd')}</span>
+                                {t('ai.found', { count: m.add.length })}
+                                {m.unresolved.length > 0
+                                  ? ` · ${t('ai.missed', { count: m.unresolved.length })}`
+                                  : ''}
+                              </div>
+                              <ul className="ai-group-mods">
+                                {m.add.map((mod) => (
+                                  <li
+                                    key={mod.project_id}
+                                    className="ai-mod"
+                                    title={mod.why || mod.description}
+                                  >
+                                    {mod.icon_url ? (
+                                      <img src={mod.icon_url} alt="" loading="lazy" />
+                                    ) : (
+                                      <span className="ai-mod-blank" />
+                                    )}
+                                    <span className="ai-mod-title">{mod.title}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="mods-btn-primary ai-plan-create"
+                            disabled={!!progress || (m.add.length === 0 && m.remove.length === 0)}
+                            onClick={() => {
+                              void applyEdit(m)
+                            }}
+                          >
+                            {progress ? <Loader2 size={13} className="spin" /> : null}
+                            {t('ai.editApply')}
+                          </button>
                         </div>
                       )
                     }
