@@ -123,7 +123,8 @@ fn dir_bytes(path: &Path) -> u64 {
 /// Рекурсивное копирование с отчётом о скопированных байтах.
 fn copy_dir(src: &Path, dst: &Path, copied: &mut u64, report: &dyn Fn(u64)) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("Не удалось создать {}: {e}", dst.display()))?;
-    let entries = fs::read_dir(src).map_err(|e| format!("Не удалось прочитать {}: {e}", src.display()))?;
+    let entries =
+        fs::read_dir(src).map_err(|e| format!("Не удалось прочитать {}: {e}", src.display()))?;
     for entry in entries.flatten() {
         let from = entry.path();
         let to = dst.join(entry.file_name());
@@ -131,7 +132,8 @@ fn copy_dir(src: &Path, dst: &Path, copied: &mut u64, report: &dyn Fn(u64)) -> R
         if meta.is_dir() {
             copy_dir(&from, &to, copied, report)?;
         } else if meta.is_file() {
-            fs::copy(&from, &to).map_err(|e| format!("Не удалось скопировать {}: {e}", from.display()))?;
+            fs::copy(&from, &to)
+                .map_err(|e| format!("Не удалось скопировать {}: {e}", from.display()))?;
             *copied += meta.len();
             report(*copied);
         }
@@ -175,7 +177,11 @@ pub async fn move_data_dir(app: tauri::AppHandle, target: String) -> Result<Valu
         copy_dir(&current, &target_path, &mut copied, &|done: u64| {
             if done.saturating_sub(last_report.get()) >= 64 * 1024 * 1024 {
                 last_report.set(done);
-                let progress = if total > 0 { ((done as f64 / total as f64) * 100.0).min(100.0) as u64 } else { 0 };
+                let progress = if total > 0 {
+                    ((done as f64 / total as f64) * 100.0).min(100.0) as u64
+                } else {
+                    0
+                };
                 let _ = app_for_task.emit(
                     "data-move-progress",
                     serde_json::json!({
@@ -210,7 +216,10 @@ pub async fn move_data_dir(app: tauri::AppHandle, target: String) -> Result<Valu
         if let Ok(text) = fs::read_to_string(&state_path) {
             if let Ok(mut value) = serde_json::from_str::<Value>(&text) {
                 if let Some(obj) = value.as_object_mut() {
-                    obj.insert("dataDir".to_string(), serde_json::json!(target_path.to_string_lossy()));
+                    obj.insert(
+                        "dataDir".to_string(),
+                        serde_json::json!(target_path.to_string_lossy()),
+                    );
                     let _ = fs::write(&state_path, value.to_string());
                 }
             }
@@ -348,16 +357,14 @@ pub async fn create_backup(instance_id: String, keep: Option<u32>) -> Result<Val
                     let meta = entry.metadata().map_err(|e| e.to_string())?;
                     // Путь внутри архива: «saves/…» с прямыми слэшами.
                     let rel = entry_path
-                        .strip_prefix(&instance) 
+                        .strip_prefix(&instance)
                         .map_err(|e| e.to_string())?
                         .to_string_lossy()
                         .replace('\\', "/");
                     if meta.is_dir() {
                         stack.push(entry_path);
                     } else if meta.is_file() {
-                        writer
-                            .start_file(rel, options)
-                            .map_err(|e| e.to_string())?;
+                        writer.start_file(rel, options).map_err(|e| e.to_string())?;
                         let bytes = fs::read(&entry_path).map_err(|e| e.to_string())?;
                         writer.write_all(&bytes).map_err(|e| e.to_string())?;
                     }

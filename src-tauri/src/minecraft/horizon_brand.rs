@@ -228,11 +228,15 @@ mod win {
             let null = std::ptr::null_mut();
             let small = ico_w
                 .as_ref()
-                .map(|w| unsafe { LoadImageW(null, w.as_ptr(), IMAGE_ICON, 16, 16, LR_LOADFROMFILE) })
+                .map(|w| unsafe {
+                    LoadImageW(null, w.as_ptr(), IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+                })
                 .unwrap_or(null);
             let big = ico_w
                 .as_ref()
-                .map(|w| unsafe { LoadImageW(null, w.as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE) })
+                .map(|w| unsafe {
+                    LoadImageW(null, w.as_ptr(), IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+                })
                 .unwrap_or(null);
             // Несколько раундов на случай, если игра допишет своё сразу после
             // создания окна; обычно достаточно первого (Horizon титул не меняет).

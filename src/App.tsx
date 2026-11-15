@@ -1818,13 +1818,14 @@ export default function App() {
           if (launchReadyRef.current) return
           setLaunching(false)
           setProgress('')
-        }, 120000)
+        }, 30000)
       }
     } catch (e: any) {
       // Tauri отклоняет invoke строкой, а не объектом Error — иначе в
       // сообщении было бы «Error: undefined».
       const text = typeof e === 'string' ? e : (e?.message || String(e))
       setProgress(`Error: ${text}`)
+      showError(text)
       setGameRunning(false)
       setLaunching(false)
       // У Horizon провал мог случиться на halfway скачке — статус перечитываем.

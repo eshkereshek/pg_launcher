@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::time::{Duration};
+use tokio::time::Duration;
 
 /// Сначала форк из запроса пользователя, затем апстрим с теми же бинарниками.
 const HORIZON_REPOS: [&'static str; 2] = ["tr4m0ryp/Minecraft-rust", "horizon-rust/horizon"];
@@ -129,7 +129,10 @@ impl Progress {
                     total as f64 / 1_048_576.0
                 )
             } else {
-                format!("Horizon: скачивание сборки... {:.0} МБ", cur as f64 / 1_048_576.0)
+                format!(
+                    "Horizon: скачивание сборки... {:.0} МБ",
+                    cur as f64 / 1_048_576.0
+                )
             };
             let _ = self.app.emit("launch-progress", text);
         }
@@ -143,10 +146,7 @@ fn lock_info(install_dir: &Path) -> Option<(String, u32, Vec<String>)> {
     let lock: Value = serde_json::from_str(&text).ok()?;
     let mc = lock.get("minecraft")?;
     let version = mc.get("version")?.as_str()?.to_string();
-    let java_major = mc
-        .get("java_major")
-        .and_then(Value::as_u64)
-        .unwrap_or(25) as u32;
+    let java_major = mc.get("java_major").and_then(Value::as_u64).unwrap_or(25) as u32;
     let mut sums: Vec<String> = Vec::new();
     if let Some(pin) = mc.get("manifest_sha1").and_then(Value::as_str) {
         sums.push(pin.to_string());
@@ -208,7 +208,10 @@ async fn latest_release(asset: &str) -> Result<ReleasePick, String> {
     let client = http_client();
     let mut last_err = String::from("Horizon не найден среди релизов GitHub");
     for repo in HORIZON_REPOS {
-        let url = format!("https://api.github.com/repos/{}/releases?per_page=100", repo);
+        let url = format!(
+            "https://api.github.com/repos/{}/releases?per_page=100",
+            repo
+        );
         let resp = match client
             .get(&url)
             .header("User-Agent", "PagryshaLauncher/7.2")
@@ -253,7 +256,11 @@ async fn latest_release(asset: &str) -> Result<ReleasePick, String> {
                     .get("tag_name")
                     .and_then(Value::as_str)
                     .unwrap_or("nightly");
-                let api_url = item.get("url").and_then(Value::as_str).unwrap_or("").to_string();
+                let api_url = item
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 let size = item.get("size").and_then(Value::as_u64).unwrap_or(0);
                 return Ok(ReleasePick {
                     tag: tag.to_string(),
@@ -266,7 +273,6 @@ async fn latest_release(asset: &str) -> Result<ReleasePick, String> {
     }
     Err(last_err)
 }
-
 
 /// Запасной путь загрузки: asset-эндпоинт `api.github.com` с
 /// `Accept: application/octet-stream`. Когда `github.com` лежит (504 на
@@ -296,7 +302,10 @@ async fn download_via_api_asset(api_url: &str, dest: &Path, prog: &Progress) -> 
     drop(file);
     if total > 0 && written != total {
         let _ = fs::remove_file(&part);
-        return Err(format!("через API докачалось {} из {} байт", written, total));
+        return Err(format!(
+            "через API докачалось {} из {} байт",
+            written, total
+        ));
     }
     fs::rename(&part, dest).map_err_to_string()?;
     Ok(())
@@ -309,7 +318,9 @@ fn zip_is_whole(zip_path: &Path, size: u64) -> bool {
     if size == 0 {
         return zip_path.is_file();
     }
-    fs::metadata(zip_path).map(|m| m.len() == size).unwrap_or(false)
+    fs::metadata(zip_path)
+        .map(|m| m.len() == size)
+        .unwrap_or(false)
 }
 
 /// Скачать архив сборки и распаковать в `horizon/versions/<тег>`.
@@ -349,7 +360,12 @@ async fn download_build(app: &AppHandle, asset: &str) -> Result<(String, PathBuf
         emit(app, format!("Horizon: {} — пробую api.github.com...", why));
         download_via_api_asset(&pick.api_url, &zip_path, &prog)
             .await
-            .map_err(|e| format!("Не удалось скачать сборку Horizon ({}; через API: {})", why, e))?;
+            .map_err(|e| {
+                format!(
+                    "Не удалось скачать сборку Horizon ({}; через API: {})",
+                    why, e
+                )
+            })?;
     }
     if !zip_is_whole(&zip_path, size) {
         let _ = fs::remove_file(&zip_path);
@@ -365,7 +381,10 @@ async fn download_build(app: &AppHandle, asset: &str) -> Result<(String, PathBuf
         // Оборванный архив: убираем и zip, и огрызки, следующая попытка качает заново.
         let _ = fs::remove_file(&zip_path);
         let _ = fs::remove_dir_all(&tmp);
-        return Err(format!("Архив Horizon повреждён — попробуйте ещё раз: {}", e));
+        return Err(format!(
+            "Архив Horizon повреждён — попробуйте ещё раз: {}",
+            e
+        ));
     }
 
     // В релизах Horizon архив несёт одну верхнюю папку с horizon-client.exe;
@@ -391,7 +410,10 @@ async fn download_build(app: &AppHandle, asset: &str) -> Result<(String, PathBuf
     // Тот же диск (весь каталог лаунчера) — rename не трогает содержимое.
     if let Err(e) = fs::rename(&source, &install_dir) {
         copy_dir_all(&source, &install_dir).map_err(|e2| {
-            format!("Не удалось разложить сборку Horizon на места: {} / {}", e, e2)
+            format!(
+                "Не удалось разложить сборку Horizon на места: {} / {}",
+                e, e2
+            )
         })?;
     }
     let _ = fs::remove_dir_all(horizon_root().join("tmp"));
@@ -632,7 +654,8 @@ async fn ensure_prepared(app: &AppHandle, install_dir: &Path) -> Result<PathBuf,
 
 /// Всё для запуска: установленная и подготовленная сборка.
 async fn resolve_horizon(app: &AppHandle) -> Result<(String, PathBuf, PathBuf), String> {
-    let asset = game_asset_name().ok_or_else(|| "Horizon пока доступен только на Windows x64".to_string())?;
+    let asset = game_asset_name()
+        .ok_or_else(|| "Horizon пока доступен только на Windows x64".to_string())?;
     let (tag, install_dir) = match find_installed() {
         Some(found) => found,
         None => {
@@ -669,7 +692,9 @@ pub fn horizon_status() -> Value {
 #[tauri::command]
 pub async fn launch_horizon(app: AppHandle, options: LaunchOptions) -> Result<(), String> {
     if is_horizon_running() {
-        return Err("Horizon уже запущен! Закройте открытую игру перед новым запуском.".to_string());
+        return Err(
+            "Horizon уже запущен! Закройте открытую игру перед новым запуском.".to_string(),
+        );
     }
     if crate::minecraft::runner::is_java_game_running() {
         return Err(
@@ -691,19 +716,36 @@ pub async fn launch_horizon(app: AppHandle, options: LaunchOptions) -> Result<()
         option_values.push(("fullscreen", "true".to_string()));
     }
     if let Some(player) = &options.player_options {
-        if let Some(lang) = player.lang.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(lang) = player
+            .lang
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
             option_values.push(("lang", lang.to_lowercase()));
         }
-        if let Some(scale) = player.gui_scale.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(scale) = player
+            .gui_scale
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
             option_values.push(("guiScale", scale.to_string()));
         }
-        if let Some(narrator) = player.narrator.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(narrator) = player
+            .narrator
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
             option_values.push(("narrator", narrator.to_string()));
         }
     }
     if !option_values.is_empty() {
-        let pairs: Vec<(&str, &str)> =
-            option_values.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let pairs: Vec<(&str, &str)> = option_values
+            .iter()
+            .map(|(k, v)| (*k, v.as_str()))
+            .collect();
         if let Err(e) = write_options(&game_dir, &pairs) {
             eprintln!("[HORIZON] не удалось применить настройки игры: {}", e);
         }
@@ -720,7 +762,11 @@ pub async fn launch_horizon(app: AppHandle, options: LaunchOptions) -> Result<()
     let mut username = options.username.unwrap_or_else(|| "Player".to_string());
     username = username.trim().to_string();
     args.push("--name".to_string());
-    args.push(if username.is_empty() { "Player".to_string() } else { username });
+    args.push(if username.is_empty() {
+        "Player".to_string()
+    } else {
+        username
+    });
     if want_fullscreen {
         args.push("--fullscreen".to_string());
     }
@@ -762,15 +808,14 @@ pub async fn launch_horizon(app: AppHandle, options: LaunchOptions) -> Result<()
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    let log_file: Arc<tokio::sync::Mutex<BufWriter<std::fs::File>>> = Arc::new(
-        tokio::sync::Mutex::new(BufWriter::new(
+    let log_file: Arc<tokio::sync::Mutex<BufWriter<std::fs::File>>> =
+        Arc::new(tokio::sync::Mutex::new(BufWriter::new(
             fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&log_path)
                 .map_err_to_string()?,
-        )),
-    );
+        )));
 
     if let Some(err) = stderr {
         let log_err = log_file.clone();

@@ -49,8 +49,8 @@ fn crash_text(log_path: &Path, game_dir: &Path) -> String {
     // Свежий crash-report (жёсткое падение JVM) — только если он появился
     // сейчас, а не остался от прошлых запусков.
     let reports = game_dir.join("crash-reports");
-    let fresh_after = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(15 * 60));
+    let fresh_after =
+        std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(15 * 60));
     let newest = fs::read_dir(&reports).ok().and_then(|dir| {
         dir.flatten()
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".txt"))
@@ -182,6 +182,36 @@ fn parse_args_from_json(args_val: Option<&Value>, vars: &HashMap<&str, String>) 
         }
     }
     result
+}
+
+/// Загрузить `authlib-injector.jar` с нескольких надёжных зеркал.
+/// Официальный `.../latest/authlib-injector.jar` возвращает 404, поэтому
+/// скачиваем релиз 1.2.8 с зеркал с проверкой хеша SHA-256.
+async fn ensure_authlib_injector(dest: &Path) -> Result<(), String> {
+    const INJECTOR_SHA256: &str =
+        "9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10";
+    let sum = Sum::sha256(INJECTOR_SHA256).map(|s| s.with_size(Some(349681)));
+
+    let urls = [
+        "https://authlib-injector.yushi.moe/artifact/56/authlib-injector-1.2.8.jar",
+        "https://bmclapi2.bangbang93.com/mirrors/authlib-injector/artifact/56/authlib-injector-1.2.8.jar",
+        "https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.8/authlib-injector-1.2.8.jar",
+    ];
+
+    let mut last_err = String::new();
+    for url in urls {
+        match ensure_file(url, dest, sum).await {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_err = e;
+            }
+        }
+    }
+
+    Err(format!(
+        "Не удалось скачать authlib-injector ни с одного зеркала: {}",
+        last_err
+    ))
 }
 
 pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<(), String> {
@@ -317,6 +347,15 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
         {
             if let Some(bin) = find_installed_java(&target_ver.to_string()) {
                 java_bin = bin;
+            } else {
+                let _ = app.emit(
+                    "launch-progress",
+                    format!(
+                        "Для версии {} требуется Java {}: подготавливаю...",
+                        raw_version, target_ver
+                    ),
+                );
+                java_bin = ensure_java_for(&app, target_ver).await?;
             }
         }
     }
@@ -337,18 +376,31 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
     )
     .and_then(versions::supported_java)
     {
-        if let Some(actual) = java_major_version(&java_bin) {
-            if actual < supported {
-                let _ = app.emit(
-                    "launch-progress",
-                    format!(
-                        "Версии {} нужна Java {}, а выбрана {} — переключаюсь на {}",
-                        raw_version, supported, actual, supported
-                    ),
-                );
-                java_bin = ensure_java_for(&app, supported).await?;
-            }
+        let needs_switch = if !java_bin.exists() {
+            true
+        } else if let Some(actual) = java_major_version(&java_bin) {
+            actual < supported
+                || (supported == 8 && actual != 8)
+                || (supported == 17 && actual > 21)
+        } else {
+            true
+        };
+
+        if needs_switch {
+            let actual_str = java_major_version(&java_bin)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "не найдена".to_string());
+            let _ = app.emit(
+                "launch-progress",
+                format!(
+                    "Версии {} нужна Java {}, а выбрана {} — переключаюсь на Java {}",
+                    raw_version, supported, actual_str, supported
+                ),
+            );
+            java_bin = ensure_java_for(&app, supported).await?;
         }
+    } else if !java_bin.exists() {
+        java_bin = ensure_java_for(&app, 21).await?;
     }
 
     // 4. Assets
@@ -588,19 +640,8 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
     if let Some(auth_type) = &options.auth_type {
         if auth_type == "elyby" {
             let injector_path = root.join("authlib-injector.jar");
-            if !injector_path.is_file() {
-                let _ = app.emit("launch-progress", "Загрузка authlib-injector...");
-                // Хеша у этой ссылки нет — только проверка самой загрузки.
-                // Раньше ошибка проглатывалась, и игра стартовала без агента
-                // авторизации, то есть вход всё равно бы не сработал.
-                ensure_file(
-                    "https://authlib-injector.yushi.moe/artifact/latest/authlib-injector.jar",
-                    &injector_path,
-                    None,
-                )
-                .await
-                .map_err(|e| format!("Не удалось скачать authlib-injector: {}", e))?;
-            }
+            let _ = app.emit("launch-progress", "Проверка authlib-injector...");
+            ensure_authlib_injector(&injector_path).await?;
             if injector_path.exists() {
                 let yggdrasil = "ely.by";
                 jvm_args.push(format!(
@@ -818,10 +859,20 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
         }
     });
 
+    let ready_app_err = app.clone();
     let log_err = log_file.clone();
     let err_handle = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
+            if !GAME_READY.load(Ordering::SeqCst) && is_window_ready(&line) {
+                GAME_READY.store(true, Ordering::SeqCst);
+                let _ = ready_app_err.emit("game-ready", ());
+                if minimize_launcher {
+                    if let Some(window) = ready_app_err.get_webview_window("main") {
+                        let _ = window.minimize();
+                    }
+                }
+            }
             eprintln!("[MC-ERR] {}", line);
             let mut f = log_err.lock().await;
             let _ = writeln!(f, "[STDERR] {}", line);

@@ -17,11 +17,17 @@
 ///
 /// Ранний сплэш Forge (`EARLYDISPLAY`) сюда намеренно не входит: это
 /// картинка-заставка, а не окно игры, и запуск на ней не заканчивается.
-const WINDOW_READY_MARKERS: [&str; 4] = [
-    "Setting user:",
+const WINDOW_READY_MARKERS: &[&str] = &[
+    "Setting user",
     "Backend library: LWJGL",
+    "LWJGL version",
+    "LWJGL Version",
     "OpenAL initialized",
     "Sound engine started",
+    "SoundEngine started",
+    "Created window",
+    "Reloading ResourceManager",
+    "Starting! Game version",
 ];
 
 /// Похожа ли строка лога на «окно игры создано».
@@ -46,6 +52,15 @@ mod tests {
         ));
         assert!(is_window_ready(
             "[15:28:40] [Render thread/INFO]: Sound engine started"
+        ));
+        assert!(is_window_ready(
+            "[Client thread/INFO]: LWJGL Version: 2.9.4"
+        ));
+        assert!(is_window_ready(
+            "[Render thread/INFO]: Created window 854x480"
+        ));
+        assert!(is_window_ready(
+            "[Render thread/INFO]: Reloading ResourceManager: Default"
         ));
     }
 

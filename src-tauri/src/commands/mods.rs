@@ -445,9 +445,8 @@ async fn modrinth_get(client: &reqwest::Client, url: &str) -> Result<Value, Stri
 /// Кэш названий: fabric-api и прочие библиотеки встречаются в каждой сборке,
 /// и повторно запрашивать их у Modrinth незачем — установка от этого быстрее.
 fn title_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
-    static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, String>>,
-    > = std::sync::OnceLock::new();
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+        std::sync::OnceLock::new();
     CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -1073,8 +1072,8 @@ pub async fn install_modpack(
     let done_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let app_dl = app.clone();
     let pack_label = modpack_name.clone();
-    let results: Vec<Result<(), String>> = futures_util::stream::iter(tasks.into_iter().map(
-        |(dest, url, sha512, sha1)| {
+    let results: Vec<Result<(), String>> =
+        futures_util::stream::iter(tasks.into_iter().map(|(dest, url, sha512, sha1)| {
             let done_counter = done_counter.clone();
             let app_dl = app_dl.clone();
             let pack_label = pack_label.clone();
@@ -1099,11 +1098,10 @@ pub async fn install_modpack(
                 );
                 result.map(|_| ()).map_err(|e| e.to_string())
             }
-        },
-    ))
-    .buffer_unordered(4)
-    .collect()
-    .await;
+        }))
+        .buffer_unordered(4)
+        .collect()
+        .await;
 
     if let Some(Err(error)) = results.into_iter().find(|result| result.is_err()) {
         return Err(format!("Не удалось скачать файлы сборки: {}", error));

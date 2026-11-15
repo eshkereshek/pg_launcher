@@ -684,7 +684,12 @@ pub async fn ai_pack_comment(pack: Value) -> Result<Value, String> {
     let user = format!(
         "Сборка «{name}», {loader} {version}, {count} модов: {list}",
         count = titles.len(),
-        list = titles.iter().take(70).cloned().collect::<Vec<_>>().join(", ")
+        list = titles
+            .iter()
+            .take(70)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     let content = cloudflare_raw(
         json!([
@@ -730,7 +735,8 @@ fn looks_like_pack_request(text: &str) -> bool {
     if words.len() <= 3 && !low.contains('?') {
         let joined = words.join(" ");
         let mut stripped = joined.as_str();
-        for prefix in ["сборка ", "сборку ", "сборке ", "на ", "для ", "по "] {
+        for prefix in ["сборка ", "сборку ", "сборке ", "на ", "для ", "по "]
+        {
             stripped = stripped.trim_start_matches(prefix);
         }
         if THEMES
@@ -772,7 +778,13 @@ fn name_key(name: &str) -> String {
         .trim_end_matches(".disabled")
         .trim_end_matches(".jar");
     base.chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -853,7 +865,12 @@ fn missing_from_log(log: &str) -> Vec<String> {
                 in_solution = false;
             } else if let Some(pos) = text.to_lowercase().find("install ") {
                 let after = &text[pos + "install ".len()..];
-                let name = after.split(',').next().unwrap_or("").trim().trim_matches('\'');
+                let name = after
+                    .split(',')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .trim_matches('\'');
                 if !name.is_empty() {
                     push_unique(&mut out, name.to_string());
                 }
@@ -880,7 +897,8 @@ fn missing_from_log(log: &str) -> Vec<String> {
 
         if low.contains("which is missing") {
             let before = &line[..low.find("which is missing").unwrap_or(0)];
-            let before = before.trim_end_matches(|c: char| c == ',' || c == '!' || c.is_whitespace());
+            let before =
+                before.trim_end_matches(|c: char| c == ',' || c == '!' || c.is_whitespace());
             if before.ends_with('\'') {
                 // «... of mod 'fabric-api', which is missing!»
                 if let Some(open) = before[..before.len() - 1].rfind('\'') {
@@ -968,7 +986,8 @@ action=other — виноват не мод (Java, память, кривой м
 Не выдумывай модов вне списка: если виноватого в списке нет — action=other. \
 Если виноватых несколько — назови главного.";
 
-    let user = format!(
+    let user =
+        format!(
         "Версия игры: {}. Загрузчик: {}.\nМоды сборки:\n{}\nЛог краша (может быть обрезан):\n{}",
         if game_version.trim().is_empty() { "неизвестно" } else { game_version.as_str() },
         if loader.trim().is_empty() { "неизвестен" } else { loader.as_str() },
@@ -981,10 +1000,7 @@ action=other — виноват не мод (Java, память, кривой м
     let hint = answer["mod"].as_str().unwrap_or("").trim().to_string();
     let reason = answer["reason"].as_str().unwrap_or("").trim().to_string();
     let explain = answer["explain"].as_str().unwrap_or("").trim().to_string();
-    let mut action = answer["action"]
-        .as_str()
-        .unwrap_or("other")
-        .to_lowercase();
+    let mut action = answer["action"].as_str().unwrap_or("other").to_lowercase();
 
     let matched = find_installed(&files, &hint);
     // Модель назвала мод, которого в сборке нет: кнопка удаления сломала бы
