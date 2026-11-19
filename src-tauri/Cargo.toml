@@ -1,6 +1,6 @@
 [package]
 name = "pagrysha-launcher"
-version = "7.2.6"
+version = "7.2.7"
 description = "Pagrysha Launcher"
 authors = ["Pagrysha <support@pagrysha.com>"]
 edition = "2021"

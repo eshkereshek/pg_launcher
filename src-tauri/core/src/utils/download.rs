@@ -184,7 +184,10 @@ impl reqwest::dns::Resolve for Ipv4First {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         Box::pin(async move {
             let host = name.as_str().to_string();
-            let addrs = tokio::net::lookup_host(format!("{host}:443")).await?;
+            let addrs = match tokio::net::lookup_host(format!("{host}:443")).await {
+                Ok(a) => a,
+                Err(_) => tokio::net::lookup_host(format!("{host}:80")).await?,
+            };
             let all: Vec<std::net::SocketAddr> = addrs.collect();
             let v4: Vec<std::net::SocketAddr> =
                 all.iter().copied().filter(|a| a.is_ipv4()).collect();
@@ -196,7 +199,7 @@ impl reqwest::dns::Resolve for Ipv4First {
 
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(30))
         // Общий таймаут ограничивает всю загрузку, поэтому он щедрый:
         // крупные архивы на медленном канале не должны рваться.
         .timeout(std::time::Duration::from_secs(600))
@@ -206,7 +209,17 @@ pub fn http_client() -> reqwest::Client {
         .http1_only()
         .dns_resolver(std::sync::Arc::new(Ipv4First))
         .tcp_keepalive(std::time::Duration::from_secs(30))
-        .pool_idle_timeout(std::time::Duration::from_secs(30))
+        .pool_idle_timeout(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+/// Стандартный системный клиент reqwest без кастомного DNS-резолвера и без
+/// принудительного HTTP/1.1 (поддерживает HTTP/2 и системный резолвинг).
+pub fn plain_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(900))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }
@@ -215,12 +228,7 @@ pub fn http_client() -> reqwest::Client {
 /// принудительного HTTP/1.1. Нужна, когда кастомный клиент вообще не может
 /// установить соединение (CDN отвечает RST на TLS или не отдаёт A-запись).
 pub async fn ensure_file_plain(url: &str, dest: &Path) -> Result<bool, String> {
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(20))
-        .timeout(std::time::Duration::from_secs(900))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
-    ensure_file_with(&client, url, dest, None).await
+    ensure_file_with(&plain_client(), url, dest, None).await
 }
 
 /// Скачать файл, если его нет или он не сходится с хешем.
@@ -335,10 +343,22 @@ where
             Err(err) => {
                 last_error = err;
                 if attempt < ATTEMPTS {
-                    tokio::time::sleep(std::time::Duration::from_secs(u64::from(attempt))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * u64::from(attempt)))
+                        .await;
                 }
             }
         }
+    }
+
+    // Если кастомный клиент (с IPv4-резолвером и HTTP/1.1) не смог установить
+    // соединение или сбросил поток, пробуем обычный системный клиент (HTTP/2,
+    // системный DNS-резолвинг без принудительного IPv4).
+    let plain = plain_client();
+    if download_attempt(&plain, url, target_path, &on_progress)
+        .await
+        .is_ok()
+    {
+        return Ok(());
     }
 
     // Обычная загрузка не прошла. У части CDN (например, у зеркал OptiFine)
@@ -347,15 +367,18 @@ where
     if let Ok(()) = download_in_chunks(client, url, target_path, &on_progress).await {
         return Ok(());
     }
+    if let Ok(()) = download_in_chunks(&plain, url, target_path, &on_progress).await {
+        return Ok(());
+    }
 
     Err(last_error)
 }
 
-/// Размер куска для загрузки по частям: 16 КБ проходит даже там, где большое
-/// соединение обрывается.
-const CHUNK_BYTES: u64 = 16 * 1024;
+/// Размер куска для загрузки по частям (512 КБ).
+/// Слишком мелкие куски (16 КБ) вызывают сотни запросов и бан по 429 от CDN.
+const CHUNK_BYTES: u64 = 512 * 1024;
 /// Сколько кусков тянем одновременно.
-const CHUNK_PARALLEL: usize = 8;
+const CHUNK_PARALLEL: usize = 4;
 
 /// Узнать полный размер файла у источника, поддерживающего Range.
 async fn probe_total_size(client: &reqwest::Client, url: &str) -> Option<u64> {
@@ -520,12 +543,12 @@ where
         File::create(target_path).map_err(|e| e.to_string())?
     };
 
-    // Обрыв в туннеле выглядит как «поток молчит»: ждём байты не дольше 20
-    // секунд, иначе попытка тянется до общего таймаута.
+    // Обрыв в туннеле выглядит как «поток молчит»: ждём байты не дольше 45
+    // секунд, чтобы медленные соединения и мобильный интернет не приводили к ложному сбою.
     while let Some(chunk_res) =
-        match tokio::time::timeout(std::time::Duration::from_secs(15), stream.next()).await {
+        match tokio::time::timeout(std::time::Duration::from_secs(45), stream.next()).await {
             Ok(item) => item,
-            Err(_) => return Err("Загрузка остановилась: нет данных 15 секунд".to_string()),
+            Err(_) => return Err("Загрузка остановилась: нет данных 45 секунд".to_string()),
         }
     {
         let chunk = chunk_res.map_err(|e| format!("Stream error: {}", e))?;

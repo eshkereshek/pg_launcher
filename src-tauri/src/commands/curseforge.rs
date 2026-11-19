@@ -7,8 +7,8 @@
 //! там его можно протестировать без Tauri.
 
 use crate::utils::curseforge::{
-    class_id, html_to_text, kind_folder, loader_name, loader_type, normalize_file,
-    normalize_project, pick_file, sort_field, strip_id,
+    class_id, get_download_url, html_to_text, kind_folder, loader_name, loader_type,
+    normalize_file, normalize_project, pick_file, sort_field, strip_id,
 };
 use crate::utils::download::{ensure_file, ensure_file_plain, extract_zip_archive, Sum};
 use crate::utils::guard;
@@ -299,10 +299,7 @@ pub async fn cf_install_content(
         }
     };
 
-    let url = file["downloadUrl"]
-        .as_str()
-        .filter(|u| !u.is_empty())
-        .ok_or("Автор запретил скачивание через API")?;
+    let url = get_download_url(&file).ok_or("Не удалось получить ссылку на скачивание файла")?;
     let file_name = file["fileName"]
         .as_str()
         .ok_or("В файле нет имени")?
@@ -319,9 +316,42 @@ pub async fn cf_install_content(
         .and_then(|a| a.iter().find(|h| h["algo"].as_u64() == Some(1)))
         .and_then(|h| h["value"].as_str())
         .unwrap_or("");
+    let sum = Sum::sha1(sha1);
 
     let _ = app.emit("launch-progress", format!("Скачивание {}", file_name));
-    ensure_file(url, &dest, Sum::sha1(sha1)).await?;
+
+    let mut candidates = vec![url.clone()];
+    if let Some(rest) = url.strip_prefix("https://edge.forgecdn.net/") {
+        candidates.push(format!("https://mediafilez.forgecdn.net/{rest}"));
+    } else if let Some(rest) = url.strip_prefix("https://mediafilez.forgecdn.net/") {
+        candidates.push(format!("https://edge.forgecdn.net/{rest}"));
+    }
+
+    let mut downloaded = false;
+    let mut last_error = String::new();
+    for candidate in &candidates {
+        match ensure_file(candidate, &dest, sum).await {
+            Ok(_) => {
+                downloaded = true;
+                break;
+            }
+            Err(e) => last_error = e,
+        }
+    }
+    if !downloaded {
+        for candidate in &candidates {
+            match ensure_file_plain(candidate, &dest).await {
+                Ok(_) => {
+                    downloaded = true;
+                    break;
+                }
+                Err(e) => last_error = e,
+            }
+        }
+    }
+    if !downloaded {
+        return Err(format!("Не удалось скачать {file_name}: {last_error}"));
+    }
 
     Ok(json!({ "status": "success", "fileName": safe_name, "folder": folder }))
 }
@@ -362,10 +392,7 @@ pub async fn cf_install_modpack(
         }
     };
 
-    let url = file["downloadUrl"]
-        .as_str()
-        .filter(|u| !u.is_empty())
-        .ok_or("Автор запретил скачивание сборки через API")?;
+    let url = get_download_url(&file).ok_or("Не удалось получить ссылку на скачивание сборки")?;
 
     let pack_dir_name = guard::folder_name(&pack_name)?;
     let temp_dir = std::env::temp_dir().join(format!(
@@ -382,9 +409,11 @@ pub async fn cf_install_modpack(
     // edge.forgecdn.net — только точка входа: файл лежит на mediafilez. Если
     // первый хост не отвечает (VPN, RST от CDN), идём на хранилище напрямую,
     // а затем пробуем обычный клиент без IPv4-резолвера.
-    let mut candidates = vec![url.to_string()];
+    let mut candidates = vec![url.clone()];
     if let Some(rest) = url.strip_prefix("https://edge.forgecdn.net/") {
         candidates.push(format!("https://mediafilez.forgecdn.net/{rest}"));
+    } else if let Some(rest) = url.strip_prefix("https://mediafilez.forgecdn.net/") {
+        candidates.push(format!("https://edge.forgecdn.net/{rest}"));
     }
     let mut last_error = String::new();
     let mut downloaded = false;
@@ -447,7 +476,7 @@ pub async fn cf_install_modpack(
         }
         let meta = cf_get(&client, &format!("/mods/{}/files/{}", pid, fid), &[]).await?;
         let item = &meta["data"];
-        let Some(dl) = item["downloadUrl"].as_str().filter(|u| !u.is_empty()) else {
+        let Some(dl) = get_download_url(item) else {
             continue;
         };
         let name = item["fileName"].as_str().unwrap_or("file.jar");
@@ -458,6 +487,7 @@ pub async fn cf_install_modpack(
             .and_then(|a| a.iter().find(|h| h["algo"].as_u64() == Some(1)))
             .and_then(|h| h["value"].as_str())
             .unwrap_or("");
+        let sum = Sum::sha1(sha1);
 
         let _ = app.emit(
             "download-update",
@@ -468,7 +498,39 @@ pub async fn cf_install_modpack(
                 "progress": ((idx + 1) * 100) / total
             }),
         );
-        ensure_file(dl, &dest, Sum::sha1(sha1)).await?;
+
+        let mut candidates = vec![dl.clone()];
+        if let Some(rest) = dl.strip_prefix("https://edge.forgecdn.net/") {
+            candidates.push(format!("https://mediafilez.forgecdn.net/{rest}"));
+        } else if let Some(rest) = dl.strip_prefix("https://mediafilez.forgecdn.net/") {
+            candidates.push(format!("https://edge.forgecdn.net/{rest}"));
+        }
+
+        let mut mod_ok = false;
+        let mut mod_err = String::new();
+        for candidate in &candidates {
+            match ensure_file(candidate, &dest, sum).await {
+                Ok(_) => {
+                    mod_ok = true;
+                    break;
+                }
+                Err(e) => mod_err = e,
+            }
+        }
+        if !mod_ok {
+            for candidate in &candidates {
+                match ensure_file_plain(candidate, &dest).await {
+                    Ok(_) => {
+                        mod_ok = true;
+                        break;
+                    }
+                    Err(e) => mod_err = e,
+                }
+            }
+        }
+        if !mod_ok {
+            return Err(format!("Не удалось скачать мод {name}: {mod_err}"));
+        }
     }
 
     // overrides — конфиги и прочие файлы сборки поверх модов.

@@ -739,6 +739,13 @@ pub async fn download_mod(
     }))
 }
 
+struct OptiFineRelease {
+    filename: String,
+    mcversion: String,
+    optifine_type: String,
+    patch: String,
+}
+
 #[tauri::command]
 pub async fn install_optifine(
     app: AppHandle,
@@ -748,64 +755,114 @@ pub async fn install_optifine(
     let _ = app.emit("launch-progress", "Поиск OptiFine...");
     let client = http_client();
 
-    // Источники перебираем по очереди: BMCLAPI — зеркало официальных файлов,
-    // но оно то отвечает, то нет; архив на GitHub отдаётся через
-    // raw.githubusercontent, который обычно доступен там, где сайт OptiFine
-    // режет соединение на первых десятках килобайт.
-    let mut sources: Vec<(String, String)> = Vec::new();
-    if let Some(found) = bmclapi_optifine(&client, &game_version).await {
-        sources.push(found);
-    }
-    if let Some(found) = github_optifine(&client, &game_version).await {
-        sources.push(found);
-    }
+    let mut filename_opt: Option<String> = None;
+    let mut mirror_urls: Vec<String> = Vec::new();
 
-    if sources.is_empty() {
-        return Err(format!(
-            "Не удалось найти файл OptiFine для версии {game_version}"
+    if let Some(rel) = bmclapi_optifine(&client, &game_version).await {
+        filename_opt = Some(rel.filename.clone());
+        // 1. OpenBMCLAPI Maven (быстрое прямое скачивание без лимитов 10 req/min)
+        mirror_urls.push(format!(
+            "https://openbmclapi.bangbang93.com/maven/com/optifine/{}/{}",
+            rel.mcversion, rel.filename
+        ));
+        // 2. OpenBMCLAPI эндпоинт редиректа
+        mirror_urls.push(format!(
+            "https://openbmclapi.bangbang93.com/optifine/{}/{}/{}",
+            rel.mcversion, rel.optifine_type, rel.patch
+        ));
+        // 3. Зеркало GHProxy для GitHub архива (обходит блокировки raw.githubusercontent в РФ)
+        mirror_urls.push(format!(
+            "https://ghproxy.net/https://raw.githubusercontent.com/SynArchive/OptiFine-Archive/main/{}/{}",
+            rel.mcversion, rel.filename
+        ));
+        // 4. Прямой GitHub raw
+        mirror_urls.push(format!(
+            "https://raw.githubusercontent.com/SynArchive/OptiFine-Archive/main/{}/{}",
+            rel.mcversion, rel.filename
+        ));
+        // 5. Основной BMCLAPI Maven
+        mirror_urls.push(format!(
+            "https://bmclapi2.bangbang93.com/maven/com/optifine/{}/{}",
+            rel.mcversion, rel.filename
+        ));
+        // 6. Основной BMCLAPI эндпоинт редиректа
+        mirror_urls.push(format!(
+            "https://bmclapi2.bangbang93.com/optifine/{}/{}/{}",
+            rel.mcversion, rel.optifine_type, rel.patch
         ));
     }
+
+    if let Some((gh_name, gh_url)) = github_optifine(&client, &game_version).await {
+        if filename_opt.is_none() {
+            filename_opt = Some(gh_name.clone());
+        }
+        let ghproxy_url = format!("https://ghproxy.net/{}", gh_url);
+        if !mirror_urls.contains(&ghproxy_url) {
+            mirror_urls.push(ghproxy_url);
+        }
+        if !mirror_urls.contains(&gh_url) {
+            mirror_urls.push(gh_url);
+        }
+    }
+
+    let filename = filename_opt
+        .ok_or_else(|| format!("Не удалось найти файл OptiFine для версии {game_version}"))?;
 
     let instance = instance_dir(&instance_id)?;
     let mods_dir = instance.join("mods");
     fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
 
-    let mut errors: Vec<String> = Vec::new();
-    for (filename, url) in sources {
-        let name =
-            guard::file_name(&filename).unwrap_or_else(|_| format!("OptiFine_{game_version}.jar"));
-        let dest = mods_dir.join(&name);
+    let name =
+        guard::file_name(&filename).unwrap_or_else(|_| format!("OptiFine_{game_version}.jar"));
+    let dest = mods_dir.join(&name);
 
-        let _ = app.emit(
-            "launch-progress",
-            format!("Скачивание OptiFine ({filename})..."),
-        );
+    let _ = app.emit(
+        "launch-progress",
+        format!("Скачивание OptiFine ({filename})..."),
+    );
 
-        // Куски быстрее и устойчивее там, где цельное соединение обрывается.
-        let mut ok = download_in_chunks(&client, &url, &dest, &|_done, _total| {})
+    let mut last_error = String::new();
+    let mut downloaded = false;
+
+    for url in &mirror_urls {
+        // Сначала стандартное потоковое скачивание через основной клиент
+        if ensure_file_with(&client, url, &dest, None).await.is_ok() && looks_like_optifine(&dest) {
+            downloaded = true;
+            break;
+        }
+
+        // Запасной системный клиент (HTTP/2, системный DNS)
+        if ensure_file_plain(url, &dest).await.is_ok() && looks_like_optifine(&dest) {
+            downloaded = true;
+            break;
+        }
+
+        // Если потоковая загрузка оборвалась, пробуем Range-кусками
+        if download_in_chunks(&client, url, &dest, &|_d, _t| {})
             .await
-            .is_ok();
-        if !ok {
-            ok = ensure_file_with(&client, &url, &dest, None).await.is_ok();
+            .is_ok()
+            && looks_like_optifine(&dest)
+        {
+            downloaded = true;
+            break;
         }
 
-        if ok && looks_like_optifine(&dest) {
-            let _ = app.emit("launch-progress", "OptiFine установлен!");
-            return Ok(serde_json::json!({
-                "status": "success",
-                "filename": name,
-                "filenames": [name]
-            }));
-        }
-
-        // Битый или чужой файл не оставляем в сборке.
         let _ = fs::remove_file(&dest);
-        errors.push(url);
+        last_error = url.clone();
     }
 
+    if downloaded {
+        let _ = app.emit("launch-progress", "OptiFine установлен!");
+        return Ok(serde_json::json!({
+            "status": "success",
+            "filename": name,
+            "filenames": [name]
+        }));
+    }
+
+    let _ = fs::remove_file(&dest);
     Err(format!(
-        "Не удалось скачать OptiFine ни с одного источника: {}",
-        errors.join(", ")
+        "Не удалось скачать OptiFine ни с одного зеркала (последняя попытка: {last_error})"
     ))
 }
 
@@ -820,71 +877,99 @@ fn looks_like_optifine(path: &std::path::Path) -> bool {
     data.windows(12).any(|window| window == b"net/optifine")
 }
 
-/// OptiFine с BMCLAPI: список версий и ссылка на файл.
-async fn bmclapi_optifine(
-    client: &reqwest::Client,
-    game_version: &str,
-) -> Option<(String, String)> {
-    let list = client
-        .get("https://bmclapi2.bangbang93.com/optifine/versionList")
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .ok()?
-        .json::<Value>()
-        .await
-        .ok()?;
+/// OptiFine с BMCLAPI: список версий и реквизиты последнего релиза.
+async fn bmclapi_optifine(client: &reqwest::Client, game_version: &str) -> Option<OptiFineRelease> {
+    // Пробуем сначала зеркало openbmclapi (без лимитов), затем bmclapi2
+    let endpoints = [
+        "https://openbmclapi.bangbang93.com/optifine/versionList",
+        "https://bmclapi2.bangbang93.com/optifine/versionList",
+    ];
 
-    let items = list.as_array()?;
-    let target = items
-        .iter()
-        .filter(|v| v["mcversion"].as_str() == Some(game_version))
-        // Превью не берём: нужен обычный релиз, а он идёт последним.
-        .filter(|v| !v["filename"].as_str().unwrap_or("").contains("preview"))
-        .next_back()?;
+    for endpoint in endpoints {
+        let resp = client
+            .get(endpoint)
+            .header("User-Agent", USER_AGENT)
+            .send()
+            .await;
 
-    let filename = target["filename"].as_str()?.to_string();
-    let url = format!(
-        "https://bmclapi2.bangbang93.com/optifine/{}/{}/{}",
-        target["mcversion"].as_str().unwrap_or(game_version),
-        target["type"].as_str().unwrap_or("HD_U"),
-        target["patch"].as_str().unwrap_or("I6")
-    );
+        let Ok(response) = resp else { continue };
+        let Ok(list) = response.json::<Value>().await else {
+            continue;
+        };
+        let Some(items) = list.as_array() else {
+            continue;
+        };
 
-    Some((filename, url))
+        let target = items
+            .iter()
+            .filter(|v| v["mcversion"].as_str() == Some(game_version))
+            // Превью не берём: нужен обычный релиз, а он идёт последним.
+            .filter(|v| !v["filename"].as_str().unwrap_or("").contains("preview"))
+            .next_back();
+
+        if let Some(target) = target {
+            let filename = target["filename"].as_str()?.to_string();
+            let mcversion = target["mcversion"]
+                .as_str()
+                .unwrap_or(game_version)
+                .to_string();
+            let optifine_type = target["type"].as_str().unwrap_or("HD_U").to_string();
+            let patch = target["patch"].as_str().unwrap_or("I6").to_string();
+            return Some(OptiFineRelease {
+                filename,
+                mcversion,
+                optifine_type,
+                patch,
+            });
+        }
+    }
+
+    None
 }
 
 /// OptiFine из публичного архива на GitHub: путь по версии игры.
 async fn github_optifine(client: &reqwest::Client, game_version: &str) -> Option<(String, String)> {
-    let listing = client
-        .get(format!(
-            "https://api.github.com/repos/SynArchive/OptiFine-Archive/contents/{game_version}"
-        ))
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .ok()?
-        .json::<Value>()
-        .await
-        .ok()?;
+    let endpoints = [
+        format!("https://api.github.com/repos/SynArchive/OptiFine-Archive/contents/{game_version}"),
+        format!("https://ghproxy.net/https://api.github.com/repos/SynArchive/OptiFine-Archive/contents/{game_version}"),
+    ];
 
-    let mut jars: Vec<(String, String)> = listing
-        .as_array()?
-        .iter()
-        .filter_map(|item| {
-            let name = item["name"].as_str()?.to_string();
-            let url = item["download_url"].as_str()?.to_string();
-            let is_release = name.starts_with("OptiFine_")
-                && name.ends_with(".jar")
-                && !name.contains("preview");
-            is_release.then_some((name, url))
-        })
-        .collect();
+    for ep in endpoints {
+        let resp = client
+            .get(&ep)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await;
 
-    // Имя содержит букву патча: I6 новее I5, поэтому берём максимум.
-    jars.sort_by(|a, b| a.0.cmp(&b.0));
-    jars.pop()
+        let Ok(res) = resp else { continue };
+        let Ok(listing) = res.json::<Value>().await else {
+            continue;
+        };
+        let Some(items) = listing.as_array() else {
+            continue;
+        };
+
+        let mut jars: Vec<(String, String)> = items
+            .iter()
+            .filter_map(|item| {
+                let name = item["name"].as_str()?.to_string();
+                let url = item["download_url"].as_str()?.to_string();
+                let is_release = name.starts_with("OptiFine_")
+                    && name.ends_with(".jar")
+                    && !name.contains("preview");
+                is_release.then_some((name, url))
+            })
+            .collect();
+
+        // Имя содержит букву патча: I6 новее I5, поэтому берём максимум.
+        jars.sort_by(|a, b| a.0.cmp(&b.0));
+        if let Some(pair) = jars.pop() {
+            return Some(pair);
+        }
+    }
+
+    None
 }
 
 #[tauri::command]

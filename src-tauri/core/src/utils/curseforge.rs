@@ -129,6 +129,62 @@ pub fn normalize_project(p: &Value) -> Value {
     })
 }
 
+/// URL-кодирование для имени файла в CDN CurseForge:
+/// пробелы и спецсимволы кодируются как %XX, чтобы ссылка не ломалась.
+pub fn url_encode_filename(name: &str) -> String {
+    let mut encoded = String::with_capacity(name.len() + 8);
+    for b in name.bytes() {
+        match b {
+            b'a'..=b'z'
+            | b'A'..=b'Z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~'
+            | b'('
+            | b')'
+            | b'+'
+            | b'@' => {
+                encoded.push(b as char);
+            }
+            _ => {
+                use std::fmt::Write;
+                let _ = write!(encoded, "%{:02X}", b);
+            }
+        }
+    }
+    encoded
+}
+
+/// Получить ссылку на скачивание файла CurseForge.
+///
+/// Если `downloadUrl` в объекте от API пустой или null (автор мода отключил
+/// стороннее скачивание через API), ссылка вычисляется по официальному алгоритму
+/// CurseForge CDN: `https://edge.forgecdn.net/files/{id / 1000}/{id % 1000}/{filename}`.
+pub fn get_download_url(f: &Value) -> Option<String> {
+    if let Some(u) = f["downloadUrl"].as_str().filter(|s| !s.trim().is_empty()) {
+        return Some(u.to_string());
+    }
+    let id = f["id"].as_i64()?;
+    if id <= 0 {
+        return None;
+    }
+    let filename = f["fileName"].as_str().filter(|s| !s.trim().is_empty())?;
+    let encoded_name = url_encode_filename(filename);
+    Some(format!(
+        "https://edge.forgecdn.net/files/{}/{}/{}",
+        id / 1000,
+        id % 1000,
+        encoded_name
+    ))
+}
+
+/// Проверка, доступен ли файл для загрузки (напрямую или через Edge CDN).
+pub fn is_downloadable(f: &Value) -> bool {
+    get_download_url(f).is_some()
+}
+
 /// Файл в форме версии Modrinth: `id`, `game_versions`, `loaders`, `files`.
 pub fn normalize_file(f: &Value) -> Value {
     let sha1 = f["hashes"]
@@ -166,6 +222,8 @@ pub fn normalize_file(f: &Value) -> Value {
         })
         .unwrap_or_default();
 
+    let download_url = get_download_url(f);
+
     json!({
         "id": f["id"].as_i64().unwrap_or(0).to_string(),
         "name": f["displayName"],
@@ -173,7 +231,7 @@ pub fn normalize_file(f: &Value) -> Value {
         "game_versions": game_versions,
         "loaders": loaders,
         "files": [{
-            "url": f["downloadUrl"],
+            "url": download_url,
             "filename": f["fileName"],
             "primary": true,
             "hashes": { "sha1": sha1 }
@@ -182,47 +240,39 @@ pub fn normalize_file(f: &Value) -> Value {
 }
 
 /// Первый файл, который подходит под версию игры и загрузчик и доступен
-/// для скачивания. Файлы без `downloadUrl` автор закрыл — их не берём.
+/// для скачивания (напрямую или через Edge CDN).
 pub fn pick_file<'a>(files: &'a [Value], game_version: &str, loader: &str) -> Option<&'a Value> {
     let want_gv = !game_version.is_empty() && game_version != "all";
     let want_loader = loader_type(loader);
 
-    files
-        .iter()
-        .filter(|f| {
-            f["downloadUrl"]
-                .as_str()
-                .map(|u| !u.is_empty())
-                .unwrap_or(false)
-        })
-        .find(|f| {
-            let gv = !want_gv
-                || f["gameVersions"]
-                    .as_array()
-                    .map(|a| {
-                        a.iter().any(|v| {
-                            v.as_str()
-                                .map(|s| s.eq_ignore_ascii_case(game_version))
-                                .unwrap_or(false)
-                        })
+    files.iter().filter(|f| is_downloadable(f)).find(|f| {
+        let gv = !want_gv
+            || f["gameVersions"]
+                .as_array()
+                .map(|a| {
+                    a.iter().any(|v| {
+                        v.as_str()
+                            .map(|s| s.eq_ignore_ascii_case(game_version))
+                            .unwrap_or(false)
                     })
-                    .unwrap_or(false);
-            let lv = match want_loader {
-                None => true,
-                Some(want) => f["gameVersions"]
-                    .as_array()
-                    .map(|a| {
-                        a.iter().any(|v| {
-                            v.as_str()
-                                .and_then(loader_type)
-                                .map(|t| t == want)
-                                .unwrap_or(false)
-                        })
+                })
+                .unwrap_or(false);
+        let lv = match want_loader {
+            None => true,
+            Some(want) => f["gameVersions"]
+                .as_array()
+                .map(|a| {
+                    a.iter().any(|v| {
+                        v.as_str()
+                            .and_then(loader_type)
+                            .map(|t| t == want)
+                            .unwrap_or(false)
                     })
-                    .unwrap_or(false),
-            };
-            gv && lv
-        })
+                })
+                .unwrap_or(false),
+        };
+        gv && lv
+    })
 }
 
 /// Описание с CurseForge приходит HTML-ом, а просмотрщик показывает текст.
@@ -440,7 +490,7 @@ mod tests {
     #[test]
     fn pick_file_skips_locked_and_wrong_loader() {
         let files = vec![
-            json!({"downloadUrl": null, "gameVersions": ["1.20.1", "Forge"]}),
+            json!({"downloadUrl": null, "id": 0, "fileName": "", "gameVersions": ["1.20.1", "Forge"]}),
             json!({"downloadUrl": "https://x/1.jar", "gameVersions": ["1.19.2", "Forge"]}),
             json!({"downloadUrl": "https://x/2.jar", "gameVersions": ["1.20.1", "Fabric"]}),
             json!({"downloadUrl": "https://x/3.jar", "gameVersions": ["1.20.1", "Forge"]}),
@@ -455,5 +505,28 @@ mod tests {
         );
         // Неподходящая версия игры — ничего не выбираем.
         assert!(pick_file(&files, "1.21.1", "forge").is_none());
+    }
+
+    #[test]
+    fn get_download_url_synthesizes_edge_cdn_url() {
+        let file = json!({
+            "id": 8105347,
+            "fileName": "toasterglaze-0.1-1.20.1.jar",
+            "downloadUrl": null
+        });
+        assert_eq!(
+            get_download_url(&file).unwrap(),
+            "https://edge.forgecdn.net/files/8105/347/toasterglaze-0.1-1.20.1.jar"
+        );
+
+        let with_spaces = json!({
+            "id": 8579178,
+            "fileName": "UltraPack (1).zip",
+            "downloadUrl": null
+        });
+        assert_eq!(
+            get_download_url(&with_spaces).unwrap(),
+            "https://edge.forgecdn.net/files/8579/178/UltraPack%20(1).zip"
+        );
     }
 }
