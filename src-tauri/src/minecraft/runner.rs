@@ -636,6 +636,29 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
         }
     }
 
+    // Начиная с Java 16 включена строгая инкапсуляция модулей (JEP 403).
+    // authlib-injector и внутренний сетевой стек Authlib/Netty обращаются
+    // к внутренностям java.base через рефлексию. Без явных --add-opens игра на Java 16/17/21/25
+    // может упасть с InaccessibleObjectException ещё до создания окна.
+    if let Some(major) = java_major {
+        if major >= 16 {
+            for open in [
+                "--add-opens=java.base/java.lang=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+                "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+                "--add-opens=java.base/java.io=ALL-UNNAMED",
+                "--add-opens=java.base/java.net=ALL-UNNAMED",
+                "--add-opens=java.base/java.nio=ALL-UNNAMED",
+                "--add-opens=java.base/java.util=ALL-UNNAMED",
+                "--add-opens=java.base/sun.security.util=ALL-UNNAMED",
+            ] {
+                if !jvm_args.iter().any(|arg| arg == open) {
+                    jvm_args.push(open.to_string());
+                }
+            }
+        }
+    }
+
     // Authlib injector нужен только Ely.by
     if let Some(auth_type) = &options.auth_type {
         if auth_type == "elyby" {
@@ -643,11 +666,16 @@ pub async fn launch_minecraft(app: AppHandle, options: LaunchOptions) -> Result<
             let _ = app.emit("launch-progress", "Проверка authlib-injector...");
             ensure_authlib_injector(&injector_path).await?;
             if injector_path.exists() {
-                let yggdrasil = "ely.by";
+                // Прямой API-эндпоинт Ely.by: исключает 302-редирект с https://ely.by
+                let yggdrasil = "https://account.ely.by/api/authlib-injector";
+                let path_str = injector_path.to_string_lossy().replace('\\', "/");
+                jvm_args.push(format!("-javaagent:{}={}", path_str, yggdrasil));
+                // Предварительно закодированная конфигурация Ely.by исключает блокирующий HTTP-запрос
+                // на старте JVM и позволяет клиенту запускаться мгновенно даже при лагах или в офлайне.
+                const ELYBY_METADATA_B64: &str = "eyJtZXRhIjp7InNlcnZlck5hbWUiOiJFbHkuYnkiLCJpbXBsZW1lbnRhdGlvbk5hbWUiOiJBY2NvdW50IEVseS5ieSBhZGFwdGVyIGZvciB0aGUgYXV0aGxpYi1pbmplY3RvciBsaWJyYXJ5IiwiaW1wbGVtZW50YXRpb25WZXJzaW9uIjoiMS4wLjAiLCJmZWF0dXJlLm5vX21vamFuZ19uYW1lc3BhY2UiOnRydWUsImZlYXR1cmUuZW5hYmxlX3Byb2ZpbGVfa2V5Ijp0cnVlLCJsaW5rcyI6eyJob21lcGFnZSI6Imh0dHBzOi8vZWx5LmJ5IiwicmVnaXN0ZXIiOiJodHRwczovL2FjY291bnQuZWx5LmJ5L3JlZ2lzdGVyIn19LCJza2luRG9tYWlucyI6WyJlbHkuYnkiLCIuZWx5LmJ5Il0sInNpZ25hdHVyZVB1YmxpY2tleSI6Ii0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tXG5NSUlDSWpBTkJna3Foa2lHOXcwQkFRRUZBQU9DQWc4QU1JSUNDZ0tDQWdFQXhnRkpSYjBlOWZSeVZHNStKbENnXG5oMGhjY1JJY2dPNXl4RVZrTUphakFJMTJFdi9QYzdscFR0Nk90S1RFY1VOZmpZZ0JuRWhJS2JkTEQwWitCNUJ4XG5TZzlEUW1vemd6WmNlc1NjcEFTUWI0S3Q2UDhpdG93ZGJnYlVtNHYrNngxUVVLSmpqbWhIcTkzbTlPSUVieFFMXG5DcStTckVNWnBEclhSZ2Q5RGhOUGpadi85NXhpbVA4b3R2aDcrYm1FbDhqd0lOZ2ZKeDBQQWVKRllsY2VRY3NoXG5pWWgrTEh0YUl3emJUVHFrRGliRG03UWlFYysvcUdhYjNtQUJ0VlRwcXcvcmVmd0ZvUjBNOCt4a1dGKzEvRDhrXG5IMFdGYStyQmhkakx5TEcrMmhkT3BLWG9IL2ZNSDB0UU1QSFU3OEoxN0pWS1d3SVdDd0VXWHA4SGlXU2JJdDNhXG5jbUJZdHlXM3RxYXJGRk1NRUN4MndtSlA2RlZPdllWVGhaeHE5cWM5L2YzeWVUR3ozZzd6VTFZbGpIU1ZSUDE2XG5pRWJFbkhRQkt4bXJqMmNkWmdvc0plajRZcHBWN2YzaVo4bzhQRjZVWTUxTFNxdmFDdGVYdVdlWVNKSkVTR0FzXG5Vb1Y3aWhKZldMOER5bUhhbXl3QjJDYWh4N0VpREdTMy9pQmNRVW1wazRUVGcyRnJaUHVLR0l0bjFRZklSaWVPXG5rbm5qOUNQS2lXZGZPdEpCcjNpMUZYTEVmRXhnY0poUTAwWTZCMDhRVnZnaUN6VUYzdCtWQUczRWYyWUlOWXlHXG5BWGNXMFRJZ01hbHd3Z0d6ZGhRUmhJdE9EWHB0V2lneTBETlRVQWdLUVQ5UFM4TjA5eVBCR3hJcTY0VDlBMy96XG5GcUMvazJiTUxXVVNWdElsaWxJSXRuMENBd0VBQVE9PVxuLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tXG4ifQ==";
                 jvm_args.push(format!(
-                    "-javaagent:{}={}",
-                    injector_path.to_string_lossy(),
-                    yggdrasil
+                    "-Dauthlibinjector.yggdrasil.prefetched={}",
+                    ELYBY_METADATA_B64
                 ));
                 jvm_args.push("-Dauthlibinjector.side=client".to_string());
             }

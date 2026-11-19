@@ -86,13 +86,13 @@ pub async fn auth_elyby_validate(access_token: String) -> Result<bool, String> {
     }
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
 
     let resp = client
         .post("https://authserver.ely.by/auth/validate")
-        .json(&serde_json::json!({ "accessToken": access_token }))
+        .json(&serde_json::json!({ "accessToken": access_token.trim() }))
         .send()
         .await
         .map_err(|e| format!("Сервер Ely.by недоступен: {}", e))?;
@@ -113,14 +113,32 @@ pub async fn auth_elyby_refresh(
     access_token: String,
     client_token: String,
 ) -> Result<Value, String> {
+    let clean_token = access_token.trim().to_string();
+    if clean_token.is_empty() {
+        return Err("Сессия Ely.by пуста".to_string());
+    }
+
+    // Ely.by требует непустой clientToken, иначе возвращает IllegalArgumentException.
+    // Если по какой-то причине clientToken отсутствует в сохранённом аккаунте,
+    // генерируем валидный 32-байтный hex fallback по спецификации Yggdrasil.
+    let effective_client_token = if client_token.trim().is_empty() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(123456789);
+        format!("{:032x}", nanos)
+    } else {
+        client_token.trim().to_string()
+    };
+
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
 
     let payload = serde_json::json!({
-        "accessToken": access_token,
-        "clientToken": client_token,
+        "accessToken": clean_token,
+        "clientToken": effective_client_token,
         "requestUser": true
     });
 
@@ -132,16 +150,27 @@ pub async fn auth_elyby_refresh(
         .map_err(|e| format!("Сервер Ely.by недоступен: {}", e))?;
 
     if !resp.status().is_success() {
-        return Err("Сессия Ely.by истекла, войдите в аккаунт заново".to_string());
+        let status = resp.status().as_u16();
+        if status == 401 || status == 403 {
+            return Err("Сессия Ely.by истекла, войдите в аккаунт заново".to_string());
+        }
+        return Err(format!("Сервер Ely.by вернул ошибку ({})", status));
     }
 
     let data: Value = resp.json().await.map_err(|e| e.to_string())?;
 
+    let fresh_token = data["accessToken"].as_str().unwrap_or("").to_string();
+    if fresh_token.is_empty() {
+        return Err("Сервер Ely.by не вернул обновленный токен".to_string());
+    }
+
+    let returned_client_token = data["clientToken"]
+        .as_str()
+        .map(|v| v.to_string())
+        .unwrap_or(effective_client_token);
+
     Ok(serde_json::json!({
-        "token": data["accessToken"].as_str().unwrap_or(""),
-        "clientToken": data["clientToken"]
-            .as_str()
-            .map(|v| v.to_string())
-            .unwrap_or(client_token),
+        "token": fresh_token,
+        "clientToken": returned_client_token,
     }))
 }

@@ -57,6 +57,26 @@ interface Account {
   skinUrl?: string
 }
 
+/**
+ * Извлекает timestamp истечения (exp в секундах) из JWT-токена Ely.by без обращений к сети.
+ */
+const getJwtExp = (token?: string): number | null => {
+  if (!token) return null
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    while (base64.length % 4 !== 0) {
+      base64 += '='
+    }
+    const json = atob(base64)
+    const payload = JSON.parse(json)
+    return typeof payload.exp === 'number' ? payload.exp : null
+  } catch {
+    return null
+  }
+}
+
 const CubicCrossIcon: React.FC<{ size?: number; color?: string }> = ({ size = 14, color = 'currentColor' }) => (
   <svg viewBox="0 0 9 8" width={size} height={size * (8 / 9)} style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges', flexShrink: 0 }}>
     <g fill="rgba(0,0,0,0.7)">
@@ -1148,6 +1168,8 @@ export default function App() {
           const lastId = localStorage.getItem('activeAccountId')
           const found = savedAccounts.find(a => a.id === lastId)
           setActiveAccount(found || savedAccounts[0])
+          // Фоновая проверка и продление сессий Ely.by при старте лаунчера
+          checkAndRefreshElybyAccounts(savedAccounts).catch(() => {})
         }
       } catch (e) { }
     }
@@ -1639,14 +1661,83 @@ export default function App() {
   }
 
   /**
-   * Проверяет токен Ely.by и обновляет его, если срок вышел.
+   * Обновляет токен Ely.by через authserver.
+   */
+  async function refreshElybyAccount(acc: Account): Promise<Account | null> {
+    if (acc.type !== 'elyby' || !acc.token) return null
+    const clientToken = acc.clientToken || acc.uuid || ''
+    try {
+      // @ts-ignore
+      const fresh = await window.electronAPI.authElybyRefresh(acc.token, clientToken)
+      if (fresh && fresh.token) {
+        return {
+          ...acc,
+          token: fresh.token,
+          clientToken: fresh.clientToken || acc.clientToken || clientToken,
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Ely.by] Не удалось обновить сессию для ${acc.name}:`, e)
+    }
+    return null
+  }
+
+  /**
+   * Фоновая проверка всех Ely.by аккаунтов. Если срок жизни токена меньше 24 часов
+   * (или он уже истёк, но ещё может быть обновлён по clientToken), запрашиваем свежий.
+   */
+  async function checkAndRefreshElybyAccounts(accountsList: Account[]) {
+    let hasChanges = false
+    const nowSec = Math.floor(Date.now() / 1000)
+    const REFRESH_THRESHOLD_SEC = 24 * 3600 // 24 часа
+
+    const nextAccounts = [...accountsList]
+
+    for (let i = 0; i < nextAccounts.length; i++) {
+      const acc = nextAccounts[i]
+      if (acc.type !== 'elyby' || !acc.token) continue
+
+      const exp = getJwtExp(acc.token)
+      const shouldRefresh = !exp || (exp - nowSec < REFRESH_THRESHOLD_SEC)
+
+      if (shouldRefresh) {
+        const refreshed = await refreshElybyAccount(acc)
+        if (refreshed) {
+          nextAccounts[i] = refreshed
+          hasChanges = true
+        }
+      }
+    }
+
+    if (hasChanges) {
+      setAccounts(nextAccounts)
+      // @ts-ignore
+      await window.electronAPI.saveAccounts(nextAccounts)
+      setActiveAccount(prev => {
+        if (!prev) return prev
+        const updated = nextAccounts.find(a => a.id === prev.id)
+        return updated || prev
+      })
+    }
+  }
+
+  // Периодическое фоновое обновление сессий Ely.by (каждые 30 минут)
+  useEffect(() => {
+    if (accounts.length === 0) return
+    const timer = setInterval(() => {
+      checkAndRefreshElybyAccounts(accounts).catch(() => {})
+    }, 30 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [accounts])
+
+  /**
+   * Проверяет токен Ely.by и обеспечивает актуальную сессию перед запуском.
    *
-   * Возвращает актуальные токены или null, если сессию не восстановить: тогда
-   * игроку нужно войти заново, иначе сервер отклонит вход.
-   *
-   * Токены возвращаются значением, а не только через состояние: `activeAccount`
-   * в текущем рендере ещё старый, и игра получала просроченный токен даже после
-   * успешного обновления.
+   * 1. Если токен валиден ещё > 5 минут, отдаём сразу без сетевых задержек:
+   *    запуск происходит мгновенно без риска сетевых таймаутов.
+   * 2. Если токен истекает или уже истёк, запрашиваем refresh.
+   * 3. Если сеть оффлайн или сервер Ely.by временно недоступен, НЕ блокируем запуск:
+   *    возвращаем имеющуюся сессию, чтобы игрок мог играть в одиночный режим или LAN.
    */
   const ensureElybySession = async (): Promise<{ token: string; clientToken: string } | null> => {
     const current = {
@@ -1655,33 +1746,32 @@ export default function App() {
     }
     if (!activeAccount || activeAccount.type !== 'elyby' || !activeAccount.token) return current
 
-    try {
-      // @ts-ignore
-      const valid = await window.electronAPI.authElybyValidate(activeAccount.token)
-      if (valid) return current
+    const exp = getJwtExp(activeAccount.token)
+    const nowSec = Math.floor(Date.now() / 1000)
 
-      // @ts-ignore
-      const fresh = await window.electronAPI.authElybyRefresh(
-        activeAccount.token,
-        activeAccount.clientToken || ''
-      )
-      if (!fresh || !fresh.token) return null
-
-      const updated = {
-        ...activeAccount,
-        token: fresh.token,
-        clientToken: fresh.clientToken || activeAccount.clientToken,
-      }
-      const next = accounts.map(acc => (acc.id === updated.id ? updated : acc))
-      setAccounts(next)
-      setActiveAccount(updated)
-      // @ts-ignore
-      await window.electronAPI.saveAccounts(next)
-
-      return { token: updated.token, clientToken: updated.clientToken || '' }
-    } catch {
-      return null
+    // Если токен валиден ещё как минимум 5 минут (300 сек), отдаём сразу
+    if (exp && exp - nowSec > 300) {
+      return current
     }
+
+    try {
+      const refreshed = await refreshElybyAccount(activeAccount)
+      if (refreshed) {
+        const next = accounts.map(acc => (acc.id === refreshed.id ? refreshed : acc))
+        setAccounts(next)
+        setActiveAccount(refreshed)
+        // @ts-ignore
+        await window.electronAPI.saveAccounts(next)
+
+        return { token: refreshed.token || '', clientToken: refreshed.clientToken || '' }
+      }
+    } catch (e) {
+      console.warn('[Ely.by] Ошибка обновления сессии перед запуском:', e)
+    }
+
+    // При недоступности серверов Ely.by или в офлайне не ломаем запуск игры:
+    // возвращаем имеющуюся сессию для одиночной игры / локальной сети.
+    return current
   }
 
   const handleLaunch = async () => {
